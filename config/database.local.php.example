@@ -1,0 +1,11 @@
+<?php
+// Copy to config/database.local.php and fill in. Do NOT commit the real file.
+// Hostinger: hPanel > Websites > Databases > Management shows the exact DB name, user and host.
+// Names are prefixed with your account id (u733407504_...). Host is almost always "localhost".
+return [
+    'host' => 'localhost',
+    'user' => 'u733407504_xxxxxxxx',      // MySQL USERNAME  (not necessarily the same as the DB name)
+    'pass' => 'CHANGE_ME',
+    'name' => 'u733407504_marickHealthDB',// DATABASE name
+    'debug' => false,                      // true only on your local machine
+];

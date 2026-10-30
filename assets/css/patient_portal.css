@@ -1,0 +1,223 @@
+/* ==============================================================
+   MARICK HEALTH CENTER - PATIENT PORTAL
+   ==============================================================
+   Loaded AFTER admin_theme.css on every /patient page. Every color,
+   radius and shadow here reads from the same --bg-card / --primary /
+   --accent-color / --radius-* tokens admin_theme.css defines, so the
+   portal always matches whatever the Staff Console currently looks
+   like (including a brand color change from System Settings) without
+   this file needing an update. Only genuinely new components live
+   here: the hero banner, program cards, category pills, the timeline,
+   and the health-center info card.
+   ============================================================== */
+
+/* ----- Sidebar branding: logo-based mark instead of the Staff
+   Console's icon glyph, plus the "Patient Portal" subtitle pill ----- */
+.sidebar-header .brand-mark.brand-logo {
+    background: var(--bg-card);
+    padding: 4px;
+}
+.sidebar-header .brand-mark.brand-logo img {
+    width: 100%; height: 100%; object-fit: contain; border-radius: 8px;
+}
+.portal-badge {
+    display: inline-block; margin-top: 2px; padding: 2px 9px;
+    border-radius: var(--radius-pill); font-size: 0.62rem; font-weight: 800;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent-color, #38bdf8); background: rgba(14, 165, 233, 0.14);
+}
+
+/* ----- Sidebar footer: patient identity block above Logout ----- */
+.sidebar-footer { display: flex; flex-direction: column; gap: 6px; }
+.sidebar-user {
+    display: flex; align-items: center; gap: 12px; padding: 8px 10px;
+    border-radius: var(--radius-md); text-decoration: none; color: inherit;
+    transition: background-color 0.18s ease;
+}
+.sidebar-user:hover { background: rgba(255,255,255,0.06); }
+.sidebar-user-text { display: flex; flex-direction: column; line-height: 1.3; overflow: hidden; }
+.sidebar-user-text strong { color: #f1f5f9; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-text small { color: #94a3b8; font-size: 0.72rem; font-weight: 600; }
+.sidebar.collapsed .sidebar-user-text { display: none; }
+.pp-logout { color: #f87171 !important; }
+
+.pp-avatar {
+    width: 34px; height: 34px; min-width: 34px; border-radius: 50%; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(var(--primary-rgb, 76,161,175), 0.18); color: var(--primary);
+    font-weight: 800; font-size: 0.8rem; text-decoration: none;
+}
+.pp-avatar-lg { width: 40px; height: 40px; font-size: 0.9rem; border: 2px solid var(--border-color, #e2e8f0); }
+
+/* Mobile drawer backdrop (sidebar itself reuses admin_theme's .mobile-open rules) */
+.pp-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 2999; opacity: 0; transition: opacity 0.2s ease;
+}
+@media (max-width: 992px) {
+    .sidebar.mobile-open ~ .pp-backdrop { display: block; opacity: 1; }
+}
+
+.pp-page { padding: 28px 32px 48px; max-width: 1180px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+@media (max-width: 768px) { .pp-page { padding: 20px 16px 40px; } }
+
+/* ----- Hero banner ----- */
+.pp-hero {
+    background: linear-gradient(135deg, var(--primary, #4ca1af), #0f2a3a 130%);
+    color: #fff; border-radius: var(--radius-xl); padding: 32px 34px;
+    margin-bottom: 24px; box-shadow: var(--glow-primary);
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap;
+}
+.pp-hero h1 { margin: 0 0 6px; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.01em; }
+.pp-hero p { margin: 0; opacity: 0.92; font-size: 0.98rem; max-width: 46ch; }
+.pp-hero-meta { display: flex; gap: 22px; flex-wrap: wrap; }
+.pp-hero-meta div { display: flex; flex-direction: column; }
+.pp-hero-meta span.label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; font-weight: 700; }
+.pp-hero-meta span.value { font-size: 1.05rem; font-weight: 800; }
+
+/* ----- Announcement notice ----- */
+.pp-notice {
+    display: flex; align-items: flex-start; gap: 14px; padding: 14px 18px;
+    border-radius: var(--radius-md); margin-bottom: 22px;
+    background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.3);
+    color: var(--text-main);
+}
+.pp-notice .mh-icon { color: #38bdf8; flex-shrink: 0; margin-top: 2px; }
+.pp-notice h4 { margin: 0 0 3px; font-size: 0.95rem; color: var(--heading-color); }
+.pp-notice p { margin: 0; font-size: 0.9rem; color: var(--text-muted); }
+
+/* ----- Stat cards row ----- */
+.pp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 24px; }
+@media (max-width: 768px) { .pp-stats { grid-template-columns: 1fr; } }
+.pp-stat { text-align: left !important; align-items: flex-start !important; }
+.pp-stat .stat-icon-badge { margin-bottom: 12px; }
+.pp-stat .number { font-size: 2.1rem; }
+.pp-stat .sub { color: var(--text-muted); font-size: 0.8rem; margin-top: 4px; }
+
+/* ----- Grid ----- */
+.pp-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 24px; align-items: start; }
+@media (max-width: 992px) { .pp-grid { grid-template-columns: 1fr; } }
+
+.pp-section { padding: 18px 24px; border-top: 1px solid var(--border-color, #e2e8f0); }
+.pp-section:first-of-type { border-top: none; }
+.pp-section-title { margin: 0 0 12px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 700; }
+
+/* ----- Category pills (reuse .status-pill sizing, add category hues) ----- */
+.cat-general      { background: rgba(14, 165, 233, 0.14); color: #0ea5e9; border-color: rgba(14, 165, 233, 0.3); }
+.cat-dental        { background: rgba(217, 119, 6, 0.16);  color: #d97706; border-color: rgba(217, 119, 6, 0.32); }
+.cat-maternal      { background: rgba(219, 39, 119, 0.14); color: #db2777; border-color: rgba(219, 39, 119, 0.3); }
+.cat-immunization  { background: rgba(16, 185, 129, 0.15); color: #10b981; border-color: rgba(16, 185, 129, 0.3); }
+html[data-theme="dark"] .cat-general      { color: #7dd3fc; }
+html[data-theme="dark"] .cat-dental       { color: #fcd34d; }
+html[data-theme="dark"] .cat-maternal     { color: #f9a8d4; }
+html[data-theme="dark"] .cat-immunization { color: #6ee7b7; }
+
+/* ----- Empty state ----- */
+.pp-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+.pp-empty .mh-icon { width: 34px; height: 34px; margin-bottom: 10px; opacity: 0.6; }
+.pp-empty h4 { margin: 0 0 4px; color: var(--heading-color); font-size: 1rem; }
+.pp-empty p { margin: 0; font-size: 0.88rem; }
+
+/* ----- Timeline (consultation history list) ----- */
+.pp-timeline { position: relative; padding-left: 22px; }
+.pp-timeline::before { content: ""; position: absolute; left: 6px; top: 6px; bottom: 6px; width: 2px; background: var(--border-color, #e2e8f0); }
+.pp-timeline-item { position: relative; padding-bottom: 22px; }
+.pp-timeline-item:last-child { padding-bottom: 0; }
+.pp-timeline-dot {
+    position: absolute; left: -22px; top: 4px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--primary); border: 3px solid var(--bg-body); box-shadow: 0 0 0 1px var(--border-color, #e2e8f0);
+}
+.pp-timeline-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.pp-timeline-title { font-weight: 700; color: var(--heading-color); font-size: 0.98rem; }
+.pp-timeline-date { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.pp-timeline-summary { color: var(--text-main); font-size: 0.9rem; line-height: 1.5; }
+.pp-timeline-attending { margin-top: 6px; font-size: 0.78rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; }
+
+/* ----- Record card (used for the detailed /records.php list) ----- */
+.pp-record-card { background: var(--bg-hover); border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-md); padding: 18px 20px; margin-bottom: 14px; }
+.pp-record-card:last-child { margin-bottom: 0; }
+.pp-record-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.pp-record-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 20px; }
+.pp-record-fields div span.k { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; margin-bottom: 2px; }
+.pp-record-fields div span.v { color: var(--text-main); font-size: 0.9rem; line-height: 1.45; }
+
+/* ----- Medicine dispensing list ----- */
+.pp-med-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border-subtle, #f1f5f9); }
+.pp-med-row:last-child { border-bottom: none; }
+.pp-med-icon {
+    width: 40px; height: 40px; border-radius: var(--radius-md); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(var(--primary-rgb, 76,161,175), 0.14); color: var(--primary);
+}
+.pp-med-name { font-weight: 700; color: var(--heading-color); font-size: 0.92rem; }
+.pp-med-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+.pp-med-qty { margin-left: auto; text-align: right; font-weight: 800; color: var(--heading-color); white-space: nowrap; }
+.pp-med-qty small { display: block; font-weight: 600; color: var(--text-muted); font-size: 0.72rem; }
+
+/* ----- Profile summary card ----- */
+.pp-field { margin-bottom: 15px; }
+.pp-field:last-child { margin-bottom: 0; }
+.pp-field span.k { display: block; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 3px; }
+.pp-field span.v { color: var(--heading-color); font-weight: 600; font-size: 1rem; }
+
+/* ----- Program status cards ----- */
+.pp-programs { display: flex; flex-direction: column; gap: 10px; }
+.pp-program {
+    display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;
+    border-radius: var(--radius-md); border: 1px solid var(--border-color, #e2e8f0); background: var(--bg-hover);
+}
+.pp-program .icn {
+    width: 34px; height: 34px; border-radius: var(--radius-sm); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(16, 185, 129, 0.14); color: #10b981;
+}
+.pp-program strong { display: block; font-size: 0.88rem; color: var(--heading-color); }
+.pp-program .status { font-size: 0.78rem; color: var(--primary); font-weight: 700; }
+.pp-program .detail { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+
+/* ----- Health center info card ----- */
+.pp-hours-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 0.9rem; color: var(--text-main); }
+.pp-hours-icon { color: var(--primary); display: inline-flex; }
+.pp-hours-days { font-weight: 600; }
+.pp-hours-time { margin-left: auto; color: var(--text-muted); }
+
+.pp-services { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pp-services li { display: flex; align-items: flex-start; gap: 12px; font-size: 0.88rem; color: var(--text-main); }
+.pp-services.is-detailed li { align-items: flex-start; }
+.pp-service-icon {
+    width: 30px; height: 30px; border-radius: var(--radius-sm); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(var(--primary-rgb, 76,161,175), 0.12); color: var(--primary);
+}
+.pp-services small { display: block; color: var(--text-muted); font-size: 0.78rem; margin-top: 2px; line-height: 1.4; }
+
+.pp-emergency { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-md); padding: 16px; }
+.pp-emergency-head { display: flex; align-items: center; gap: 8px; color: #ef4444; margin-bottom: 10px; }
+.pp-hotline {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 0; text-decoration: none; color: var(--text-main); font-size: 0.88rem; font-weight: 600;
+    border-top: 1px dashed rgba(239, 68, 68, 0.25);
+}
+.pp-hotline:first-of-type { border-top: none; }
+.pp-hotline-number { color: #ef4444; display: inline-flex; align-items: center; gap: 6px; font-weight: 800; }
+.pp-emergency-note { margin: 10px 0 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
+
+/* ----- Filter pills (records page tabs) ----- */
+.pp-filters { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 24px; border-bottom: 1px solid var(--border-color, #e2e8f0); background: var(--bg-hover); }
+.pp-filter-btn {
+    border: 1px solid var(--border-color, #cbd5e1); background: var(--bg-card); color: var(--text-main);
+    padding: 7px 16px; border-radius: var(--radius-pill); font-size: 0.83rem; font-weight: 700;
+    cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+    transition: all 0.15s ease;
+}
+.pp-filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+.pp-filter-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+/* ----- Sub-nav tabs (Consultation History / Dispensed Medicines) ----- */
+.pp-tabs { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+.pp-tab {
+    padding: 9px 18px; border-radius: var(--radius-pill); font-size: 0.88rem; font-weight: 700;
+    text-decoration: none; color: var(--text-muted); background: var(--bg-card);
+    border: 1px solid var(--border-color, #e2e8f0);
+}
+.pp-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }

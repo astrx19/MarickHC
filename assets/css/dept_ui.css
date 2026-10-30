@@ -1,0 +1,232 @@
+/* Dental module - scoped with the du- prefix; colours come from the app theme variables so dark mode works. */
+.du-wrap, :root { --du-accent: var(--button-bg, #4ca1af); --du-accent-text: var(--button-text, #fff); --du-line: var(--border-color, #e2e8f0);
+           --du-card: var(--card-bg, #fff); --du-muted: var(--text-muted, #64748b); --du-text: var(--text-color, #1e293b);
+           --du-soft: var(--bg-hover, #f1f5f9); --du-head: var(--heading-color, #0f172a); }
+.du-wrap * { box-sizing: border-box; }
+.du-wrap h1, .du-wrap h2, .du-wrap h4 { color: var(--du-head); }
+.du-muted, .du-hint { color: var(--du-muted); font-size: .85rem; }
+.du-hint { margin: 8px 0 0; }
+
+.du-msg { padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; font-weight: 600; }
+.du-msg-ok { background: #dcfce7; color: #166534; } .du-msg-err { background: #fee2e2; color: #991b1b; }
+
+/* page + patient header */
+.du-pagehead, .du-patientbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.du-pagehead h1, .du-patientbar h1 { margin: 0; font-size: 1.5rem; }
+.du-pagehead p, .du-patientbar p { margin: 4px 0 0; color: var(--du-muted); }
+.du-patient-main { display: flex; align-items: center; gap: 16px; }
+.du-patient-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.du-alerts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.du-alert-chip { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 999px; padding: 4px 12px; font-size: .82rem; font-weight: 700; }
+.du-ocr-banner { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; font-size: .9rem; }
+.du-ocr-banner[hidden] { display: none; }
+.du-ocr-banner.du-warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+
+/* cards, grids, fields */
+.du-card { background: var(--du-card); border: 1px solid var(--du-line); border-radius: 14px; padding: 18px 20px; margin-bottom: 16px; color: var(--du-text); }
+.du-card-title { margin: 0 0 12px; font-size: 1.1rem; }
+.du-card-title small { font-weight: 500; color: var(--du-muted); font-size: .8rem; }
+.du-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.du-card-head .du-card-title { margin: 0; }
+.du-grid { display: grid; gap: 14px; } .du-grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } .du-grid-3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.du-span2 { grid-column: span 2; } @media (max-width: 640px) { .du-span2 { grid-column: auto; } }
+.du-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.du-field.du-wide { grid-column: 1 / -1; }
+.du-label { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--du-muted); }
+.du-wrap input[type=text], .du-wrap input[type=date], .du-wrap input[type=number], .du-wrap select, .du-wrap textarea {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--du-line); border-radius: 8px; background: var(--du-card); color: var(--du-text); font: inherit; }
+.du-wrap input:focus, .du-wrap select:focus, .du-wrap textarea:focus { outline: 2px solid var(--du-accent); outline-offset: 1px; }
+.du-ro { background: var(--du-soft); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.du-ro span { font-size: .72rem; font-weight: 700; text-transform: uppercase; color: var(--du-muted); letter-spacing: .03em; }
+.du-sub { margin: 16px 0 8px; font-size: .92rem; } .du-sub small { color: var(--du-muted); font-weight: 500; }
+
+.du-checks { display: flex; flex-wrap: wrap; gap: 8px; } .du-checks .du-field { flex: 0 0 auto; }
+.du-checks-wide { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.du-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; }
+.du-check input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.du-check span { display: inline-block; padding: 7px 14px; border: 1px solid var(--du-line); border-radius: 999px; font-size: .86rem; font-weight: 600; background: var(--du-card); transition: all .12s; }
+.du-check:hover span { border-color: var(--du-accent); }
+.du-check input:checked + span { background: var(--du-accent); color: var(--du-accent-text); border-color: var(--du-accent); }
+.du-check input:focus-visible + span { outline: 2px solid var(--du-accent); outline-offset: 2px; }
+.du-check-strong span { border-radius: 10px; }
+.du-yn { display: inline-flex; gap: 8px; } .du-yn label { margin: 0; cursor: pointer; } .du-yn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.du-yn span { display: inline-block; min-width: 64px; text-align: center; padding: 7px 16px; border: 1px solid var(--du-line); border-radius: 8px; font-weight: 700; font-size: .86rem; background: var(--du-card); }
+.du-yn input:checked + span { background: var(--du-accent); color: var(--du-accent-text); border-color: var(--du-accent); }
+.du-yn input[value=n]:checked + span { background: #64748b; border-color: #64748b; color: #fff; }
+.du-yn input:focus-visible + span { outline: 2px solid var(--du-accent); outline-offset: 2px; }
+.du-qrow { padding: 14px 0; border-top: 1px solid var(--du-line); display: grid; gap: 10px; } .du-qrow:first-of-type { border-top: 0; }
+.du-q { font-weight: 600; } .du-qn { color: var(--du-muted); margin-right: 4px; }
+[data-dn-when].du-hidden { display: none; }
+.du-legal { background: var(--du-soft); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: .9rem; line-height: 1.55; }
+.du-legal h4 { margin: 0 0 8px; } .du-legal p { margin: 0 0 8px; }
+.du-ocr-hit { box-shadow: 0 0 0 2px #60a5fa inset; background: #eff6ff !important; }
+.du-check.du-ocr-hit span, .du-yn .du-ocr-hit { box-shadow: 0 0 0 2px #60a5fa; }
+
+/* buttons, pills */
+.du-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid transparent; border-radius: 10px; padding: 9px 16px; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; line-height: 1.2; }
+.du-btn svg { width: 16px; height: 16px; }
+.du-btn-primary { background: var(--du-accent); color: var(--du-accent-text); } .du-btn-primary:hover { filter: brightness(.94); }
+.du-btn-ghost { background: transparent; color: var(--du-text); border-color: var(--du-line); } .du-btn-ghost:hover { background: var(--du-soft); }
+.du-btn-sm { padding: 6px 12px; font-size: .84rem; } .du-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.du-pill { display: inline-block; padding: 2px 11px; border-radius: 999px; font-size: .74rem; font-weight: 800; letter-spacing: .02em; }
+.du-pill-ok { background: #dcfce7; color: #166534; } .du-pill-muted { background: var(--du-soft); color: var(--du-muted); }
+.du-risk-high { background: #fee2e2; color: #991b1b; } .du-risk-low { background: #dcfce7; color: #166534; } .du-risk-moderate { background: #fef3c7; color: #92400e; }
+
+/* tables */
+.du-table-wrap { overflow-x: auto; }
+.du-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.du-table th { text-align: left; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--du-muted); padding: 9px 10px; border-bottom: 1px solid var(--du-line); white-space: nowrap; }
+.du-table td { padding: 10px; border-bottom: 1px solid var(--du-line); vertical-align: middle; }
+.du-table-sm td, .du-table-sm th { padding: 6px 9px; font-size: .84rem; }
+.du-person { display: flex; align-items: center; gap: 10px; } .du-empty { text-align: center; color: var(--du-muted); padding: 26px !important; }
+.du-inline-form, .du-card-head input[type=text] { display: flex; gap: 10px; flex-wrap: wrap; }
+.du-inline-form input, .du-inline-form select { flex: 1 1 220px; width: auto !important; }
+.du-card-head input[type=text] { width: 240px; }
+.du-legacy td { color: var(--du-muted); } .du-sigline { border-bottom: 1px solid var(--du-muted); height: 18px; margin-top: 4px; min-width: 120px; }
+.du-sigblock { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; margin-top: 26px; font-size: .82rem; color: var(--du-muted); }
+.du-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.du-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+
+/* tabs */
+.du-tabs { display: flex; gap: 8px; margin-bottom: 14px; overflow-x: auto; padding-bottom: 2px; }
+.du-tab { flex: 1 1 0; min-width: 150px; display: flex; align-items: center; gap: 10px; text-align: left; padding: 10px 14px; border: 1px solid var(--du-line); border-radius: 12px; background: var(--du-card); color: var(--du-text); cursor: pointer; font: inherit; }
+.du-tab b { width: 28px; height: 28px; border-radius: 50%; background: var(--du-soft); display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.du-tab span { font-weight: 600; font-size: .86rem; line-height: 1.25; }
+.du-tab.is-active { border-color: var(--du-accent); box-shadow: 0 0 0 2px var(--du-accent) inset; } .du-tab.is-active b { background: var(--du-accent); color: var(--du-accent-text); }
+.du-panel { display: none; } .du-panel.is-active { display: block; }
+.du-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+/* sticky bar */
+.du-savebar { position: sticky; bottom: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+              background: var(--du-card); border: 1px solid var(--du-line); border-radius: 14px; padding: 10px 14px; margin-top: 6px; box-shadow: 0 -6px 20px rgba(15,23,42,.08); }
+.du-steps { display: flex; gap: 8px; } .du-dirty { color: #b45309; font-weight: 700; font-size: .86rem; }
+.du-dirty[hidden] { display: none; }
+
+/* odontogram */
+.du-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.du-seg { display: inline-flex; border: 1px solid var(--du-line); border-radius: 10px; overflow: hidden; }
+.du-seg button { border: 0; background: var(--du-card); color: var(--du-text); padding: 7px 14px; font: inherit; font-weight: 600; font-size: .86rem; cursor: pointer; border-right: 1px solid var(--du-line); }
+.du-seg button:last-child { border-right: 0; } .du-seg button.is-active { background: var(--du-accent); color: var(--du-accent-text); }
+.du-chart { overflow-x: auto; padding: 6px 0 12px; }
+.du-arch { margin-bottom: 18px; min-width: max-content; }
+.du-arch h5 { margin: 0 0 6px; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--du-muted); }
+.du-row { display: flex; gap: 4px; align-items: stretch; margin-bottom: 8px; }
+.du-mid { width: 2px; background: var(--du-line); margin: 0 4px; border-radius: 2px; }
+.du-tooth { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 46px; padding: 4px 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--du-text); cursor: pointer; font: inherit; }
+.du-tooth:hover { background: var(--du-soft); } .du-tooth.is-sel { border-color: var(--du-accent); background: var(--du-soft); box-shadow: 0 0 0 2px var(--du-accent) inset; }
+.du-t-num { font-size: .72rem; font-weight: 800; color: var(--du-muted); }
+.du-t-ico { width: 32px; height: 32px; } .du-t-cell { min-height: 18px; min-width: 34px; text-align: center; font-size: .72rem; font-weight: 800; border: 1px solid var(--du-line); border-radius: 4px; line-height: 16px; background: var(--du-card); }
+.du-tooth.st-missing .du-t-ico { opacity: .3; } .du-tooth.st-unerupted .du-t-ico { opacity: .55; } .du-tooth.st-root_fragment .du-t-ico { opacity: .75; }
+.du-picker { background: var(--du-soft); border-radius: 12px; padding: 14px 16px; margin-top: 8px; }
+.du-picker-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.du-picker-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.du-picker-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.du-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.du-opt { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border: 1px solid var(--du-line); border-radius: 10px; background: var(--du-card); color: var(--du-text); cursor: pointer; font: inherit; font-size: .86rem; font-weight: 600; }
+.du-opt code { font-weight: 800; background: var(--du-soft); border-radius: 5px; padding: 1px 6px; }
+.du-opt.is-on { background: var(--du-accent); color: var(--du-accent-text); border-color: var(--du-accent); } .du-opt.is-on code { background: rgba(255,255,255,.25); color: inherit; }
+.du-opt[disabled] { opacity: .45; cursor: not-allowed; }
+.du-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 10px; }
+.du-count { background: var(--du-soft); border-radius: 10px; padding: 7px 12px; font-size: .84rem; } .du-count b { font-size: 1.05rem; margin-right: 4px; }
+
+/* caries */
+.du-csec { margin-bottom: 18px; } .du-csec h3 { font-size: 1rem; margin: 0 0 8px; }
+.du-crow { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--du-line); }
+.du-crow .du-ctext { font-size: .92rem; } .du-crow small { color: var(--du-muted); display: block; font-size: .74rem; }
+.du-sumgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.du-sumbox { background: var(--du-soft); border-radius: 12px; padding: 12px 14px; } .du-sumbox span { display: block; font-size: .74rem; text-transform: uppercase; font-weight: 700; color: var(--du-muted); }
+.du-sumbox b { font-size: 1.3rem; } .du-sumbox small { display: block; color: var(--du-muted); }
+.du-sumbox.is-high { background: #fee2e2; } .du-sumbox.is-low { background: #dcfce7; } .du-sumbox.is-moderate { background: #fef3c7; }
+
+/* modal */
+.du-modal { position: fixed; inset: 0; z-index: 1000; background: rgba(15,23,42,.55); display: flex; align-items: flex-start; justify-content: center; padding: 4vh 14px; overflow-y: auto; }
+.du-modal[hidden] { display: none; }
+.du-modal-box { background: var(--du-card); color: var(--du-text); border-radius: 16px; padding: 22px; width: min(720px, 100%); box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+.du-modal-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; } .du-modal-head h2 { margin: 0; font-size: 1.2rem; }
+.du-x { border: 0; background: transparent; font-size: 1.8rem; line-height: 1; cursor: pointer; color: var(--du-muted); }
+.du-drop { display: flex; align-items: center; justify-content: center; text-align: center; border: 2px dashed var(--du-line); border-radius: 14px; padding: 26px; margin-top: 14px; cursor: pointer; color: var(--du-muted); }
+.du-drop.is-over, .du-drop:hover { border-color: var(--du-accent); background: var(--du-soft); }
+.du-files { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.du-files li { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--du-line); border-radius: 10px; }
+.du-files img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; background: var(--du-soft); } .du-fname { flex: 1; min-width: 0; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.du-fstat { font-size: .78rem; font-weight: 700; color: var(--du-muted); } .du-fstat.ok { color: #15803d; } .du-fstat.err { color: #b91c1c; } .du-fstat.run { color: #1d4ed8; }
+.du-frm { border: 0; background: transparent; cursor: pointer; color: var(--du-muted); font-size: 1.2rem; }
+.du-ocr-result { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: var(--du-soft); font-size: .9rem; } .du-ocr-result[hidden] { display: none; }
+.du-modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+@media (max-width: 720px) {
+    .du-tab { min-width: 118px; } .du-tab span { font-size: .78rem; } .du-sigblock { grid-template-columns: 1fr; gap: 24px; }
+    .du-card { padding: 14px; } .du-savebar { padding: 8px 10px; }
+}
+
+/* print: all sections, no chrome */
+@media print {
+    .sidebar, .topbar, .du-tabs, .du-savebar, .du-patient-actions, .du-picker, .du-toolbar, .du-modal, .du-ocr-banner, #dnScannedTreat, #dnTreatForm, .du-hint { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+    .du-panel { display: block !important; page-break-before: always; } .du-panel[data-panel="A"] { page-break-before: auto; }
+    .du-card { border: 1px solid #999; break-inside: avoid; box-shadow: none; }
+    .du-wrap * { color: #000 !important; }
+    .du-check input:checked + span, .du-yn input:checked + span { background: #000 !important; color: #fff !important; }
+}
+
+/* =====================================================================
+ * SHARED ADAPTERS - make the older list pages and their form modals look like the Dental module
+ * (General Consultation, Maternal Care, Child Immunization)
+ * ================================================================== */
+.du-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.du-actions .search-box { width: 260px; max-width: 100%; padding: 9px 12px; border: 1px solid var(--du-line); border-radius: 10px; background: var(--du-card); color: var(--du-text); font: inherit; }
+.du-actions .search-box:focus { outline: 2px solid var(--du-accent); outline-offset: 1px; }
+.du-actions .du-btn svg { width: 16px; height: 16px; }
+
+/* list tables */
+.du-wrap .table-scroll { overflow-x: auto; }
+.du-wrap .unified-table { width: 100%; border-collapse: collapse; font-size: .92rem; background: transparent; }
+.du-wrap .unified-table th { text-align: left; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--du-muted); padding: 9px 10px; border-bottom: 1px solid var(--du-line); white-space: nowrap; background: transparent; }
+.du-wrap .unified-table td { padding: 10px; border-bottom: 1px solid var(--du-line); vertical-align: middle; color: var(--du-text); }
+.du-wrap .unified-table tbody tr:hover td { background: var(--du-soft); }
+.du-card > .table-scroll, .du-card > table { margin-top: 4px; }
+
+/* form modal shell (older pages) */
+.du-form-modal { position: relative; border-radius: 16px !important; padding: 22px 24px !important; width: min(860px, 96vw) !important; max-width: 860px !important; max-height: 92vh; overflow-y: auto !important;
+            background: var(--du-card); color: var(--du-text); border-top: 4px solid var(--du-accent) !important; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+.du-form-modal .close-btn { position: absolute; top: 10px; right: 16px; font-size: 1.8rem; line-height: 1; cursor: pointer; color: var(--du-muted); }
+.du-form-modal .close-btn:hover { color: var(--du-text); }
+.du-mhead { text-align: center; margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--du-line); }
+.du-mhead h3 { margin: 0; font-family: Georgia, serif; font-size: 1.05rem; color: var(--du-head); text-transform: uppercase; letter-spacing: .02em; }
+.du-mhead h2 { margin: 4px 0 0; font-size: 1.15rem; letter-spacing: .08em; color: var(--du-accent); }
+
+/* scan / OCR box (same on every form) */
+.du-ocrbox { background: var(--du-soft); border: 1px dashed var(--du-accent); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; text-align: left; }
+.du-ocr-title { font-weight: 700; color: var(--du-head); display: flex; align-items: center; gap: 8px; }
+.du-ocr-title svg { width: 18px; height: 18px; color: var(--du-accent); }
+.du-ocr-help { margin: 4px 0 10px; font-size: .82rem; color: var(--du-muted); }
+.du-ocr-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.du-ocr-row input[type=file] { flex: 1 1 200px; font-size: .85rem; max-width: 100%; }
+.du-ocr-file { font-size: .85rem; color: var(--du-muted); flex: 1 1 120px; }
+.du-ocrbox .ocr-status, .du-ocrbox .du-ocr-status { display: block; margin-top: 8px; font-size: .84rem; }
+
+/* section headings inside the forms */
+.du-form-modal .form-section-title, .du-form-modal .section-title {
+    font-size: .8rem !important; font-weight: 800 !important; text-transform: uppercase; letter-spacing: .06em; color: var(--du-accent) !important;
+    border-bottom: 1px solid var(--du-line) !important; padding-bottom: 6px !important; margin: 22px 0 12px !important; }
+
+/* fields */
+.du-form-modal label { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--du-muted); }
+.du-form-modal input[type=text], .du-form-modal input[type=number], .du-form-modal input[type=date], .du-form-modal input[type=time], .du-form-modal input[type=tel], .du-form-modal input[type=email], .du-form-modal select, .du-form-modal textarea {
+    padding: 9px 11px; border: 1px solid var(--du-line); border-radius: 8px; background: var(--du-card); color: var(--du-text); font: inherit; box-sizing: border-box; }
+.du-form-modal input:focus, .du-form-modal select:focus, .du-form-modal textarea:focus { outline: 2px solid var(--du-accent); outline-offset: 1px; }
+.du-form-modal .mh-name-sub { text-transform: none; letter-spacing: 0; }
+/* inputs that live inside the paper-style tables stay borderless */
+.du-form-modal .imm-table input, .du-form-modal .consult-table input, .du-form-modal .imm-table select, .du-form-modal .consult-table select { border: none; border-radius: 0; background: transparent; padding: 6px; }
+.du-form-modal [style*="border: 2px dashed"], .du-form-modal [style*="border:2px dashed"] { border-radius: 12px; }
+.du-form-modal h4 { color: var(--du-head); }
+
+/* primary save button inside the forms */
+.du-btn-block { width: 100%; justify-content: center; padding: 13px 16px; font-size: 1rem; }
+
+@media (max-width: 640px) {
+    .du-form-modal { padding: 16px 14px !important; }
+    .du-actions .search-box { width: 100%; }
+}
+
+.du-sr { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; pointer-events: none; }

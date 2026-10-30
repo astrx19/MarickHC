@@ -1,0 +1,10 @@
+# Marick Health Center - clean URLs
+# /admin/login  ->  /admin/login.php   (same for every page: /patient_login, /faq, /admin/dashboard ...)
+Options -Indexes -MultiViews
+RewriteEngine On
+
+# Only rewrite when the request is not a real file/folder and a matching .php file exists
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(.+?)/?$ $1.php [L]

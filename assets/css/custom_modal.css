@@ -1,0 +1,194 @@
+/* ==============================================================
+   MARICK HEALTH CENTER - CUSTOM MODAL & NOTIFICATION ENGINE
+   Replaces native alert() / confirm() / prompt() everywhere.
+   Pairs with assets/js/custom_modal.js (mh_alert / mh_confirm / mh_toast)
+   ============================================================== */
+
+:root {
+    --mh-success: #16a34a;
+    --mh-success-bg: #ecfdf5;
+    --mh-warning: #d97706;
+    --mh-warning-bg: #fffbeb;
+    --mh-danger: #dc2626;
+    --mh-danger-bg: #fef2f2;
+    --mh-info: #0ea5e9;
+    --mh-info-bg: #eff6ff;
+}
+
+/* ---------- Backdrop ---------- */
+.mh-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    padding: 20px;
+}
+.mh-modal-backdrop.mh-visible { opacity: 1; }
+
+/* ---------- Card ---------- */
+.mh-modal-card {
+    background: var(--panel-bg, #ffffff);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+    transform: translateY(14px) scale(0.97);
+    opacity: 0;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease;
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.mh-modal-backdrop.mh-visible .mh-modal-card {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.mh-modal-body {
+    padding: 28px 26px 24px;
+    text-align: center;
+}
+
+.mh-modal-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+.mh-modal-icon svg { width: 28px; height: 28px; }
+
+.mh-modal-icon.mh-type-success { background: var(--mh-success-bg); color: var(--mh-success); }
+.mh-modal-icon.mh-type-warning { background: var(--mh-warning-bg); color: var(--mh-warning); }
+.mh-modal-icon.mh-type-danger  { background: var(--mh-danger-bg); color: var(--mh-danger); }
+.mh-modal-icon.mh-type-info    { background: var(--mh-info-bg); color: var(--mh-info); }
+
+.mh-modal-title {
+    margin: 0 0 8px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--heading-color, #1e293b);
+}
+
+.mh-modal-message {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--text-color, #475569);
+    white-space: pre-line;
+}
+
+.mh-modal-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+.mh-modal-input:focus {
+    outline: none;
+    border-color: var(--primary, #4ca1af);
+    box-shadow: 0 0 0 3px rgba(76, 161, 175, 0.15);
+}
+
+/* ---------- Actions ---------- */
+.mh-modal-actions {
+    display: flex;
+    gap: 10px;
+    padding: 0 26px 26px;
+}
+.mh-modal-actions button {
+    flex: 1;
+    padding: 11px 16px;
+    border-radius: 999px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    font-family: inherit;
+    transition: filter 0.15s ease, transform 0.05s ease, background-color 0.15s ease;
+}
+.mh-modal-actions button:active { transform: scale(0.97); }
+
+.mh-btn-cancel {
+    background: var(--bg-hover, #f1f5f9);
+    color: var(--heading-color, #334155);
+    border-color: var(--border-color, #e2e8f0) !important;
+}
+.mh-btn-cancel:hover { background: var(--border-color, #e2e8f0); }
+
+.mh-btn-confirm {
+    background: var(--button-bg, var(--primary, #4ca1af));
+    color: var(--button-text, #ffffff);
+}
+.mh-btn-confirm:hover { filter: brightness(0.92); }
+
+.mh-btn-confirm.mh-type-danger  { background: var(--mh-danger); }
+.mh-btn-confirm.mh-type-warning { background: var(--mh-warning); }
+.mh-btn-confirm.mh-type-success { background: var(--mh-success); }
+.mh-btn-confirm.mh-type-info    { background: var(--mh-info); }
+
+/* ---------- Toasts ---------- */
+.mh-toast-stack {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 100001;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 340px;
+}
+.mh-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: var(--panel-bg, #ffffff);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+    padding: 13px 14px;
+    border-left: 4px solid var(--mh-info);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.9rem;
+    color: var(--text-color, #334155);
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+.mh-toast.mh-visible { transform: translateX(0); opacity: 1; }
+.mh-toast.mh-leaving { transform: translateX(120%); opacity: 0; }
+
+.mh-toast.mh-type-success { border-left-color: var(--mh-success); }
+.mh-toast.mh-type-warning { border-left-color: var(--mh-warning); }
+.mh-toast.mh-type-danger  { border-left-color: var(--mh-danger); }
+.mh-toast.mh-type-info    { border-left-color: var(--mh-info); }
+
+.mh-toast-icon { flex-shrink: 0; width: 20px; height: 20px; margin-top: 1px; }
+.mh-toast-icon.mh-type-success { color: var(--mh-success); }
+.mh-toast-icon.mh-type-warning { color: var(--mh-warning); }
+.mh-toast-icon.mh-type-danger  { color: var(--mh-danger); }
+.mh-toast-icon.mh-type-info    { color: var(--mh-info); }
+.mh-toast-icon svg { width: 100%; height: 100%; }
+
+.mh-toast-text { flex: 1; line-height: 1.4; }
+.mh-toast-close {
+    background: none; border: none; cursor: pointer; color: var(--text-muted, #94a3b8);
+    font-size: 1rem; line-height: 1; padding: 0 0 0 6px; flex-shrink: 0;
+}
+.mh-toast-close:hover { color: var(--heading-color, #475569); }
+
+@media (max-width: 480px) {
+    .mh-toast-stack { left: 12px; right: 12px; max-width: none; top: 12px; }
+    .mh-modal-card { max-width: 100%; }
+}
