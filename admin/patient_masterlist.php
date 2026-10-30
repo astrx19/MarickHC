@@ -74,7 +74,6 @@ $patients_result = $conn->query($query);
     <title>Patient Masterlist - <?php echo htmlspecialchars($system_name); ?></title>
     <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
     
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <style>
         /* Page-specific only — shared table/panel/badge/modal/button styling
@@ -269,40 +268,23 @@ $patients_result = $conn->query($query);
     <script>
         window.onload = function() {
             <?php if($success_msg): ?>
-                Swal.fire({
-                    title: 'Success!',
-                    text: '<?php echo $success_msg; ?>',
-                    icon: 'success',
-                    confirmButtonColor: '#10b981'
-                }).then(() => {
-                    window.history.replaceState(null, null, window.location.pathname);
-                });
+                mh_notify(<?php echo mh_js($success_msg); ?>, 'success');
+                window.history.replaceState(null, null, window.location.pathname);
             <?php endif; ?>
 
             <?php if($error_msg): ?>
-                Swal.fire({
-                    title: 'Error!',
-                    text: '<?php echo $error_msg; ?>',
-                    icon: 'error',
-                    confirmButtonColor: '#ef4444'
-                });
+                mh_notify(<?php echo mh_js($error_msg); ?>, 'error');
             <?php endif; ?>
         };
 
-        function confirmArchive(patientId) {
-            Swal.fire({
-                title: 'Archive this patient?',
-                text: "They will be removed from this list but saved in System Archives.",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#ef4444',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: 'Yes, Archive'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    document.getElementById('archiveForm_' + patientId).submit();
-                }
-            });
+        async function confirmArchive(patientId) {
+            const ok = await mh_confirm(
+                'They will be removed from this list but saved in System Archives.',
+                'Archive this patient?', 'danger', 'Yes, Archive'
+            );
+            if (ok) {
+                document.getElementById('archiveForm_' + patientId).submit();
+            }
         }
 
         function openEditModal(button) {

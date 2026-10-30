@@ -214,7 +214,7 @@ while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r
                                     <div style="display:flex; gap:8px;">
                                         <button type="submit" name="edit_department" class="btn-primary dp-small">Save</button>
                                         <button type="submit" name="delete_department" class="dp-small" style="background:#fee2e2; color:#991b1b; border:0; border-radius:8px;"
-                                                onclick="return confirm('Delete this department? This only works if it was never used in the queue.');">Delete</button>
+                                                data-confirm="Delete this department? This only works if it was never used in the queue." data-confirm-title="Delete department?" data-confirm-type="danger" data-confirm-ok="Delete">Delete</button>
                                     </div>
                                 </form>
                                 <?php if ($used > 0): ?><small style="color:var(--text-muted, #64748b);">Renaming keeps its <?php echo (int) $used; ?> queue record(s) attached to the new name.</small><?php endif; ?>

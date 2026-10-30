@@ -411,7 +411,6 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
     <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
     
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <style>
         input[type=number]::-webkit-inner-spin-button, 
@@ -875,18 +874,12 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
         }
 
         window.onload = function() {
-            $('#patientSelect').select2({
-                placeholder: "Search by name or ID...",
-                allowClear: true
-            });
+            mhSelect2('#patientSelect', { placeholder: 'Search by name or ID...' });
             <?php if ($queue_patient_id > 0): ?>
             $('#patientSelect').val('<?php echo (int) $queue_patient_id; ?>').trigger('change');   // patient from the queue
             <?php endif; ?>
 
-            $('#medicineSelect').select2({
-                placeholder: "Search generic or brand name...",
-                allowClear: true
-            });
+            mhSelect2('#medicineSelect', { placeholder: 'Search generic or brand name...' });
 
             <?php if ($error_msg !== '' && (int) $old['inventory_id'] > 0): ?>
             restoreForm(<?php echo json_encode($old, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>);
@@ -906,23 +899,12 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
             <?php endif; ?>
 
             <?php if($success_msg): ?>
-                Swal.fire({
-                    title: 'Success!',
-                    text: <?php echo json_encode($success_msg, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
-                    icon: 'success',
-                    confirmButtonColor: '#10b981'
-                }).then(() => {
-                    window.history.replaceState(null, null, window.location.pathname);
-                });
+                mh_notify(<?php echo mh_js($success_msg); ?>, 'success');
+                window.history.replaceState(null, null, window.location.pathname);
             <?php endif; ?>
 
             <?php if($error_msg): ?>
-                Swal.fire({
-                    title: 'Error!',
-                    text: <?php echo json_encode($error_msg, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>,
-                    icon: 'error',
-                    confirmButtonColor: '#ef4444'
-                });
+                mh_notify(<?php echo mh_js($error_msg); ?>, 'error');
             <?php endif; ?>
         };
 
@@ -931,22 +913,12 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
             const quantity = document.getElementById('disp_total_qty').value;
 
             if(!currentGroup || !currentBatch || !patientSelect.value || !quantity || quantity < 1) {   // incomplete
-                Swal.fire({
-                    title: 'Incomplete Form',
-                    text: 'Please select a medicine, a batch / lot, a patient, and enter a valid quantity to dispense.',
-                    icon: 'warning',
-                    confirmButtonColor: '#0369a1'
-                });
+                mh_alert('Please select a medicine, a batch / lot, a patient, and enter a valid quantity to dispense.', 'Incomplete Form', 'warning');
                 return;
             }
 
             if(!validateQty(false)) {
-                Swal.fire({
-                    title: 'Not Enough Stock',
-                    text: 'Only ' + currentBatch.quantity.toLocaleString() + ' ' + currentBatch.unit + ' left in this batch.',
-                    icon: 'error',
-                    confirmButtonColor: '#ef4444'
-                });
+                mh_alert('Only ' + currentBatch.quantity.toLocaleString() + ' ' + currentBatch.unit + ' left in this batch.', 'Not Enough Stock', 'danger');
                 return;
             }
 
@@ -954,18 +926,16 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
             const patientName = patientSelect.options[patientSelect.selectedIndex].text;
             const isOverride = document.getElementById('fefoWarningBanner').style.display !== 'none';
 
-            Swal.fire({
-                title: isOverride ? 'Confirm Dispensing (FEFO Override)' : 'Confirm Dispensing',
-                html: 'Dispense <strong>' + escHtml(quantity) + ' ' + escHtml(currentBatch.unit) + '</strong> of <strong>' + escHtml(itemName) + '</strong>' +
-                      ' (Lot ' + escHtml(currentBatch.batch_number || 'N/A') + ') to <strong>' + escHtml(patientName) + '</strong>?' +
-                      (isOverride ? '<br><br><span style="color:#c2410c;">An earlier-expiring batch still has stock - this will be logged as a FEFO override.</span>' : ''),
-                icon: isOverride ? 'warning' : 'question',
-                showCancelButton: true,
-                confirmButtonColor: isOverride ? '#c2410c' : '#10b981',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: 'Yes, Dispense'
-            }).then((result) => {
-                if (result.isConfirmed) {
+            mh_confirm(
+                'Dispense <strong>' + escHtml(quantity) + ' ' + escHtml(currentBatch.unit) + '</strong> of <strong>' + escHtml(itemName) + '</strong>' +
+                ' (Lot ' + escHtml(currentBatch.batch_number || 'N/A') + ') to <strong>' + escHtml(patientName) + '</strong>?' +
+                (isOverride ? '<br><br><span class="mh-text-warning">An earlier-expiring batch still has stock - this will be logged as a FEFO override.</span>' : ''),
+                isOverride ? 'Confirm Dispensing (FEFO Override)' : 'Confirm Dispensing',
+                isOverride ? 'warning' : 'info',
+                'Yes, Dispense',
+                { html: true }
+            ).then(function (ok) {
+                if (ok) {
                     document.getElementById('dispenseForm').submit();
                 }
             });

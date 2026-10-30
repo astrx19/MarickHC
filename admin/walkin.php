@@ -223,9 +223,6 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
         .form-section { display: none; padding: 25px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02); margin-bottom: 25px; }
         .form-section.active { display: block; }
         .routing-section { background: #fffbeb; border: 1px dashed #f59e0b; padding: 25px; border-radius: 12px; margin-bottom: 25px; }
-        .select2-container .select2-selection--single { height: 48px !important; border: 1px solid #cbd5e1 !important; border-radius: 6px !important; display: flex; align-items: center; }
-        .select2-container--default .select2-selection--single .select2-selection__arrow { height: 46px !important; }
-        .select2-container--default .select2-selection--single .select2-selection__rendered { color: #334155; font-size: 1.05rem; padding-left: 12px; }
         @media (max-width: 640px) {
             .name-row { grid-template-columns: 1fr !important; }
         }

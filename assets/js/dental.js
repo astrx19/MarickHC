@@ -7,6 +7,10 @@
     var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
     var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
     var dirty = false, submitting = false;
+    // Unified confirm dialog (assets/js/custom_modal.js) with a native fallback if that script failed to load.
+    var ask = function (msg, title, type, okText) {
+        return window.mh_confirm ? window.mh_confirm(msg, title, type, okText) : Promise.resolve(window.confirm(msg));
+    };
 
     /* ------------------------------------------------------------------
      * LIST PAGE helpers
@@ -184,7 +188,9 @@
         });
         $('#dnResetAll').addEventListener('click', function () {
             if (!D.canEdit || !Object.keys(odo).length) { return; }
-            if (confirm('Clear every tooth on the chart?')) { odo = {}; sel = {}; markDirty(); renderChart(); }
+            ask('Clear every tooth on the chart?', 'Clear the chart?', 'danger', 'Clear chart').then(function (ok) {
+                if (ok) { odo = {}; sel = {}; markDirty(); renderChart(); }
+            });
         });
         $('#dnMulti').addEventListener('change', function (e) { multi = e.target.checked; });
         $$('#dnArchView button').forEach(function (b) {
@@ -276,8 +282,9 @@
             b.addEventListener('click', function () {
                 var g = b.dataset.group; if (g === group || !D.canEdit) { return; }
                 var has = Object.keys(answersBy[group] || {}).length > 0;
-                if (has && !confirm('Switching the age form keeps the answers you entered for the other form, but only the form on screen is saved. Switch?')) { return; }
-                group = g; renderCaries(); markDirty();
+                var doSwitch = function () { group = g; renderCaries(); markDirty(); };
+                if (!has) { doSwitch(); return; }
+                ask('Switching the age form keeps the answers you entered for the other form, but only the form on screen is saved. Switch?', 'Switch age form?', 'warning', 'Switch').then(function (ok) { if (ok) { doSwitch(); } });
             });
         });
         renderCaries();
@@ -339,8 +346,14 @@
         var f = m.fields || {};
         var sl = f['patient.last_name'], sf = f['patient.first_name'];
         if (sl && sf && (norm(sl) !== norm(D.patientLast) || norm(sf) !== norm(D.patientFirst))) {
-            if (!confirm('The scanned forms look like they belong to "' + sf + ' ' + sl + '", but this chart is for "' + D.patientFirst + ' ' + D.patientLast + '".\n\nFill this chart anyway?')) { return; }
+            ask('The scanned forms look like they belong to "' + sf + ' ' + sl + '", but this chart is for "' + D.patientFirst + ' ' + D.patientLast + '".\n\nFill this chart anyway?',
+                'Different patient?', 'warning', 'Fill anyway').then(function (ok) { if (ok) { doApplyOcr(m, f); } });
+            return;
         }
+        doApplyOcr(m, f);
+    }
+
+    function doApplyOcr(m, f) {
         var filled = 0;
         Object.keys(f).forEach(function (k) { if (k.indexOf('patient.') === 0) { return; } if (setByName(dotToName(k), f[k])) { filled++; } });
         var teeth = Object.keys(m.odontogram || {}).length;
@@ -376,11 +389,15 @@
         var fileInput = $('#dnFiles'), listEl = $('#dnFileList'), resEl = $('#dnOcrResult'), startBtn = $('#dnOcrStart');
         var openers = $$('#dnOpenOcr');
         function openModal() { modal.hidden = false; document.body.style.overflow = 'hidden'; }
-        function closeModal() { if (running && !confirm('A scan is still running. Close anyway?')) { return; } modal.hidden = true; document.body.style.overflow = ''; }
+        function hideModal() { modal.hidden = true; document.body.style.overflow = ''; }
+        function closeModal() {
+            if (!running) { hideModal(); return; }
+            ask('A scan is still running. Close anyway?', 'Scan in progress', 'warning', 'Close anyway').then(function (ok) { if (ok) { hideModal(); } });
+        }
         openers.forEach(function (b) { b.addEventListener('click', openModal); });
         $('#dnOcrClose').addEventListener('click', closeModal); $('#dnOcrCancel').addEventListener('click', closeModal);
         modal.addEventListener('click', function (e) { if (e.target === modal) { closeModal(); } });
-        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden) { closeModal(); } });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden && !document.querySelector('.mh-modal-backdrop')) { closeModal(); } });
 
         function renderFiles() {
             listEl.innerHTML = files.map(function (f, i) {
@@ -485,7 +502,7 @@
                 var nm = ((merged.fields['patient.first_name'] || '') + ' ' + (merged.fields['patient.last_name'] || '')).trim();
                 resEl.innerHTML = '<strong>Done.</strong> ' + total + ' item(s) read' + (nm ? ' for <b>' + esc(nm) + '</b>' : '') + ', but no registered patient matched. Choose the patient (register them first if they are new):' +
                     '<div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;"><select id="dnPickPatient" style="flex:1 1 240px;">' + opts + '</select><button type="button" class="du-btn du-btn-primary" id="dnGoPicked">Open chart and review</button></div>';
-                $('#dnGoPicked').addEventListener('click', function () { var v = $('#dnPickPatient').value; if (v) { go(v); } else { alert('Choose a patient first.'); } });
+                $('#dnGoPicked').addEventListener('click', function () { var v = $('#dnPickPatient').value; if (v) { go(v); } else { if (window.mh_toast) { window.mh_toast('Choose a patient first.', 'warning'); } else { window.alert('Choose a patient first.'); } } });
             }
         }
         renderFiles();

@@ -170,89 +170,7 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
         .vitals-grid label { font-size: 0.8rem; color: #166534; font-weight: bold; }
         .vitals-grid input { padding: 8px; border: 1px solid #bbf7d0; border-radius: 4px; width: 100%; font-size: 0.95rem; }
 
-        .select2-container .select2-selection--single {
-            height: 42px !important;
-            border: 1px solid var(--border-color, #cbd5e1) !important;
-            border-radius: 6px !important;
-            display: flex;
-            align-items: center;
-        }
-        .select2-container--default .select2-selection--single .select2-selection__arrow {
-            height: 40px !important;
-        }
-        .select2-container--default .select2-selection--single .select2-selection__rendered {
-            color: var(--text-main, #334155);
-            font-size: 1rem;
-            padding-left: 12px;
-        }
 
-        /* Custom Modal Popup Styles matching dental/success popups */
-        .custom-popup-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.6);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 99999;
-        }
-        .custom-popup-box {
-            background: var(--bg-card, #ffffff);
-            width: 420px;
-            padding: 35px 25px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            animation: popupScale 0.25s ease-in-out;
-        }
-        @keyframes popupScale {
-            from { transform: scale(0.8); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-        }
-        .custom-popup-icon {
-            width: 75px; height: 75px;
-            border: 3px solid #d1fae5;
-            background: #f0fdf4;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px auto;
-            color: #10b981;
-        }
-        .custom-popup-icon .mh-icon { width: 36px; height: 36px; }
-        .custom-popup-icon.error {
-            border: 3px solid #fee2e2;
-            background: #fef2f2;
-            color: #ef4444;
-        }
-        .custom-popup-title {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--heading-color, #1e293b);
-            margin-bottom: 10px;
-        }
-        .custom-popup-message {
-            font-size: 0.95rem;
-            color: var(--text-muted, #64748b);
-            margin-bottom: 25px;
-            line-height: 1.5;
-        }
-        .custom-popup-btn {
-            background: #10b981;
-            color: white;
-            border: none;
-            padding: 10px 35px;
-            font-size: 1rem;
-            font-weight: 600;
-            border-radius: 6px;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);
-        }
-        .custom-popup-btn.error-btn {
-            background: #ef4444;
-            box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);
-        }
     </style>
     <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
     <link rel="stylesheet" href="../assets/css/dept_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/dept_ui.css'); ?>">
@@ -266,14 +184,7 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
 
         <div class="dashboard-container du-wrap">
             
-            <?php 
-            if($success_msg) {
-                echo "<script>document.addEventListener('DOMContentLoaded', function() { showCustomModal('Success!', '".addslashes($success_msg)."', 'success'); });</script>";
-            }
-            if($error_msg) {
-                echo "<script>document.addEventListener('DOMContentLoaded', function() { showCustomModal('Error!', '".addslashes($error_msg)."', 'error'); });</script>";
-            }
-            ?>
+            <?php echo mh_flash_scripts($success_msg ?? '', $error_msg ?? ''); ?>
 
             <div class="du-pagehead">
                 <div><h1>Prenatal Care Log</h1><p>Prenatal visits and maternal health records.</p></div>
@@ -339,16 +250,6 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
                 <?php endif; ?>
             </div>
 
-        </div>
-    </div>
-
-    <!-- Custom Modal Popup Container -->
-    <div class="custom-popup-overlay" id="customPopupModal">
-        <div class="custom-popup-box">
-            <div class="custom-popup-icon" id="customPopupIcon"><?php echo mh_icon('check'); ?></div>
-            <div class="custom-popup-title" id="customPopupTitle">Success!</div>
-            <div class="custom-popup-message" id="customPopupMessage">Message goes here...</div>
-            <button class="custom-popup-btn" id="customPopupBtn" onclick="closeCustomModal()">OK</button>
         </div>
     </div>
 
@@ -451,27 +352,6 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
         const MH_ICON_WARN = <?php echo json_encode(mh_icon('alert-triangle')); ?>;
         const MH_ICON_REFRESH = <?php echo json_encode(mh_icon('refresh-cw')); ?>;
 
-        function showCustomModal(title, message, type = 'success') {
-            $('#customPopupTitle').text(title);
-            $('#customPopupMessage').text(message);
-            
-            let iconDiv = $('#customPopupIcon');
-            let btn = $('#customPopupBtn');
-            
-            if(type === 'error') {
-                iconDiv.addClass('error').html(MH_ICON_X);
-                btn.addClass('error-btn');
-            } else {
-                iconDiv.removeClass('error').html(MH_ICON_CHECK);
-                btn.removeClass('error-btn');
-            }
-            
-            $('#customPopupModal').css('display', 'flex');
-        }
-
-        function closeCustomModal() {
-            $('#customPopupModal').hide();
-        }
 
         function handleOcrFileSelected(input) {
             if (input.files && input.files[0]) {
@@ -484,7 +364,7 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
         function triggerOcrScan() {
             let fileInput = document.getElementById('ocrFile');
             if (!fileInput.files || fileInput.files.length === 0) {
-                showCustomModal('Notice', 'Please select or capture an image of the immunization document first.', 'error');
+                mh_alert('Please select or capture an image of the immunization document first.', 'Notice', 'info');
                 return;
             }
 

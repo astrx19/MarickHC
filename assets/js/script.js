@@ -203,10 +203,11 @@ document.addEventListener('DOMContentLoaded', function() {
 if (typeof jQuery !== 'undefined') {
     $(document).ready(function() {
         if ($('#patientSelect').length) {
-            $('#patientSelect').select2({
-                placeholder: "Search masterlist...",
-                allowClear: true
-            });
+            if (typeof mhSelect2 === 'function') {
+                mhSelect2('#patientSelect', { placeholder: 'Search masterlist...' });
+            } else {
+                $('#patientSelect').select2({ placeholder: 'Search masterlist...', allowClear: true });
+            }
         }
     });
 }

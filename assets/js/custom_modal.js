@@ -42,7 +42,7 @@
 
             var backdrop = document.createElement('div');
             backdrop.className = 'mh-modal-backdrop';
-            backdrop.setAttribute('role', 'dialog');
+            backdrop.setAttribute('role', opts.mode === 'alert' ? 'alertdialog' : 'dialog');
             backdrop.setAttribute('aria-modal', 'true');
 
             var card = document.createElement('div');
@@ -63,7 +63,8 @@
 
             var message = document.createElement('p');
             message.className = 'mh-modal-message';
-            message.textContent = opts.message || '';
+            if (opts.html) { message.innerHTML = opts.message || ''; }   // caller is responsible for escaping dynamic parts
+            else { message.textContent = opts.message || ''; }
             body.appendChild(message);
 
             var input = null;
@@ -167,9 +168,10 @@
      * mh_confirm(message, title, type) -> Promise<boolean>
      * Resolves true if confirmed, false if canceled/dismissed.
      */
-    window.mh_confirm = function (message, title, type, confirmText) {
+    window.mh_confirm = function (message, title, type, confirmText, options) {
         return buildModal({
             mode: 'confirm',
+            html: !!(options && options.html),
             message: message,
             title: title || 'Are you sure?',
             type: type || 'warning',
@@ -250,8 +252,21 @@
         duration = duration || 3500;
 
         var stack = getToastStack();
+
+        // Same message already on screen? Do not stack a duplicate.
+        var key = type + '|' + String(message == null ? '' : message);
+        var existing = stack.querySelectorAll('.mh-toast');
+        for (var i = 0; i < existing.length; i++) {
+            if (existing[i].getAttribute('data-key') === key && !existing[i].classList.contains('mh-leaving')) { return; }
+        }
+        // Keep the stack readable: drop the oldest beyond 4.
+        while (stack.children.length >= 4) { stack.removeChild(stack.firstChild); }
+
         var toast = document.createElement('div');
         toast.className = 'mh-toast mh-type-' + type;
+        toast.setAttribute('data-key', key);
+        toast.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+        toast.style.setProperty('--mh-toast-dur', duration + 'ms');
 
         var icon = document.createElement('span');
         icon.className = 'mh-toast-icon mh-type-' + type;
@@ -266,6 +281,7 @@
         var closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'mh-toast-close';
+        closeBtn.setAttribute('aria-label', 'Dismiss');
         closeBtn.innerHTML = '&times;';
         toast.appendChild(closeBtn);
 
@@ -282,9 +298,17 @@
         }
 
         closeBtn.addEventListener('click', remove);
-        var timer = setTimeout(remove, duration);
-        toast.addEventListener('mouseenter', function () { clearTimeout(timer); });
-        toast.addEventListener('mouseleave', function () { timer = setTimeout(remove, 1200); });
+        // Hover pauses BOTH the countdown and the progress bar (see .mh-toast:hover::after), then resumes with the time left.
+        var remaining = duration, startedAt = Date.now();
+        var timer = setTimeout(remove, remaining);
+        toast.addEventListener('mouseenter', function () {
+            clearTimeout(timer);
+            remaining = Math.max(remaining - (Date.now() - startedAt), 600);
+        });
+        toast.addEventListener('mouseleave', function () {
+            startedAt = Date.now();
+            timer = setTimeout(remove, remaining);
+        });
 
         requestAnimationFrame(function () { toast.classList.add('mh-visible'); });
     };

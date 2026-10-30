@@ -102,26 +102,6 @@ $system_name = $system_name ?? mh_setting('system_name');
             color: #4ca1af;
         }
 
-        .custom-alert-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.6); z-index: 99999; align-items: center;
-            justify-content: center; backdrop-filter: blur(3px);
-        }
-        .custom-alert-overlay.active { display: flex; }
-        .custom-alert-box {
-            background: white; width: 90%; max-width: 400px; border-radius: 12px;
-            padding: 30px 25px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
-        }
-        .custom-alert-box .alert-icon { display: flex; justify-content: center; margin-bottom: 15px; color: #ef4444; }
-        .custom-alert-box .alert-icon .mh-icon { width: 56px; height: 56px; }
-        .custom-alert-box h3 { margin: 0 0 10px 0; color: #1e293b; font-size: 1.4rem; font-family: Georgia, serif; }
-        .custom-alert-box p { color: #64748b; font-size: 0.95rem; margin: 0 0 25px 0; line-height: 1.5; }
-        .btn-alert-ok {
-            background: #ef4444; color: white; border: none; padding: 12px 30px;
-            border-radius: 6px; font-weight: bold; font-size: 1rem; cursor: pointer;
-            transition: 0.2s; width: 100%; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2);
-        }
-        .btn-alert-ok:hover { background: #dc2626; transform: translateY(-2px); }
     </style>
     <?php define('MH_ASSET_PATH', 'assets/'); include __DIR__ . '/includes/modal_assets.php'; ?>
 </head>
@@ -157,21 +137,7 @@ $system_name = $system_name ?? mh_setting('system_name');
         <a href="index.php" class="back-link"><?php echo mh_icon('arrow-left'); ?> Return to Homepage</a>
     </div>
 
-    <div class="custom-alert-overlay" id="customAlertModal">
-        <div class="custom-alert-box">
-            <div class="alert-icon"><?php echo mh_icon('alert-triangle'); ?></div>
-            <h3>Login Failed</h3>
-            <p id="alertMessage">Message goes here.</p>
-            <button type="button" class="btn-alert-ok" onclick="closeCustomAlert()">OK, I understand</button>
-        </div>
-    </div>
-
     <script>
-        function closeCustomAlert() {
-            document.getElementById('customAlertModal').classList.remove('active');
-            window.history.replaceState(null, null, window.location.pathname);
-        }
-
         function togglePass(inputId, iconSpan) {
             let input = document.getElementById(inputId);
             if (input.type === 'password') {
@@ -195,8 +161,12 @@ $system_name = $system_name ?? mh_setting('system_name');
             <?php endif; ?>
 
             if (errorMessage !== "") {
-                document.getElementById('alertMessage').innerText = errorMessage;
-                document.getElementById('customAlertModal').classList.add('active');
+                // Unified alert modal (assets/js/custom_modal.js) - runs once the deferred scripts are ready.
+                document.addEventListener('DOMContentLoaded', function () {
+                    mh_alert(errorMessage, 'Login Failed', 'danger').then(function () {
+                        window.history.replaceState(null, null, window.location.pathname);
+                    });
+                });
             }
         <?php endif; ?>
     </script>

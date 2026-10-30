@@ -305,8 +305,7 @@ $ver = @filemtime(__DIR__ . '/../assets/js/dental.js');
 <div class="dashboard-container du-wrap">
 
 <?php
-if ($success_msg) { echo "<script>document.addEventListener('DOMContentLoaded', function() { showCustomModal('Success!', " . json_encode($success_msg) . ", 'success'); });</script>"; }
-if ($error_msg)   { echo "<script>document.addEventListener('DOMContentLoaded', function() { showCustomModal('Error!', " . json_encode($error_msg) . ", 'error'); });</script>"; }
+echo mh_flash_scripts($success_msg, $error_msg);
 ?>
 
 <?php if (!$patient): /* ===================== LIST VIEW ===================== */ ?>

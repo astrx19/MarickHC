@@ -96,7 +96,7 @@ function mh_disease_tab_render(mysqli $conn)
                     <div class="dtt-act">
                         <label><input type="checkbox" name="is_active" value="1" <?php echo $c['is_active'] ? 'checked' : ''; ?>> Active</label>
                         <button type="submit" name="edit_condition" class="btn btn-main">Save</button>
-                        <button type="submit" name="delete_condition" class="btn dtt-del" onclick="return confirm('Stop tracking this condition?');">Delete</button>
+                        <button type="submit" name="delete_condition" class="btn dtt-del" data-confirm="Stop tracking this condition?" data-confirm-title="Stop tracking?" data-confirm-type="danger" data-confirm-ok="Stop tracking">Delete</button>
                     </div>
                 </form>
             <?php endforeach; ?>

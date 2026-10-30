@@ -11,6 +11,7 @@
  * admin/ or patient/ can just include this file as-is; it defaults to
  * '../assets/'.
  */
+require_once __DIR__ . '/ui_helpers.php';   // mh_js(), mh_notify_script(), mh_flash_scripts()
 $mh_asset_path = defined('MH_ASSET_PATH') ? MH_ASSET_PATH : '../assets/';
 
 // ---- Favicon -------------------------------------------------------------
@@ -30,4 +31,6 @@ $mh_fav_url = $mh_fav_base . '/assets/images/logo.png?v=' . (int) @filemtime(__D
 <link rel="shortcut icon" type="image/png" href="<?php echo htmlspecialchars($mh_fav_url); ?>">
 <link rel="apple-touch-icon" href="<?php echo htmlspecialchars($mh_fav_url); ?>">
 <link rel="stylesheet" href="<?php echo htmlspecialchars($mh_asset_path); ?>css/custom_modal.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/custom_modal.css'); ?>">
+<link rel="stylesheet" href="<?php echo htmlspecialchars($mh_asset_path); ?>css/mh_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/mh_ui.css'); ?>">
 <script src="<?php echo htmlspecialchars($mh_asset_path); ?>js/custom_modal.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/custom_modal.js'); ?>" defer></script>
+<script src="<?php echo htmlspecialchars($mh_asset_path); ?>js/mh_ui.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_ui.js'); ?>" defer></script>

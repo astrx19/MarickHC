@@ -253,11 +253,6 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
         .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; font-weight: bold; color: var(--text-muted, #64748b); cursor: pointer; }
         .close-btn:hover { color: var(--heading-color, #1e293b); }
 
-        .custom-popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 99999; }
-        .custom-popup-box { background: var(--bg-card, #ffffff); width: 420px; padding: 35px 25px; border-radius: 12px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-        .custom-popup-icon { width: 75px; height: 75px; border: 3px solid #d1fae5; background: #f0fdf4; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px auto; color: #10b981; }
-        .custom-popup-icon .mh-icon { width: 36px; height: 36px; }
-        .custom-popup-icon.error { border: 3px solid #fee2e2; background: #fef2f2; color: #ef4444; }
 
         .ocr-box { border: 2px dashed #38bdf8; background: #f0f9ff; border-radius: 10px; padding: 20px; text-align: center; margin-bottom: 20px; }
         .ocr-title { color: #0284c7; font-weight: bold; font-size: 1.05rem; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -279,14 +274,7 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
         <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
 
         <div class="dashboard-container du-wrap">
-            <?php 
-            if (!empty($success_msg)) { 
-                echo "<script>document.addEventListener('DOMContentLoaded', function() { showCustomModal('Success!', " . json_encode($success_msg) . ", 'success'); });</script>"; 
-            }
-            if (!empty($error_msg)) { 
-                echo "<script>document.addEventListener('DOMContentLoaded', function() { showCustomModal('Error!', " . json_encode($error_msg) . ", 'error'); });</script>"; 
-            }
-            ?>
+            <?php echo mh_flash_scripts($success_msg ?? '', $error_msg ?? ''); ?>
 
             <div class="du-pagehead">
                 <div><h1>Child Immunization Records</h1><p>Child immunization records, vaccines and visit history.</p></div>
@@ -347,16 +335,6 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
                 <div style="padding: 40px 24px; text-align: center; color: var(--text-muted);">You can log new immunization forms here, but your account does not include permission to view the history.</div>
                 <?php endif; ?>
             </div>
-        </div>
-    </div>
-
-    <!-- Custom Modal Popup -->
-    <div class="custom-popup-overlay" id="customPopupModal">
-        <div class="custom-popup-box">
-            <div class="custom-popup-icon" id="customPopupIcon"><?php echo mh_icon('check'); ?></div>
-            <div class="custom-popup-title" id="customPopupTitle" style="font-size:1.3rem; font-weight:bold; margin-bottom:10px;">Success!</div>
-            <div class="custom-popup-message" id="customPopupMessage" style="color:var(--text-muted, #64748b); margin-bottom:20px;">Message...</div>
-            <button class="custom-popup-btn" onclick="closeCustomModal()" style="background:#0284c7; color:white; border:none; padding:8px 25px; border-radius:4px; cursor:pointer;">OK</button>
         </div>
     </div>
 
@@ -511,18 +489,6 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
         const MH_ICON_CHECK_CIRCLE = <?php echo json_encode(mh_icon('check-circle')); ?>;
         const MH_ICON_WARN = <?php echo json_encode(mh_icon('alert-triangle')); ?>;
 
-        function showCustomModal(title, message, type) {
-            $('#customPopupTitle').text(title);
-            $('#customPopupMessage').text(message);
-            if (type === 'error') {
-                $('#customPopupIcon').addClass('error').html(MH_ICON_X);
-            } else {
-                $('#customPopupIcon').removeClass('error').html(MH_ICON_CHECK);
-            }
-            $('#customPopupModal').css('display', 'flex');
-        }
-
-        function closeCustomModal() { $('#customPopupModal').hide(); }
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 

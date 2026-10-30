@@ -328,7 +328,6 @@ $consultations = !$can_view_history ? false : $conn->query("
 
     <?php endif; // can_log ?>
 
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
         const MH_ICON_CHECK = <?php echo json_encode(mh_icon('check-circle')); ?>;
@@ -345,23 +344,12 @@ $consultations = !$can_view_history ? false : $conn->query("
             <?php endif; ?>
 
             <?php if($success_msg): ?>
-                Swal.fire({
-                    title: 'Success!',
-                    text: '<?php echo $success_msg; ?>',
-                    icon: 'success',
-                    confirmButtonColor: '#10b981'
-                }).then(() => {
-                    window.history.replaceState(null, null, window.location.pathname);
-                });
+                mh_notify(<?php echo mh_js($success_msg); ?>, 'success');
+                window.history.replaceState(null, null, window.location.pathname);
             <?php endif; ?>
 
             <?php if($error_msg): ?>
-                Swal.fire({
-                    title: 'Error!',
-                    text: '<?php echo $error_msg; ?>',
-                    icon: 'error',
-                    confirmButtonColor: '#ef4444'
-                });
+                mh_notify(<?php echo mh_js($error_msg); ?>, 'error');
             <?php endif; ?>
         };
 

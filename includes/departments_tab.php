@@ -296,7 +296,7 @@ function mh_depts_render(mysqli $conn)
                     <label class="dpt-switch"><input type="checkbox" name="is_active" value="1" <?php echo $o['is_active'] ? 'checked' : ''; ?>> Active (shown in sidebar and queue)</label>
                     <span style="display:flex; gap:8px;">
                         <button type="submit" name="delete_department" class="btn dpt-del"
-                                onclick="return confirm('Delete this department? This only works if it was never used in the queue.');">Delete</button>
+                                data-confirm="Delete this department? This only works if it was never used in the queue." data-confirm-title="Delete department?" data-confirm-type="danger" data-confirm-ok="Delete">Delete</button>
                         <button type="submit" name="edit_department" class="btn btn-main">Save changes</button>
                     </span>
                 </div>
