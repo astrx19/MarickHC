@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/patient_auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/patient_layout.php';
+require_once __DIR__ . '/../includes/password_change_helpers.php';
 
 $system_name = $system_name ?? mh_setting('system_name');
 
@@ -24,29 +25,47 @@ if (isset($_POST['update_profile'])) {
         $address = trim($_POST['outsider_address'] ?? '');
     }
 
-    $stmt = $conn->prepare("UPDATE patients SET contact_number = ?, address_type = ?, address = ? WHERE id = ?");
-    $stmt->bind_param('sssi', $contact, $address_type, $address, $patient_id);
+    // ---- Password section FIRST: if it is wrong, nothing at all is changed ----
+    $current_password = (string) ($_POST['current_password'] ?? '');
+    $new_password     = (string) ($_POST['new_password'] ?? '');
+    $confirm_password = (string) ($_POST['confirm_password'] ?? '');
+    $wants_password   = ($new_password !== '' || $confirm_password !== '');
+    $pw_error = null;
+    if ($wants_password) {
+        $hs = $conn->prepare("SELECT password FROM patients WHERE id = ? LIMIT 1");
+        $hs->bind_param('i', $patient_id);
+        $hs->execute();
+        $row = $hs->get_result()->fetch_assoc();
+        $hs->close();
+        $pw_error = mh_pw_change_check($row['password'] ?? '', $current_password, $new_password, $confirm_password, 'patient:' . $patient_id);
+    }
 
-    if ($stmt->execute()) {
-        $stmt->close();
-        $new_password = $_POST['new_password'] ?? '';
-        if (!empty($new_password)) {
-            if ($new_password === ($_POST['confirm_password'] ?? '')) {
+    if ($pw_error !== null) {
+        $error_msg = $pw_error . ' Your profile was not changed.';
+    } else {
+        $stmt = $conn->prepare("UPDATE patients SET contact_number = ?, address_type = ?, address = ? WHERE id = ?");
+        $stmt->bind_param('sssi', $contact, $address_type, $address, $patient_id);
+
+        if ($stmt->execute()) {
+            $stmt->close();
+            if ($wants_password) {
                 $hashed = password_hash($new_password, PASSWORD_DEFAULT);
                 $pw = $conn->prepare("UPDATE patients SET password = ? WHERE id = ?");
                 $pw->bind_param('si', $hashed, $patient_id);
                 $pw->execute();
                 $pw->close();
+                mh_pw_change_clear('patient:' . $patient_id);
+                // Sign out every OTHER device that still has the old password's session open.
+                if (function_exists('mh_ss_issue')) { mh_ss_issue('patient', $patient_id); }
                 $success_msg = 'Profile and password updated successfully!';
             } else {
-                $error_msg = 'Passwords do not match. Profile updated, but password was not changed.';
+                $success_msg = 'Profile updated successfully!';
             }
         } else {
-            $success_msg = 'Profile updated successfully!';
+            error_log('patient_edit_profile update failed: ' . $conn->error);   // never show database errors to patients
+            $error_msg = 'We could not save your profile right now. Please try again.';
+            $stmt->close();
         }
-    } else {
-        $error_msg = 'Error updating profile: ' . $conn->error;
-        $stmt->close();
     }
 }
 
@@ -122,12 +141,16 @@ mh_pp_layout_start([
                 <div class="form-section" style="margin-top: 6px;">
                     <div class="form-section-title">Change Password (Optional)</div>
                     <div class="form-group">
+                        <label>Current Password <span class="required" id="curPwStar" style="display:none;">*</span></label>
+                        <input type="password" name="current_password" id="curPw" autocomplete="current-password" placeholder="Required only when changing your password">
+                    </div>
+                    <div class="form-group">
                         <label>New Password</label>
-                        <input type="password" name="new_password" placeholder="Leave blank to keep current password">
+                        <input type="password" name="new_password" id="newPw" minlength="8" maxlength="72" autocomplete="new-password" placeholder="Leave blank to keep current password">
                     </div>
                     <div class="form-group" style="margin-bottom: 0;">
                         <label>Confirm New Password</label>
-                        <input type="password" name="confirm_password" placeholder="Must match new password">
+                        <input type="password" name="confirm_password" id="cfmPw" autocomplete="new-password" placeholder="Must match new password">
                     </div>
                 </div>
 
@@ -138,6 +161,20 @@ mh_pp_layout_start([
 </div>
 
 <script>
+    // The current password becomes required the moment a new one is typed (native validation runs
+    // before the "Save profile?" confirmation, so people are told straight away).
+    (function () {
+        var cur = document.getElementById('curPw'), nw = document.getElementById('newPw'), cf = document.getElementById('cfmPw'), star = document.getElementById('curPwStar');
+        function sync() {
+            var need = nw.value !== '' || cf.value !== '';
+            cur.required = need;
+            cf.required = nw.value !== '';
+            star.style.display = need ? 'inline' : 'none';
+            cf.setCustomValidity(cf.value !== nw.value ? 'The new passwords do not match.' : '');
+        }
+        nw.addEventListener('input', sync); cf.addEventListener('input', sync);
+    })();
+
     function ppToggleAddressFields() {
         var type   = document.getElementById('req_address_type').value;
         var hNum   = document.getElementById('req_house');

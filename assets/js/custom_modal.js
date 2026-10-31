@@ -153,9 +153,10 @@
      * mh_alert(message, title, type) -> Promise<void>
      * Resolves when the user dismisses the notice.
      */
-    window.mh_alert = function (message, title, type) {
+    window.mh_alert = function (message, title, type, options) {
         return buildModal({
             mode: 'alert',
+            html: !!(options && options.html),   // caller escapes any dynamic text
             message: message,
             title: title || 'Notification',
             type: type || 'info',

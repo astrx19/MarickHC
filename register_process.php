@@ -275,9 +275,18 @@ if (isset($_POST['register_patient'])) {
     $password_plain = (string) ($_POST['password'] ?? '');
     $password_confirm = (string) ($_POST['confirm_password'] ?? $password_plain);
 
-    $d = DateTime::createFromFormat('Y-m-d', $bdate);
-    if ($fname === '' || $lname === '' || !$d || $d->format('Y-m-d') !== $bdate || $d > new DateTime('today')) {
+    if ($fname === '' || $lname === '') {
         claim_go('index.php?reg_status=error_input');
+    }
+    // Birthdate: a real calendar date, 4-digit year, 1900-01-01 .. today (the browser limit can be bypassed).
+    $d = DateTime::createFromFormat('Y-m-d', $bdate);
+    if (!$d || $d->format('Y-m-d') !== $bdate || $d > new DateTime('today') || $d < new DateTime('1900-01-01')) {
+        claim_go('index.php?reg_status=error_birthdate');
+    }
+    // PhilHealth number is optional, but when given it is exactly 12 digits (spaces/dashes are tolerated and dropped).
+    $philhealth_clean = preg_replace('/[\s-]+/', '', trim($_POST['philhealth_no'] ?? ''));
+    if ($philhealth_clean !== '' && !preg_match('/^[0-9]{12}$/', $philhealth_clean)) {
+        claim_go('index.php?reg_status=error_philhealth');
     }
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         claim_go('index.php?reg_status=error_email');
@@ -339,7 +348,7 @@ if (isset($_POST['register_patient'])) {
     // ---- Brand-new patient: plain registration ---------------------------------------
     $contact  = trim($_POST['contact_number'] ?? '');
     $sex      = trim($_POST['sex'] ?? '');
-    $philhealth = trim($_POST['philhealth_no'] ?? '');
+    $philhealth = $philhealth_clean;   // validated above: '' or exactly 12 digits
     $family   = trim($_POST['family_no'] ?? '');
     $password = password_hash($password_plain, PASSWORD_DEFAULT);
     // Address: validated on the server too (the browser check can be bypassed or stale).

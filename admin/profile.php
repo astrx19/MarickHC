@@ -5,6 +5,7 @@ ini_set('display_errors', 0);
 require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/password_change_helpers.php';
 
 // Any signed-in staff account (built-in or custom role) may open this page; admin_auth.php already
 // verified the login and re-synced the role. What each role SEES is controlled by Module Access.
@@ -84,6 +85,45 @@ if(isset($_POST['update_profile']) && mh_is_admin_tier()){
             $staff_name = $staff_data['first_name'] . ' ' . $staff_data['last_name'];
         } else {
             $error_msg = "Error updating profile. Please try again.";
+        }
+    }
+}
+
+// ---- Change password: needs the CURRENT password (a stolen/unattended session alone is not enough) ----
+if (isset($_POST['change_password'])) {
+    if (!mh_csrf_check()) {
+        $error_msg = 'Your session expired. Please reload the page and try again.';
+    } else {
+        $hs = $conn->prepare("SELECT password FROM staff WHERE id = ? LIMIT 1");
+        $hs->bind_param('i', $user_id);
+        $hs->execute();
+        $hrow = $hs->get_result()->fetch_assoc();
+        $hs->close();
+
+        $pw_error = mh_pw_change_check(
+            $hrow['password'] ?? '',
+            (string) ($_POST['current_password'] ?? ''),
+            (string) ($_POST['new_password'] ?? ''),
+            (string) ($_POST['confirm_password'] ?? ''),
+            'staff:' . $user_id
+        );
+        if ($pw_error !== null) {
+            $error_msg = $pw_error;
+        } else {
+            $hashed = password_hash((string) $_POST['new_password'], PASSWORD_DEFAULT);
+            $up = $conn->prepare("UPDATE staff SET password = ? WHERE id = ?");
+            $up->bind_param('si', $hashed, $user_id);
+            if ($up->execute()) {
+                mh_pw_change_clear('staff:' . $user_id);
+                logActivity($conn, $user_id, $_SESSION['role'], "Password Changed", "Changed own password from the profile page.");
+                // Any other device still signed in with the old password is signed out; this one stays.
+                if (function_exists('mh_ss_issue')) { mh_ss_issue('staff', $user_id); }
+                $success_msg = "Password changed successfully. Other devices were signed out.";
+            } else {
+                error_log('staff change_password failed: ' . $conn->error);
+                $error_msg = "We could not change your password right now. Please try again.";
+            }
+            $up->close();
         }
     }
 }
@@ -210,6 +250,28 @@ if(isset($_POST['update_profile']) && mh_is_admin_tier()){
                 </div>
             </div>
 
+            <div class="unified-panel" style="max-width: 640px; margin-top: 25px;">
+                <div class="panel-controls" style="background: var(--bg-hover, #f8fafc);">
+                    <h3 style="margin:0; font-size: 1.1rem; color: var(--heading-color, #1e293b);">Change Password</h3>
+                </div>
+                <form method="POST" id="changePwForm" style="padding: 20px;">
+                    <?php echo mh_csrf_field(); ?>
+                    <div class="form-group">
+                        <label>Current Password *</label>
+                        <input type="password" name="current_password" required autocomplete="current-password">
+                    </div>
+                    <div class="form-group">
+                        <label>New Password * <small style="font-weight:400; color: var(--text-muted, #64748b);">(at least 8 characters)</small></label>
+                        <input type="password" name="new_password" id="staffNewPw" required minlength="8" maxlength="72" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm New Password *</label>
+                        <input type="password" name="confirm_password" id="staffCfmPw" required autocomplete="new-password">
+                    </div>
+                    <button type="submit" name="change_password" class="btn-submit" data-confirm="Change your password? Your other signed-in devices will be signed out." data-confirm-title="Change password?" data-confirm-type="warning" data-confirm-ok="Change password">Change Password</button>
+                </form>
+            </div>
+
         </div>
     </div>
 
@@ -271,6 +333,12 @@ if(isset($_POST['update_profile']) && mh_is_admin_tier()){
         function closeModal(id) {
             document.getElementById(id).classList.remove('active');
         }
+        (function () {   // native check runs BEFORE the confirm dialog
+            var n = document.getElementById('staffNewPw'), c = document.getElementById('staffCfmPw');
+            if (!n || !c) { return; }
+            function sync() { c.setCustomValidity(c.value !== n.value ? 'The new passwords do not match.' : ''); }
+            n.addEventListener('input', sync); c.addEventListener('input', sync);
+        })();
     </script>
 </body>
 </html>

@@ -498,3 +498,27 @@ body:not(.bg-auth):not(.bg-landing) .close-btn:hover { background: var(--mh-dang
     body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-primary, .btn-save, .btn-secondary, .btn-danger, .btn-ghost) { min-height: 44px; }
     .mh-toast-stack { top: 10px; left: 10px; right: 10px; max-width: none; }
 }
+
+/* ---------- 14. Step 4: password eye, red validation state, error list ----------
+   Not scoped to the admin theme on purpose: the public registration modal uses them too. */
+.mh-pw { position: relative; display: block; width: 100%; }
+.mh-pw > input { width: 100%; box-sizing: border-box; padding-right: 46px !important; }
+.mh-eye {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: none; color: #64748b; cursor: pointer; line-height: 0;
+    transition: color var(--mh-dur-fast, .15s) ease, background-color var(--mh-dur-fast, .15s) ease;
+}
+.mh-eye:hover, .mh-eye:focus-visible { color: var(--primary, #4ca1af); background: rgba(100, 116, 139, 0.14); outline: none; }
+.mh-eye .off { display: none; }
+.mh-eye.is-on .on { display: none; }
+.mh-eye.is-on .off { display: block; }
+
+input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
+    border-color: #dc2626 !important; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16) !important;
+}
+.mh-invalid-group { outline: 2px solid #dc2626; outline-offset: 3px; border-radius: 8px; }
+.mh-field-msg { display: block; margin-top: 5px; font-size: 0.8rem; font-weight: 600; color: var(--mh-danger-fg, #b91c1c); animation: mh-slide-down 0.2s var(--mh-ease, ease) both; }
+.mh-field-msg.ok { color: var(--mh-success-fg, #047857); }
+.mh-error-list { margin: 8px 0 0; padding-left: 20px; text-align: left; }
+.mh-error-list li { margin: 4px 0; line-height: 1.4; }
+.mh-modal-message .mh-error-list strong { color: var(--mh-danger-fg, #b91c1c); }

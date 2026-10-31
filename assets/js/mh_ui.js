@@ -94,7 +94,7 @@
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape' || e.defaultPrevented) { return; }
         if (document.querySelector('.mh-modal-backdrop') || document.querySelector('.select2-container--open')) { return; }
-        var open = document.querySelectorAll('.modal-overlay.active');
+        var open = Array.prototype.filter.call(document.querySelectorAll('.modal-overlay.active'), function (m) { return !m.hasAttribute('data-static'); });
         if (!open.length) { return; }
         open[open.length - 1].classList.remove('active');
         document.body.style.overflow = '';

@@ -16,33 +16,6 @@ $marick_streets = mh_streets($conn);
     <title>Welcome - <?php echo htmlspecialchars($system_name); ?></title>
     <link rel="stylesheet" href="assets/css/style.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/style.css'); ?>"> 
     <style>
-        .custom-alert-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.6); z-index: 99999; align-items: center;
-            justify-content: center; backdrop-filter: blur(3px);
-        }
-        .custom-alert-overlay.active { display: flex; }
-        .custom-alert-box {
-            background: white; width: 90%; max-width: 450px; border-radius: 12px;
-            padding: 30px 25px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
-        }
-        .custom-alert-box .alert-icon { display: flex; justify-content: center; margin-bottom: 15px; color: #ef4444; }
-        .custom-alert-box .alert-icon .mh-icon { width: 56px; height: 56px; }
-        .custom-alert-box h3 { margin: 0 0 10px 0; color: #1e293b; font-size: 1.4rem; font-family: Georgia, serif; }
-        .custom-alert-box p { color: #64748b; font-size: 0.95rem; margin: 0 0 25px 0; line-height: 1.5; }
-        
-        .btn-alert-ok, .btn-alert-cancel, .btn-alert-confirm {
-            border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold;
-            font-size: 1rem; cursor: pointer; transition: 0.2s; width: 100%;
-        }
-        .btn-alert-ok { background: #4ca1af; color: white; }
-        .btn-alert-ok:hover { background: #3b828e; }
-        
-        .btn-alert-cancel { background: #f1f5f9; color: #475569; }
-        .btn-alert-cancel:hover { background: #e2e8f0; }
-        
-        .btn-alert-confirm { background: #10b981; color: white; }
-        .btn-alert-confirm:hover { background: #059669; }
     </style>
     <?php define('MH_ASSET_PATH', 'assets/'); include __DIR__ . '/includes/modal_assets.php'; ?>
 </head>
@@ -139,15 +112,15 @@ $marick_streets = mh_streets($conn);
         </div>
     </div>
 
-    <div class="modal-overlay" id="registerModal">
+    <div class="modal-overlay" id="registerModal" data-static="true">
         <div class="modal-content" style="max-width: 600px;">
-            <button class="close-modal" onclick="closeModal('registerModal')">×</button>
+            <button type="button" class="close-modal" onclick="closeRegisterModal()" aria-label="Close registration form">×</button>
             <div class="modal-header">
                 <img src="assets/images/logo.png" alt="Marick Logo">
                 <h2>Patient Registration</h2>
                 <p id="step-indicator" style="color: #4ca1af; font-weight: bold;">Step 1 of 2: Personal Information</p>
             </div>
-            <form action="register_process.php" method="POST" id="regForm">
+            <form action="register_process.php" method="POST" id="regForm" novalidate>
                 <?php echo mh_csrf_field(); ?>
                 <div id="step1">
                     <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -156,7 +129,7 @@ $marick_streets = mh_streets($conn);
                         <div class="form-group"><label>Middle Name</label><input type="text" name="middle_name"></div>
                         <div class="form-group"><label>Suffix</label><input type="text" name="suffix" placeholder="e.g., Jr." maxlength="5" oninput="this.value = this.value.replace(/[^a-zA-Z.]/g, '')"></div>
                         
-                        <div class="form-group"><label>Birthdate <span style="color:red;">*</span></label><input type="date" id="bdate" name="birthdate" required></div>
+                        <div class="form-group"><label>Birthdate <span style="color:red;">*</span></label><input type="date" id="bdate" name="birthdate" required min="1900-01-01" max="<?php echo date('Y-m-d'); ?>" data-mh-date></div>
                         
                         <div class="form-group"><label>Biological Sex <span style="color:red;">*</span></label>
                             <div style="display: flex; gap: 15px; margin-top: 10px;">
@@ -165,10 +138,9 @@ $marick_streets = mh_streets($conn);
                             </div>
                         </div>
 
-                        <input type="tel" id="mobile" name="contact_number" required value="+63" maxlength="13" oninput="this.value = this.value.replace(/[^0-9+]/g, '')" style="display:none;"> 
-                        <div class="form-group"><label>Contact Number <span style="color:red;">*</span></label><input type="tel" name="contact_number" required value="+63" maxlength="13" oninput="this.value = this.value.replace(/[^0-9+]/g, '')"></div>
+                        <div class="form-group"><label>Contact Number <span style="color:red;">*</span></label><input type="tel" id="mobile" name="contact_number" required value="+63" maxlength="13" inputmode="tel" placeholder="+639123456789" oninput="this.value = this.value.replace(/[^0-9+]/g, '')"></div>
 
-                        <div class="form-group"><label>PhilHealth No. (Optional)</label><input type="text" name="philhealth_no" placeholder="00-000000000-0"></div>
+                        <div class="form-group"><label>PhilHealth No. (Optional)</label><input type="text" id="philhealth" name="philhealth_no" inputmode="numeric" maxlength="12" data-mh-digits="12" autocomplete="off" placeholder="12 digits, numbers only"></div>
                         <div class="form-group" style="grid-column: 1 / -1; border-top: 1px dashed #cbd5e1; padding-top: 10px;"><label>Family No. (Optional)</label><input type="text" name="family_no" placeholder="If known"></div>
                     </div>
                     <button type="button" class="btn-modal-login" style="margin-top: 20px;" onclick="nextStep()">Next: Account Details <?php echo mh_icon('arrow-right'); ?></button>
@@ -209,15 +181,6 @@ $marick_streets = mh_streets($conn);
         </div>
     </div>
 
-    <div class="custom-alert-overlay" id="customActionModal">
-        <div class="custom-alert-box">
-            <div class="alert-icon" id="customIcon"><?php echo mh_icon('alert-triangle'); ?></div>
-            <h3 id="customTitle">Notice</h3>
-            <p id="customMessage">Message goes here.</p>
-            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;" id="customButtons">
-                </div>
-        </div>
-    </div>
 
     <script src="assets/js/script.js?v=<?php echo @filemtime(__DIR__ . '/assets/js/script.js'); ?>"></script>
 
@@ -227,25 +190,15 @@ $marick_streets = mh_streets($conn);
         const MH_ICON_INFO = <?php echo json_encode(mh_icon('info')); ?>;
         const MH_ICON_RECORD = <?php echo json_encode(mh_icon('file-text')); ?>;
 
-        function triggerCustomModal(title, message, icon, type) {
-            document.getElementById('customTitle').innerText = title;
-            document.getElementById('customMessage').innerHTML = message;
-            document.getElementById('customIcon').innerHTML = icon;
-            
-            let btnContainer = document.getElementById('customButtons');
-            
-            btnContainer.innerHTML = `
-                    <button type="button" class="btn-alert-ok" onclick="closeCustomModal()">OK</button>
-                `;
-            
-            document.getElementById('customActionModal').classList.add('active');
+        // Status popups now use the unified modal (assets/js/custom_modal.js): green check for success,
+        // amber for problems, blue for info. The 3rd argument is still the legacy icon constant.
+        function triggerCustomModal(title, message, icon) {
+            var kind = (icon === MH_ICON_CHECK_CIRCLE) ? 'success' : (icon === MH_ICON_INFO ? 'info' : 'warning');
+            return mh_alert(message, title, kind, { html: true }).then(function () {
+                window.history.replaceState(null, null, window.location.pathname);
+            });
         }
-
-        function closeCustomModal() {
-            document.getElementById('customActionModal').classList.remove('active');
-            window.history.replaceState(null, null, window.location.pathname);
-        }
-
+        function closeCustomModal() { window.history.replaceState(null, null, window.location.pathname); }
 
         <?php if(isset($_GET['reg_status'])): ?>
             setTimeout(function() {
@@ -269,6 +222,10 @@ $marick_streets = mh_streets($conn);
                     triggerCustomModal('Verification Expired', 'Your verification session expired. Please start the registration again.', MH_ICON_INFO, 'alert');
                 <?php elseif($_GET['reg_status'] == 'claim_locked'): ?>
                     triggerCustomModal('Verification Locked', 'Too many incorrect codes. Please start again or contact the health center.', MH_ICON_WARN, 'alert');
+                <?php elseif($_GET['reg_status'] == 'error_birthdate'): ?>
+                    triggerCustomModal('Check Your Birthdate', 'Please enter a real birthdate: the year must have 4 digits, no earlier than 1900 and not in the future.', MH_ICON_WARN, 'alert');
+                <?php elseif($_GET['reg_status'] == 'error_philhealth'): ?>
+                    triggerCustomModal('Check Your PhilHealth Number', 'A PhilHealth number has exactly 12 digits (numbers only). Leave it blank if you do not have one.', MH_ICON_WARN, 'alert');
                 <?php elseif($_GET['reg_status'] == 'error_password'): ?>
                     triggerCustomModal('Check Your Password', 'Use at least 8 characters, and make sure both password fields match.', MH_ICON_WARN, 'alert');
                 <?php elseif($_GET['reg_status'] == 'error_input'): ?>

@@ -34,3 +34,4 @@ $mh_fav_url = $mh_fav_base . '/assets/images/logo.png?v=' . (int) @filemtime(__D
 <link rel="stylesheet" href="<?php echo htmlspecialchars($mh_asset_path); ?>css/mh_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/mh_ui.css'); ?>">
 <script src="<?php echo htmlspecialchars($mh_asset_path); ?>js/custom_modal.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/custom_modal.js'); ?>" defer></script>
 <script src="<?php echo htmlspecialchars($mh_asset_path); ?>js/mh_ui.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_ui.js'); ?>" defer></script>
+<script src="<?php echo htmlspecialchars($mh_asset_path); ?>js/mh_forms.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_forms.js'); ?>" defer></script>

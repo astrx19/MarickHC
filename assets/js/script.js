@@ -29,7 +29,9 @@ function toggleDropdown() {
 }
 
 window.onclick = function(event) {
-    if (event.target.classList.contains('modal-overlay')) {
+    // A modal marked data-static (the registration form) ignores clicks on the dark backdrop,
+    // so half-typed details are never lost by a stray click. Use the X / Back button instead.
+    if (event.target.classList.contains('modal-overlay') && !event.target.hasAttribute('data-static')) {
         event.target.classList.remove('active');
         document.body.style.overflow = '';
     }
@@ -52,20 +54,59 @@ function togglePassword(inputId) {
     }
 }
 
-async function nextStep() {
-    let f = document.getElementById('fname').value;
-    let l = document.getElementById('lname').value;
-    let b = document.getElementById('bdate').value;
-    let s = document.querySelector('input[name="sex"]:checked');
-    let m = document.getElementById('mobile').value;
-    
-    if(!f || !l || !b || !s || !m) {
-        await mh_alert("Please fill in all required fields (First Name, Last Name, Birthdate, Biological Sex, and Mobile Number).", "Missing Information", "warning");
-        return;
+/** Step 1 of the registration form. Returns the list of problems (empty = fine). */
+function mhRegStep1Errors() {
+    var $ = function (id) { return document.getElementById(id); };
+    var errs = [];
+    function need(el, label, msg) { if (el) { errs.push({ el: el, label: label, msg: msg }); } }
+
+    var f = $('fname'), l = $('lname'), b = $('bdate'), m = $('mobile'), ph = $('philhealth');
+    var sex = document.querySelector('#regForm input[name="sex"]');
+    if (!f.value.trim()) { need(f, 'First Name', 'is required.'); }
+    if (!l.value.trim()) { need(l, 'Last Name', 'is required.'); }
+    if (!b.value) { need(b, 'Birthdate', 'is required.'); }
+    else { var bp = window.mhBirthdateProblem ? window.mhBirthdateProblem(b.value) : ''; if (bp) { need(b, 'Birthdate', bp); } }
+    if (!document.querySelector('#regForm input[name="sex"]:checked')) { need(sex, 'Biological Sex', 'please choose Male or Female.'); }
+    if (!/^\+63[0-9]{10}$/.test(m.value.trim())) { need(m, 'Contact Number', 'must be +63 followed by 10 digits (e.g. +639123456789).'); }
+    if (ph && ph.value !== '' && !/^[0-9]{12}$/.test(ph.value)) { need(ph, 'PhilHealth No.', 'must be exactly 12 digits (numbers only), or leave it blank.'); }
+    return errs;
+}
+
+/** Step 2 (account + location). */
+function mhRegStep2Errors() {
+    var $ = function (id) { return document.getElementById(id); };
+    var form = $('regForm'), errs = [];
+    function need(el, label, msg) { if (el) { errs.push({ el: el, label: label, msg: msg }); } }
+
+    var email = form.querySelector('input[name="email"]'), user = $('regUsername'), pw = $('regPwd'), cf = $('regConfirmPwd');
+    var type = $('regAddressType');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.value.trim())) { need(email, 'Email Address', 'enter a valid email, e.g. name@example.com.'); }
+    if (!/^[A-Za-z0-9._-]{4,50}$/.test(user.value.trim())) { need(user, 'Username', 'use 4-50 letters, numbers, dots, underscores or hyphens.'); }
+    if (pw.value.length < 8) { need(pw, 'Create Password', 'must be at least 8 characters.'); }
+    else if (pw.value.length > 72) { need(pw, 'Create Password', 'must be 72 characters or fewer.'); }
+    if (cf.value === '') { need(cf, 'Confirm Password', 'please type your password again.'); }
+    else if (cf.value !== pw.value) { need(cf, 'Confirm Password', 'does not match the password above.'); }
+    if (!type.value) { need(type, 'Location Type', 'please choose one.'); }
+    else {
+        ['houseNumber', 'marickStreet', 'outsiderAddress'].forEach(function (id) {
+            var el = $(id);
+            if (el && !el.disabled && el.hasAttribute('required') && !String(el.value).trim()) {
+                need(el, id === 'houseNumber' ? 'House/Blk No.' : (id === 'marickStreet' ? 'Street Name' : 'Full Address'), 'is required.');
+            }
+        });
     }
+    return errs;
+}
+
+async function nextStep() {
+    var form = document.getElementById('step1');
+    window.mhClearErrors && window.mhClearErrors(form);
+    var errs = mhRegStep1Errors();
+    if (errs.length) { await window.mhReport(errs, 'Please check your personal information'); return; }
+
     document.getElementById('step1').style.display = 'none';
     document.getElementById('step2').style.display = 'block';
-    
+
     let indicator = document.getElementById('step-indicator');
     if(indicator) indicator.innerText = 'Step 2 of 2: Account & Location Details';
 }
@@ -88,14 +129,16 @@ document.addEventListener('DOMContentLoaded', function () {
     var regForm = document.getElementById('regForm');
     if (!regForm) { return; }
     regForm.addEventListener('submit', async function (e) {
-        if (this.dataset.mhBypass === '1') { return; } // already validated & confirmed, let it through
+        if (this.dataset.mhBypass === '1') { return; } // already validated, let it through
         e.preventDefault();
         const submitter = e.submitter;
 
-        if (!validatePasswords()) {
-            await mh_alert('Passwords do not match! Please type them carefully.', 'Password Mismatch', 'danger');
-            return;
-        }
+        // Pressing Enter while still on step 1 must not submit a half-filled form.
+        if (document.getElementById('step1').style.display !== 'none') { await nextStep(); return; }
+
+        window.mhClearErrors && window.mhClearErrors(document.getElementById('step2'));
+        var errs = mhRegStep2Errors();
+        if (errs.length) { await window.mhReport(errs, 'Please check your account details'); return; }
 
         this.dataset.mhBypass = '1';
         // requestSubmit(submitter) preserves the button's name="register_patient" in the POST data,
@@ -103,6 +146,25 @@ document.addEventListener('DOMContentLoaded', function () {
         this.requestSubmit(submitter);
     });
 });
+
+/** X button on the registration modal: ask first if something was typed, because the backdrop no longer closes it. */
+async function closeRegisterModal() {
+    var form = document.getElementById('regForm');
+    var dirty = false;
+    if (form) {
+        Array.prototype.forEach.call(form.querySelectorAll('input:not([type=hidden]):not([type=radio]):not([type=checkbox]), select'), function (el) {
+            var v = String(el.value || '').trim();
+            if (v !== '' && v !== '+63' && !(el.tagName === 'SELECT' && el.selectedIndex === 0)) { dirty = true; }
+        });
+        if (form.querySelector('input[type=radio]:checked')) { dirty = true; }
+    }
+    if (dirty && window.mh_confirm) {
+        var ok = await window.mh_confirm('What you typed will be cleared.', 'Close the registration form?', 'warning', 'Yes, close it');
+        if (!ok) { return; }
+    }
+    if (form) { form.reset(); form.dataset.mhBypass = ''; window.mhClearErrors && window.mhClearErrors(form); if (typeof toggleRegAddress === 'function') { toggleRegAddress(); } }
+    closeModal('registerModal');
+}
 
 /**
  * Which Location Type means "resident" is a System Setting (Home Address Type), not a literal:
