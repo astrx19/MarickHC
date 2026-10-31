@@ -295,11 +295,11 @@ $stmt_fetch->close();
                                     </td>
                                     <td style="color: var(--text-main, #334155); font-weight: bold;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px; background:<?php echo mh_department_color($row['department']); ?>;"></span><?php echo htmlspecialchars($row['department']); ?></td>
                                     <td>
-                                        <strong style="color: var(--heading-color, #1e293b); display: block;"><?php echo $apt_date; ?></strong>
+                                        <strong style="color: var(--heading-color, #1e293b); display: block;"><?php echo mh_h($apt_date); ?></strong>
                                         <span style="color: var(--text-muted, #64748b); font-size: 0.9rem; font-style: italic;">"<?php echo !empty($row['reason']) ? htmlspecialchars($row['reason']) : 'No reason provided'; ?>"</span>
                                     </td>
                                     <td>
-                                        <span class="status-badge <?php echo $status_class; ?>"><?php echo htmlspecialchars($row['status']); ?></span>
+                                        <span class="status-badge <?php echo mh_h($status_class); ?>"><?php echo htmlspecialchars($row['status']); ?></span>
                                     </td>
                                     <td style="white-space: nowrap;">
                                         <?php if(!$can_process_queue): ?>

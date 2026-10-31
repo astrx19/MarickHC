@@ -45,12 +45,27 @@ function mh_pr_mask_mobile($mobile)
 }
 
 /* ----------------------------- accounts --------------------------- */
-/** Active (status = 1) patient or staff account by username OR email. Archived accounts cannot reset. */
-function mh_pr_find_account(mysqli $conn, $identifier)
+/** Which account type a recovery request is for: 'staff' | 'patient' | '' (unknown -> search both). */
+function mh_pr_scope($value)
+{
+    $value = strtolower(trim((string) $value));
+    return in_array($value, ['staff', 'patient'], true) ? $value : '';
+}
+
+/**
+ * Active (status = 1) patient or staff account by username OR email. Archived accounts cannot reset.
+ *
+ * $scope comes from the login page the visitor started on ("Forgot Password?" on the staff console
+ * -> 'staff', on the patient page -> 'patient'). Usernames/emails are only unique PER TABLE, so
+ * without a scope a patient with the same username would always shadow the staff member.
+ */
+function mh_pr_find_account(mysqli $conn, $identifier, $scope = '')
 {
     $identifier = trim((string) $identifier);
     if ($identifier === '') { return null; }
-    foreach (['patients', 'staff'] as $table) {
+    $scope  = mh_pr_scope($scope);
+    $tables = $scope === 'staff' ? ['staff'] : ($scope === 'patient' ? ['patients'] : ['patients', 'staff']);
+    foreach ($tables as $table) {
         $stmt = $conn->prepare("SELECT * FROM `$table` WHERE (username = ? OR email = ?) AND status = 1 LIMIT 1");
         if (!$stmt) { continue; }
         $stmt->bind_param('ss', $identifier, $identifier);
@@ -75,12 +90,29 @@ function mh_pr_get_account(mysqli $conn, $table, $id)
     return $row ?: null;
 }
 
+/**
+ * One definition of "an address we may send mail to": syntactically valid, no line breaks
+ * (header injection), sane length, and not a placeholder (walk-in patients get "@walkin.local").
+ */
+function mh_pr_valid_email($email)
+{
+    $email = trim((string) $email);
+    if ($email === '' || strlen($email) > 100 || preg_match('/[\r\n,;<>\s]/', $email)) { return false; }
+    return (bool) filter_var($email, FILTER_VALIDATE_EMAIL) && !preg_match('/\.local$/i', $email);
+}
+
+/** Channels the SYSTEM offers to everybody (never depends on whether an account exists). */
+function mh_pr_global_channels()
+{
+    $sms = function_exists('mh_sms_provider_problem') && mh_sms_provider_problem() === null;
+    return ['email' => true, 'sms' => (bool) $sms];
+}
+
 /** Which recovery channels this account can actually use right now. */
 function mh_pr_channels(array $row)
 {
     $email = trim((string) ($row['email'] ?? ''));
-    // Walk-in patients get a placeholder "@walkin.local" address - not deliverable.
-    $emailOk = filter_var($email, FILTER_VALIDATE_EMAIL) && !preg_match('/\.local$/i', $email);
+    $emailOk = mh_pr_valid_email($email);
 
     $phone = function_exists('mh_normalize_ph_mobile') ? mh_normalize_ph_mobile($row['contact_number'] ?? '') : '';
     $smsOk = ($phone !== '') && function_exists('mh_sms_provider_problem') && mh_sms_provider_problem() === null;
@@ -90,6 +122,47 @@ function mh_pr_channels(array $row)
         'email_masked' => $emailOk ? mh_pr_mask_email($email) : '',
         'phone_masked' => $phone !== '' ? mh_pr_mask_mobile($phone) : '',
     ];
+}
+
+/**
+ * What step 2 shows for a lookup. Real and unknown accounts produce the SAME shape:
+ *  - the options offered depend only on what the SYSTEM supports (mh_pr_global_channels),
+ *  - a masked address / number is always shown; when the real account has none, the stable
+ *    decoy mask for that identifier is used, so the screen never reveals which case it is.
+ * What can really be delivered is decided later, silently, in forgot_password_process.php.
+ */
+function mh_pr_step2_view($identifier, $found)
+{
+    $g = mh_pr_global_channels();
+    $d = mh_pr_decoy($identifier);
+    $ch = $found ? mh_pr_channels($found['row']) : null;
+    return [
+        'email_ok'     => $g['email'],
+        'sms_ok'       => $g['sms'],
+        'email_masked' => ($ch && $ch['email_masked'] !== '') ? $ch['email_masked'] : $d['email_masked'],
+        'phone_masked' => ($ch && $ch['phone_masked'] !== '') ? $ch['phone_masked'] : $d['phone_masked'],
+    ];
+}
+
+/**
+ * Sends the redirect, closes the connection, and lets the script keep running.
+ * Mail/SMS delivery can take seconds for a real account and nothing for an unknown one -
+ * doing it AFTER the response removes that timing difference (an account-existence oracle).
+ */
+function mh_pr_redirect_then_continue($url)
+{
+    if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
+    ignore_user_abort(true);
+    @set_time_limit(60);
+    header('Location: ' . $url);
+    header('Connection: close');
+    header('Content-Length: 0');
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        while (ob_get_level() > 0) { @ob_end_flush(); }
+        flush();
+    }
 }
 
 /** Same-looking step-2 data for identifiers that match nothing (stops username probing). */

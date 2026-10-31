@@ -6,6 +6,7 @@
  *
  * Whatever happens, an outsider can't tell from the responses whether an account exists,
  * whether a send was rate-limited, or whether delivery failed - those only go to the error log.
+ * Same-looking screens (mh_pr_step2_view) and delivery AFTER the redirect (no timing difference).
  */
 session_start();
 require_once __DIR__ . '/config/database.php';
@@ -45,22 +46,17 @@ if ($action === 'lookup') {
     }
 
     unset($_SESSION['pr_done'], $_SESSION['pr_sms']);
-    $found = mh_pr_find_account($conn, $identifier);
-    if ($found) {
-        $ch = mh_pr_channels($found['row']);
-        $_SESSION['pr'] = [
-            'table' => $found['table'], 'id' => (int) $found['row']['id'], 'decoy' => false, 'at' => $now,
-            'email_ok' => $ch['email'], 'sms_ok' => $ch['sms'],
-            'email_masked' => $ch['email_masked'], 'phone_masked' => $ch['phone_masked'],
-        ];
-    } else {
-        $d = mh_pr_decoy($identifier);   // looks like a normal account with both channels
-        $_SESSION['pr'] = [
-            'table' => '', 'id' => 0, 'decoy' => true, 'at' => $now, 'email_ok' => true, 'sms_ok' => true,
-            'email_masked' => $d['email_masked'], 'phone_masked' => $d['phone_masked'],
-        ];
-    }
-    mh_pr_go('forgot_password.php');
+    // Which login page the visitor came from: staff recovery only ever looks at the staff table.
+    $scope = mh_pr_scope($_POST['for'] ?? ($_SESSION['pr_for'] ?? ''));
+    $found = mh_pr_find_account($conn, $identifier, $scope);
+    $view  = mh_pr_step2_view($identifier, $found);   // identical shape for real and unknown accounts
+    $_SESSION['pr'] = [
+        'table' => $found ? $found['table'] : '', 'id' => $found ? (int) $found['row']['id'] : 0,
+        'decoy' => !$found, 'at' => $now,
+        'email_ok' => $view['email_ok'], 'sms_ok' => $view['sms_ok'],
+        'email_masked' => $view['email_masked'], 'phone_masked' => $view['phone_masked'],
+    ];
+    mh_pr_go('forgot_password.php' . ($scope !== '' ? '?for=' . $scope : ''));
 }
 
 /* ===================== STEP 2: send the link / code ===================== */
@@ -81,6 +77,7 @@ if ($action === 'send') {
     $debug = null;
     // Default = "nothing was really sent". Real sends overwrite $smsRef below.
     $smsRef = ['id' => 0, 'decoy' => true, 'tries' => 0, 'at' => time()];
+    $deliver = null;   // runs AFTER the redirect has been sent (see mh_pr_redirect_then_continue)
 
     $account = $state['decoy'] ? null : mh_pr_get_account($conn, $state['table'], $state['id']);
     if ($account) {
@@ -89,16 +86,21 @@ if ($action === 'send') {
 
         if (!mh_pr_throttled($conn, $userType, (int) $account['id'], mh_pr_ip())) {
             if ($method === 'email' && $ch['email']) {
-                $reset = mh_pr_issue($conn, $state['table'], $account, 'email', trim($account['email']));
+                $emailTo = trim($account['email']);
+                $reset = mh_pr_issue($conn, $state['table'], $account, 'email', $emailTo);
                 if ($reset) {
                     $link = mh_absolute_url_pr('reset_password.php?token=' . $reset['secret']);
-                    $res = mh_send_email(
-                        trim($account['email']),
-                        $system_name . ' - Password Reset Request',
-                        mh_pr_email_html(trim($account['first_name'] ?? ''), $system_name, $link),
-                        "Reset your password: $link\n\nThis link works once and expires in " . MH_PR_TTL_MINUTES . " minutes. If you didn't request it, ignore this email."
-                    );
-                    if (!$res['success']) { error_log('forgot_password: email failed (' . $userType . ' #' . $account['id'] . '): ' . $res['error']); }
+                    $firstName = trim($account['first_name'] ?? '');
+                    $accountId = (int) $account['id'];
+                    $deliver = function () use ($system_name, $emailTo, $firstName, $link, $userType, $accountId) {
+                        $res = mh_send_email(
+                            $emailTo,
+                            $system_name . ' - Password Reset Request',
+                            mh_pr_email_html($firstName, $system_name, $link),
+                            "Reset your password: $link\n\nThis link works once and expires in " . MH_PR_TTL_MINUTES . " minutes. If you didn't request it, ignore this email."
+                        );
+                        if (!$res['success']) { error_log('forgot_password: email failed (' . $userType . ' #' . $accountId . '): ' . $res['error']); }
+                    };
                     if (MAIL_DEBUG_MODE) { $debug = 'Reset link: <a href="' . mh_pr_h($link) . '">' . mh_pr_h($link) . '</a>'; }
                 }
             } elseif ($method === 'sms' && $ch['sms']) {
@@ -106,8 +108,11 @@ if ($action === 'send') {
                 if ($reset) {
                     $text = $system_name . ': Your password reset code is ' . $reset['secret']
                           . '. It expires in ' . MH_PR_TTL_MINUTES . ' minutes. Never share this code with anyone.';
-                    $res = mh_send_sms($ch['phone'], $text);
-                    if (!$res['success']) { error_log('forgot_password: SMS failed (' . $userType . ' #' . $account['id'] . '): ' . $res['error']); }
+                    $phone = $ch['phone']; $accountId = (int) $account['id'];
+                    $deliver = function () use ($phone, $text, $userType, $accountId) {
+                        $res = mh_send_sms($phone, $text);
+                        if (!$res['success']) { error_log('forgot_password: SMS failed (' . $userType . ' #' . $accountId . '): ' . $res['error']); }
+                    };
                     $smsRef = ['id' => (int) $reset['id'], 'decoy' => false, 'tries' => 0, 'at' => time()];
                     if (MAIL_DEBUG_MODE) { $debug = 'SMS code (local testing only): <b>' . mh_pr_h($reset['secret']) . '</b>'; }
                 }
@@ -118,15 +123,22 @@ if ($action === 'send') {
         }
     }
 
+    $scope = mh_pr_scope($_SESSION['pr_for'] ?? '');
     unset($_SESSION['pr']);
     if ($debug !== null) { $_SESSION['pr_debug'] = $debug; }
 
     if ($method === 'sms') {
         $_SESSION['pr_sms'] = $smsRef;
-        mh_pr_go('reset_password.php?method=sms');
+        $next = 'reset_password.php?method=sms';
+    } else {
+        $_SESSION['pr_done'] = ['method' => 'email', 'at' => time()];
+        $next = 'forgot_password.php' . ($scope !== '' ? '?for=' . $scope : '');
     }
-    $_SESSION['pr_done'] = ['method' => 'email', 'at' => time()];
-    mh_pr_go('forgot_password.php');
+
+    // Unknown accounts, throttled accounts and real ones now all answer at the same speed.
+    mh_pr_redirect_then_continue($next);
+    if ($deliver) { $deliver(); }
+    exit;
 }
 
 mh_pr_go('forgot_password.php');

@@ -47,13 +47,15 @@ function mh_mailer_smtp_configured()
 function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
 {
     $to = trim((string) $to);
-    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        return ['success' => false, 'error' => 'Not a valid email address: "' . $to . '".'];
+    // One recipient, no CR/LF/commas (header injection), sane length. Checked BEFORE PHPMailer sees it,
+    // so a bad address can never turn into an exception message or a stray SMTP error.
+    if ($to === '' || strlen($to) > 254 || preg_match('/[\r\n,;<>\s]/', $to) || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        return ['success' => false, 'error' => 'Not a valid email address.'];
     }
     if (!defined('MAIL_FROM_ADDRESS')) {
         return ['success' => false, 'error' => 'config/mail.php was not loaded (MAIL_FROM_ADDRESS is undefined).'];
     }
-    $subject = trim((string) $subject);
+    $subject = trim(preg_replace('/[\r\n]+/', ' ', (string) $subject));   // a subject can never carry extra headers
     if ($subject === '') {
         return ['success' => false, 'error' => 'Email subject is empty.'];
     }
@@ -87,7 +89,9 @@ function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
             return ['success' => true, 'error' => null];
         } catch (\Throwable $e) {
             // ErrorInfo can name the SMTP host/user, so it goes to the log only - never to visitors.
-            error_log('mh_send_email SMTP failure for ' . $to . ': ' . (isset($mail) ? $mail->ErrorInfo : $e->getMessage()));
+            // The address is masked in the log: it is personal data and the log is not a mailbox.
+            $maskedTo = substr($to, 0, 1) . '***' . substr($to, (int) strrpos($to, '@'));
+            error_log('mh_send_email SMTP failure for ' . $maskedTo . ': ' . (isset($mail) ? $mail->ErrorInfo : $e->getMessage()));
             return ['success' => false, 'error' => 'SMTP send failed (see the server error log).'];
         }
     }
@@ -110,7 +114,7 @@ function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
     }
     $error = 'No SMTP credentials/PHPMailer found and PHP mail() failed. Configure config/mail.local.php and install PHPMailer '
            . '(see the header of includes/mailer.php), or rely on MAIL_DEBUG_MODE on localhost.';
-    error_log('mh_send_email failed for ' . $to . ': ' . $error);
+    error_log('mh_send_email failed for ' . substr($to, 0, 1) . '***' . substr($to, (int) strrpos($to, '@')) . ': ' . $error);
     return ['success' => false, 'error' => $error];
 }
 }

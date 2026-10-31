@@ -24,6 +24,7 @@
  */
 
 require_once __DIR__ . '/icons.php';
+require_once __DIR__ . '/db.php';   // PDO helpers: mh_db_all / mh_db_value (prepared statements)
 
 if (!function_exists('mh_dashboard_catalog')) {
     /**
@@ -172,9 +173,7 @@ if (!function_exists('mh_dashboard_catalog')) {
 if (!function_exists('mh_table_exists')) {
     function mh_table_exists(mysqli $conn, string $table)
     {
-        $safe = $conn->real_escape_string($table);
-        $res  = $conn->query("SHOW TABLES LIKE '$safe'");
-        return $res && $res->num_rows > 0;
+        return mh_db_table_exists($table);   // cached for the request
     }
 }
 
@@ -189,10 +188,7 @@ if (!function_exists('mh_table_exists')) {
 if (!function_exists('mh_column_exists')) {
     function mh_column_exists(mysqli $conn, string $table, string $column)
     {
-        $safe_table  = $conn->real_escape_string($table);
-        $safe_column = $conn->real_escape_string($column);
-        $res = $conn->query("SHOW COLUMNS FROM `$safe_table` LIKE '$safe_column'");
-        return $res && $res->num_rows > 0;
+        return mh_db_table_has_column($table, $column);   // cached for the request
     }
 }
 
@@ -204,18 +200,17 @@ if (!function_exists('mh_widget_walkin_queue')) {
     {
         $today = $ctx['today'];
 
-        $q = $conn->query(
-            "SELECT status, COUNT(*) as total FROM appointments
-             WHERE appointment_date = '$today' AND reason = 'Walk-In Queue Registration'
-             GROUP BY status"
+        $q = mh_db_all(
+            "SELECT status, COUNT(*) AS total FROM appointments
+             WHERE appointment_date = ? AND reason = 'Walk-In Queue Registration'
+             GROUP BY status",
+            [$today]
         );
         $counts = ['Waiting' => 0, 'Approved' => 0, 'Completed' => 0, 'Pending' => 0];
         $total  = 0;
-        if ($q) {
-            while ($row = $q->fetch_assoc()) {
-                $counts[$row['status']] = (int) $row['total'];
-                $total += (int) $row['total'];
-            }
+        foreach ($q as $row) {
+            $counts[$row['status']] = (int) $row['total'];
+            $total += (int) $row['total'];
         }
         $waiting = $counts['Waiting'] + $counts['Approved'] + $counts['Pending'];
         ?>
@@ -239,16 +234,15 @@ if (!function_exists('mh_widget_appointments_today')) {
     {
         $today = $ctx['today'];
 
-        $pending = $conn->query("SELECT COUNT(*) as total FROM appointments WHERE status = 'Pending'");
-        $pending_count = $pending ? (int) $pending->fetch_assoc()['total'] : 0;
+        $pending_count = (int) mh_db_value("SELECT COUNT(*) FROM appointments WHERE status = 'Pending'");
 
-        $rows = $conn->query("
+        $rows = mh_db_all("
             SELECT p.first_name, p.last_name, a.department, a.status
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
-            WHERE a.appointment_date = '$today' AND a.status IN ('Waiting', 'Approved', 'Pending', 'Rescheduled', 'Completed')
+            WHERE a.appointment_date = ? AND a.status IN ('Waiting', 'Approved', 'Pending', 'Rescheduled', 'Completed')
             ORDER BY a.id ASC LIMIT 6
-        ");
+        ", [$today]);
         ?>
         <div class="widget-chip-row" style="margin-bottom: 12px;">
             <span class="widget-chip chip-amber"><?php echo $pending_count; ?> Pending Requests</span>
@@ -256,8 +250,8 @@ if (!function_exists('mh_widget_appointments_today')) {
         <table class="data-table widget-table">
             <thead><tr><th>#</th><th>Patient</th><th>Department</th></tr></thead>
             <tbody>
-                <?php if ($rows && $rows->num_rows > 0): ?>
-                    <?php $queue_pos = 0; while ($row = $rows->fetch_assoc()): $queue_pos++; ?>
+                <?php if ($rows): ?>
+                    <?php $queue_pos = 0; foreach ($rows as $row): $queue_pos++; ?>
                         <tr>
                             <td style="white-space: nowrap; font-weight: bold; color: #3b82f6;">
                                 <?php echo $queue_pos; ?>
@@ -267,7 +261,7 @@ if (!function_exists('mh_widget_appointments_today')) {
                             </td>
                             <td style="color: var(--text-muted); font-size: 0.85rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:<?php echo mh_department_color($row['department']); ?>;"></span><?php echo htmlspecialchars($row['department']); ?></td>
                         </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 <?php else: ?>
                     <tr><td colspan="3" class="widget-empty">No consultations scheduled for today.</td></tr>
                 <?php endif; ?>
@@ -285,13 +279,9 @@ if (!function_exists('mh_widget_department_queues')) {
     {
         $today = $ctx['today'];
         $counts = [];
-        $st = $conn->prepare("SELECT department, COUNT(*) AS c FROM appointments
-                              WHERE appointment_date = ? AND status IN ('Waiting', 'Approved') GROUP BY department");
-        if ($st) {
-            $st->bind_param('s', $today); $st->execute();
-            $res = $st->get_result();
-            while ($res && ($r = $res->fetch_assoc())) { $counts[$r['department']] = (int) $r['c']; }
-            $st->close();
+        foreach (mh_db_all("SELECT department, COUNT(*) AS c FROM appointments
+                            WHERE appointment_date = ? AND status IN ('Waiting', 'Approved') GROUP BY department", [$today]) as $r) {
+            $counts[$r['department']] = (int) $r['c'];
         }
         $all     = array_column(mh_options($conn, 'clinic_departments', true), 'option_value');
         $visible = mh_departments_visible_to($_SESSION['role'] ?? '', $all);   // null = every department
@@ -369,30 +359,29 @@ if (!function_exists('mh_widget_immunization_due')) {
         $today    = $ctx['today'];
         $week_end = $ctx['week_end'];
 
-        $rows = $conn->query("
-            SELECT p.id as patient_id, p.first_name, p.last_name, c.next_visit_date
+        $rows = mh_db_all("
+            SELECT p.id AS patient_id, p.first_name, p.last_name, c.next_visit_date
             FROM child_immunization_records c
             JOIN patients p ON c.patient_id = p.id
-            WHERE c.next_visit_date BETWEEN '$today' AND '$week_end'
+            WHERE c.next_visit_date BETWEEN ? AND ?
             ORDER BY c.next_visit_date ASC LIMIT 5
-        ");
-        $count_q = $conn->query("SELECT COUNT(*) as total FROM child_immunization_records WHERE next_visit_date BETWEEN '$today' AND '$week_end'");
-        $count   = $count_q ? (int) $count_q->fetch_assoc()['total'] : 0;
+        ", [$today, $week_end]);
+        $count = (int) mh_db_value("SELECT COUNT(*) FROM child_immunization_records WHERE next_visit_date BETWEEN ? AND ?", [$today, $week_end]);
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#8b5cf6;"><?php echo number_format($count); ?></div>
             <div class="widget-stat-label">Due This Week</div>
         </div>
         <ul class="widget-list">
-            <?php if ($rows && $rows->num_rows > 0): ?>
-                <?php while ($row = $rows->fetch_assoc()): ?>
+            <?php if ($rows): ?>
+                <?php foreach ($rows as $row): ?>
                     <li>
                         <a href="view_patient.php?id=<?php echo (int) $row['patient_id']; ?>">
                             <?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?>
                         </a>
                         <span class="widget-list-meta"><?php echo htmlspecialchars(date('M d', strtotime($row['next_visit_date']))); ?></span>
                     </li>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             <?php else: ?>
                 <li class="widget-empty">No immunizations due this week.</li>
             <?php endif; ?>
@@ -418,28 +407,27 @@ if (!function_exists('mh_widget_maternal_followups')) {
         $today    = $ctx['today'];
         $week_end = $ctx['week_end'];
 
-        $rows = $conn->query("
+        $rows = mh_db_all("
             SELECT p.first_name, p.last_name, m.next_visit_date
             FROM maternal_records m
             JOIN patients p ON m.patient_id = p.id
-            WHERE m.next_visit_date BETWEEN '$today' AND '$week_end'
+            WHERE m.next_visit_date BETWEEN ? AND ?
             ORDER BY m.next_visit_date ASC LIMIT 5
-        ");
-        $count_q = $conn->query("SELECT COUNT(*) as total FROM maternal_records WHERE next_visit_date BETWEEN '$today' AND '$week_end'");
-        $count   = $count_q ? (int) $count_q->fetch_assoc()['total'] : 0;
+        ", [$today, $week_end]);
+        $count = (int) mh_db_value("SELECT COUNT(*) FROM maternal_records WHERE next_visit_date BETWEEN ? AND ?", [$today, $week_end]);
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#ec4899;"><?php echo number_format($count); ?></div>
             <div class="widget-stat-label">Follow-Ups Due This Week</div>
         </div>
         <ul class="widget-list">
-            <?php if ($rows && $rows->num_rows > 0): ?>
-                <?php while ($row = $rows->fetch_assoc()): ?>
+            <?php if ($rows): ?>
+                <?php foreach ($rows as $row): ?>
                     <li>
                         <span><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></span>
                         <span class="widget-list-meta"><?php echo htmlspecialchars(date('M d', strtotime($row['next_visit_date']))); ?></span>
                     </li>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             <?php else: ?>
                 <li class="widget-empty">No maternal follow-ups due this week.</li>
             <?php endif; ?>
@@ -457,17 +445,19 @@ if (!function_exists('mh_widget_inventory_alerts')) {
         $today        = $ctx['today'];
         $expiry_limit = date('Y-m-d', strtotime($today . ' +30 days'));
 
-        $low_stock_q = $conn->query("SELECT COUNT(*) as total FROM inventory WHERE status = 1 AND quantity <= 20");
-        $low_stock   = $low_stock_q ? (int) $low_stock_q->fetch_assoc()['total'] : 0;
+        $counts = mh_db_one("
+            SELECT SUM(quantity <= 20) AS low_stock,
+                   SUM(expiry_date IS NOT NULL AND expiry_date BETWEEN ? AND ?) AS expiring
+            FROM inventory WHERE status = 1
+        ", [$today, $expiry_limit]);
+        $low_stock = (int) ($counts['low_stock'] ?? 0);
+        $expiring  = (int) ($counts['expiring'] ?? 0);
 
-        $expiring_q = $conn->query("SELECT COUNT(*) as total FROM inventory WHERE status = 1 AND expiry_date IS NOT NULL AND expiry_date BETWEEN '$today' AND '$expiry_limit'");
-        $expiring   = $expiring_q ? (int) $expiring_q->fetch_assoc()['total'] : 0;
-
-        $rows = $conn->query("
+        $rows = mh_db_all("
             SELECT item_name, quantity, unit, expiry_date FROM inventory
-            WHERE status = 1 AND (quantity <= 20 OR (expiry_date IS NOT NULL AND expiry_date BETWEEN '$today' AND '$expiry_limit'))
+            WHERE status = 1 AND (quantity <= 20 OR (expiry_date IS NOT NULL AND expiry_date BETWEEN ? AND ?))
             ORDER BY quantity ASC LIMIT 5
-        ");
+        ", [$today, $expiry_limit]);
         ?>
         <div class="widget-chip-row" style="margin-bottom: 12px;">
             <span class="widget-chip chip-red"><?php echo $low_stock; ?> Low Stock</span>
@@ -475,8 +465,8 @@ if (!function_exists('mh_widget_inventory_alerts')) {
         </div>
         <table class="data-table widget-table">
             <tbody>
-                <?php if ($rows && $rows->num_rows > 0): ?>
-                    <?php while ($row = $rows->fetch_assoc()): ?>
+                <?php if ($rows): ?>
+                    <?php foreach ($rows as $row): ?>
                         <tr>
                             <td style="font-weight: bold; color: var(--heading-color, #0f172a);"><?php echo htmlspecialchars($row['item_name']); ?></td>
                             <td style="text-align: right; white-space: nowrap;">
@@ -487,7 +477,7 @@ if (!function_exists('mh_widget_inventory_alerts')) {
                                 <?php endif; ?>
                             </td>
                         </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 <?php else: ?>
                     <tr><td class="widget-empty">All inventory levels are healthy!</td></tr>
                 <?php endif; ?>
@@ -505,29 +495,28 @@ if (!function_exists('mh_widget_dental_today')) {
     {
         $today = $ctx['today'];
 
-        $count_q = $conn->query("SELECT COUNT(*) as total FROM dental_records WHERE visit_date = '$today'");
-        $count   = $count_q ? (int) $count_q->fetch_assoc()['total'] : 0;
+        $count = (int) mh_db_value("SELECT COUNT(*) FROM dental_records WHERE visit_date = ?", [$today]);
 
-        $rows = $conn->query("
+        $rows = mh_db_all("
             SELECT p.first_name, p.last_name, d.procedure_done
             FROM dental_records d
             JOIN patients p ON d.patient_id = p.id
-            WHERE d.visit_date = '$today'
+            WHERE d.visit_date = ?
             ORDER BY d.created_at DESC LIMIT 5
-        ");
+        ", [$today]);
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#06b6d4;"><?php echo number_format($count); ?></div>
             <div class="widget-stat-label">Dental Records Today</div>
         </div>
         <ul class="widget-list">
-            <?php if ($rows && $rows->num_rows > 0): ?>
-                <?php while ($row = $rows->fetch_assoc()): ?>
+            <?php if ($rows): ?>
+                <?php foreach ($rows as $row): ?>
                     <li>
                         <span><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></span>
                         <span class="widget-list-meta"><?php echo htmlspecialchars($row['procedure_done']); ?></span>
                     </li>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             <?php else: ?>
                 <li class="widget-empty">No dental visits logged today.</li>
             <?php endif; ?>
@@ -552,13 +541,16 @@ if (!function_exists('mh_widget_sms_queue')) {
 
         $today = $ctx['today'];
 
-        $pending_q = $conn->query("SELECT COUNT(*) as total FROM scheduled_sms WHERE status = 'pending'");
-        $pending   = $pending_q ? (int) $pending_q->fetch_assoc()['total'] : 0;
+        $pending = (int) mh_db_value("SELECT COUNT(*) FROM scheduled_sms WHERE status = 'pending'");
 
         $failed_today = 0;
         if (mh_table_exists($conn, 'sms_logs')) {
-            $failed_q = $conn->query("SELECT COUNT(*) as total FROM sms_logs WHERE status = 'failed' AND DATE(created_at) = '$today'");
-            $failed_today = $failed_q ? (int) $failed_q->fetch_assoc()['total'] : 0;
+            // range instead of DATE(created_at) = ... so idx_sms_status_created can be used
+            $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
+            $failed_today = (int) mh_db_value(
+                "SELECT COUNT(*) FROM sms_logs WHERE status = 'failed' AND created_at >= ? AND created_at < ?",
+                [$today, $tomorrow]
+            );
         }
 
         $key_problem = null;
@@ -595,13 +587,11 @@ if (!function_exists('mh_widget_patient_registrations')) {
     {
         $week_ago = date('Y-m-d', strtotime($ctx['today'] . ' -7 days'));
 
-        $total_q = $conn->query("SELECT COUNT(*) as total FROM patients WHERE status = 1");
-        $total   = $total_q ? (int) $total_q->fetch_assoc()['total'] : 0;
+        $totals = mh_db_one("SELECT COUNT(*) AS total, SUM(created_at >= ?) AS recent FROM patients WHERE status = 1", [$week_ago]);
+        $total  = (int) ($totals['total'] ?? 0);
+        $recent = (int) ($totals['recent'] ?? 0);
 
-        $recent_q = $conn->query("SELECT COUNT(*) as total FROM patients WHERE status = 1 AND created_at >= '$week_ago'");
-        $recent   = $recent_q ? (int) $recent_q->fetch_assoc()['total'] : 0;
-
-        $rows = $conn->query("SELECT first_name, last_name, created_at FROM patients WHERE status = 1 ORDER BY created_at DESC LIMIT 4");
+        $rows = mh_db_all("SELECT first_name, last_name, created_at FROM patients WHERE status = 1 ORDER BY created_at DESC LIMIT 4");
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#10b981;"><?php echo number_format($total); ?></div>
@@ -611,13 +601,13 @@ if (!function_exists('mh_widget_patient_registrations')) {
             <span class="widget-chip chip-green"><?php echo $recent; ?> New This Week</span>
         </div>
         <ul class="widget-list">
-            <?php if ($rows && $rows->num_rows > 0): ?>
-                <?php while ($row = $rows->fetch_assoc()): ?>
+            <?php if ($rows): ?>
+                <?php foreach ($rows as $row): ?>
                     <li>
                         <span><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></span>
                         <span class="widget-list-meta"><?php echo htmlspecialchars(date('M d', strtotime($row['created_at']))); ?></span>
                     </li>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             <?php else: ?>
                 <li class="widget-empty">No patient registrations yet.</li>
             <?php endif; ?>
@@ -632,11 +622,11 @@ if (!function_exists('mh_widget_patient_registrations')) {
 if (!function_exists('mh_widget_system_activity')) {
     function mh_widget_system_activity(mysqli $conn, array $ctx)
     {
-        $rows = $conn->query("SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 6");
+        $rows = mh_db_all("SELECT action, details, user_role, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 6");
         ?>
         <ul class="activity-feed">
-            <?php if ($rows && $rows->num_rows > 0): ?>
-                <?php while ($log = $rows->fetch_assoc()):
+            <?php if ($rows): ?>
+                <?php foreach ($rows as $log):
                     $icon = 'file-text';
                     $action_lc = strtolower($log['action']);
                     if (strpos($action_lc, 'login') !== false) $icon = 'log-out';
@@ -654,7 +644,7 @@ if (!function_exists('mh_widget_system_activity')) {
                             </div>
                         </div>
                     </li>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             <?php else: ?>
                 <p class="widget-empty">No recent activity found.</p>
             <?php endif; ?>

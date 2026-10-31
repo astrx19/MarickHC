@@ -129,7 +129,7 @@ $system_name = $system_name ?? mh_setting('system_name');
                 </div>
             </div>
             <div style="text-align: right; margin-top: -12px; margin-bottom: 22px;">
-                <a href="forgot_password.php" style="color: #4ca1af; font-size: 0.85rem; text-decoration: none; font-weight: bold;">Forgot Password?</a>
+                <a href="forgot_password.php?for=patient" style="color: #4ca1af; font-size: 0.85rem; text-decoration: none; font-weight: bold;">Forgot Password?</a>
             </div>
             <button type="submit" class="btn-login">Secure Login</button>
         </form>

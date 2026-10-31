@@ -5,6 +5,7 @@
  * Loaded automatically by includes/modal_assets.php, which every page already
  * includes inside <head>, so these are available anywhere in the page body.
  *
+ *   mh_h($value)                        -> HTML/attribute-safe output (htmlspecialchars with sane flags)
  *   mh_js($value)                       -> safe JSON literal for inline <script>
  *   mh_notify_script($msg, $type)       -> <script> that shows ONE toast/alert on page load
  *   mh_flash_scripts($success, $error)  -> convenience: success toast + error alert
@@ -47,5 +48,13 @@ if (!function_exists('mh_flash_scripts')) {
     function mh_flash_scripts(?string $success, ?string $error): string
     {
         return mh_notify_script($success, 'success') . mh_notify_script($error, 'error');
+    }
+}
+
+if (!function_exists('mh_h')) {
+    /** Escape for HTML text AND attribute values (quotes included). Use for every echoed database/user value. */
+    function mh_h($value): string
+    {
+        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

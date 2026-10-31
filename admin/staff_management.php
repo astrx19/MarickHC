@@ -673,7 +673,7 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
                                 <div class="form-group full-width">
                                     <label>Account Role <span style="color:red;">*</span></label>
                                     <select name="role" id="add_role" required>
-                                        <option value="" disabled selected>Select assigned role...</option>
+                                        <option value="" disabled selected><?php echo $assignable_roles ? 'Select assigned role...' : 'No roles available - add one in System Settings'; ?></option>
                                         <?php foreach ($assignable_roles as $rk => $rl): ?>
                                             <option value="<?php echo htmlspecialchars($rk); ?>"><?php echo htmlspecialchars($rl); ?></option>
                                         <?php endforeach; ?>
@@ -681,8 +681,15 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
                                 </div>
 
                                 <p style="grid-column: 1 / -1; margin: -2px 0 0; font-size: 0.8rem; color: var(--text-muted, #64748b);">
-                                    The role sets the account's default access. Fine-tune individual functions later with <strong>Edit</strong>.
+                                    Picking a role fills in what that role can do. Untick anything this person should <strong>not</strong> have.
                                 </p>
+
+                                <div class="cap-box full-width" id="add_cap_box" hidden style="margin-bottom: 8px;">
+                                    <h4>Functions for this role</h4>
+                                    <p class="cap-note" id="add_cap_note">Pick a role to see its functions.</p>
+                                    <input type="hidden" name="caps_present" value="1">
+                                    <?php mh_render_capability_checkboxes($capability_registry, 'add_'); ?>
+                                </div>
                             </div>
                             
                             <button type="submit" name="add_staff" data-confirm="Create this staff account?" data-confirm-title="Create account?" data-confirm-type="info" data-confirm-ok="Create" class="btn-submit" style="width: 100%; margin-top: 15px;">Create Account</button>
@@ -841,9 +848,9 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
             syncDeptLock();
         }
 
-        function applyRoleDefaultCaps(role) {
+        function applyRoleDefaultCaps(role, boxId) {
             const d = ROLE_DEFAULT_CAPS[role] || {};
-            document.querySelectorAll('#edit_cap_box input[data-cap]').forEach(cb => { cb.checked = !!d[cb.value]; });
+            document.querySelectorAll('#' + (boxId || 'edit_cap_box') + ' input[data-cap]').forEach(cb => { cb.checked = !!d[cb.value]; });
         }
 
         function openEditModal(btn) {
@@ -924,7 +931,24 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
             applyRoleDefaultDepts(document.getElementById('edit_role').value);
         });
 
+        // Add Staff: choosing a role reveals that role's functions, pre-ticked, so the creator sees exactly what it grants.
+        (function () {
+            const sel = document.getElementById('add_role');
+            const box = document.getElementById('add_cap_box');
+            if (!sel || !box) { return; }
+            sel.addEventListener('change', () => {
+                box.hidden = !sel.value;
+                if (!sel.value) { return; }
+                applyRoleDefaultCaps(sel.value, 'add_cap_box');
+                syncCapBox('add_role', 'add_cap_box', 'add_cap_note');   // admin tier: everything ticked + locked
+                box.classList.remove('is-locked', 'is-locked-off');
+                if (sel.value === 'admin' || sel.value === 'health_head') { box.classList.add('is-locked'); }
+            });
+        })();
+
         function openAddStaffModal() {
+            const rs = document.getElementById('add_role'), cb = document.getElementById('add_cap_box');
+            if (rs && cb) { rs.selectedIndex = 0; cb.hidden = true; }   // start clean every time
             document.getElementById('addStaffModal').classList.add('active');
             var f = document.querySelector('#addStaffModal input[name="last_name"]');
             if (f) { f.focus(); }

@@ -1,83 +1,18 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-header('Content-Type: application/json');
+/**
+ * Consultation note / referral slip OCR scan.
+ * Page contract: upload field "document"; success -> clinical fields as FLAT top-level keys + extracted_fields, extracted_identity, matched_patient; failure -> {error}
+ * Shared plumbing (headers, session, Gemini config, upload, retries, matching) lives in
+ * includes/ocr/ocr_endpoint.php - this file only holds what is specific to this form.
+ */
+require_once __DIR__ . '/../../includes/ocr/ocr_endpoint.php';
+mh_ocr_preflight('bare');
 
-// JSON-safe auth check: unlike includes/admin_auth.php, this returns a
-// JSON 401 instead of an HTML redirect, since a redirect Location header
-// can't be meaningfully followed by fetch()/JSON.parse() on the frontend,
-// and this endpoint lives two directories deep (admin/ocr/) rather than
-// the one level includes/admin_auth.php's relative redirect assumes.
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private");
-header("Pragma: no-cache");
-if (!isset($_SESSION['user_id'])) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Your session has expired. Please log in again.']);
-    exit;
-}
-
-require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../config/database.php';          // kept at top level: defines $conn
 require_once __DIR__ . '/../../includes/settings_helper.php';
 mh_require_ocr_access_json('checkups');   // module switch + 'use_ocr_scanner' toggle
 
-// ---------------------------------------------------------------------
-// Retry budget for this endpoint. These are defined BEFORE config/gemini.php
-// is loaded, so they win over the project-wide defaults there (that file
-// only defines a constant when it is not already set).
-//
-// Backoff is exponential with full jitter and honours any Retry-After
-// header Google sends, so a 503 "model is overloaded" burst is ridden out
-// rather than surfaced to the health worker: ~0.6s, 1.2s, 2.4s between attempts, per model.
-// ---------------------------------------------------------------------
-if (!defined('GEMINI_MAX_ATTEMPTS'))    { define('GEMINI_MAX_ATTEMPTS', 3); }
-if (!defined('GEMINI_BACKOFF_BASE_MS')) { define('GEMINI_BACKOFF_BASE_MS', 600); }
-if (!defined('GEMINI_BACKOFF_CAP_MS'))  { define('GEMINI_BACKOFF_CAP_MS', 6000); }
-if (!defined('GEMINI_HTTP_TIMEOUT'))    { define('GEMINI_HTTP_TIMEOUT', 45); }
-
-require_once __DIR__ . '/../../includes/ocr/GeminiOcrClient.php';
-
-// config/gemini.php holds the API key, the model name and the retry
-// tuning (GEMINI_MAX_ATTEMPTS / GEMINI_BACKOFF_BASE_MS). Without it the
-// scanner cannot run, so say so plainly instead of failing generically.
-if (file_exists(__DIR__ . '/../../config/gemini.php')) {
-    require_once __DIR__ . '/../../config/gemini.php';
-} else {
-    http_response_code(500);
-    $msg = 'The OCR configuration loader is missing on the server, so the scanner cannot read its API key. '
-         . 'Copy it from the project template and paste a key from Google AI Studio.';
-    echo json_encode(['error' => $msg]);
-    exit;
-}
-
-// Fail fast on a missing / malformed key so the user sees the real
-// problem instead of a 404 from Google several seconds later.
-if (function_exists('gemini_api_key_problem')) {
-    $keyProblem = gemini_api_key_problem();
-    if ($keyProblem !== null) {
-        http_response_code(500);
-        $msg = $keyProblem;
-        echo json_encode(['error' => $msg]);
-        exit;
-    }
-}
-
-// NOTE: the existing frontend (admin/checkups_consultations.php, runOCR())
-// uploads under the field name "document", and expects the extracted
-// fields as FLAT top-level keys on success, or { error: "..." } on failure.
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['error' => 'Invalid request method.']);
-    exit;
-}
-
-$upload = gemini_ocr_get_uploaded_file('document');
-if (!$upload['success']) {
-    echo json_encode(['error' => $upload['error']]);
-    exit;
-}
+$upload = mh_ocr_begin(['field' => 'document', 'attempts' => 3, 'base_ms' => 600, 'cap_ms' => 6000, 'timeout' => 45]);
 
 // Schema mirrors the Checkups/Consultations form fields (see admin/checkups_consultations.php).
 //
@@ -110,63 +45,15 @@ $prompt = "You are reading a scanned or photographed medical consultation note o
     . "- If a field is not present or illegible, omit it (do not guess or invent a diagnosis "
     . "that isn't written down).";
 
-$result = gemini_ocr_extract_fields($upload['path'], $upload['mime_type'], $prompt, $schema);
+$fields = mh_ocr_extract($upload, $prompt, $schema);
 
-if (!$result['success']) {
-    if (in_array(($result['http_code'] ?? 0), [0, 429, 500, 502, 503, 504], true)) {
-        http_response_code(503);
-    }
-    // This frontend reads a bare { error: "..." } object.
-    $payload = ['error' => $result['error']];
-    if (!empty($result['http_code'])) { $payload['http_code'] = $result['http_code']; }
-    if (!empty($result['model']))     { $payload['model']     = $result['model']; }
-    if (!empty($result['debug']))     { $payload['debug']     = $result['debug']; }
-    echo json_encode($payload);
-    exit;
-}
+$extracted_identity = mh_ocr_take_identity($fields);
+$matched_patient    = mh_ocr_match($extracted_identity);
 
-// This frontend expects the clinical fields directly at the top level (no wrapper),
-// so we merge them back in alongside the new matching keys for backward compatibility.
-$fields = $result['fields'];
-
-$extracted_identity = [
-    'first_name' => $fields['first_name'] ?? '',
-    'last_name'  => $fields['last_name'] ?? '',
-    'birthdate'  => '',
-];
-unset($fields['first_name'], $fields['last_name']);
-
-if (!empty($fields['birthdate'])) {
-    $normalizedBday = gemini_ocr_normalize_date($fields['birthdate']);
-    if ($normalizedBday !== '') {
-        $extracted_identity['birthdate'] = $normalizedBday;
-    }
-}
-unset($fields['birthdate']);
-
-// ---------------------------------------------------------------------
-// Dynamic patient matching against the patients table.
-// ---------------------------------------------------------------------
-$matched_patient = null;
-if ($extracted_identity['first_name'] !== '' && $extracted_identity['last_name'] !== '') {
-    require_once __DIR__ . '/../../config/database.php';
-    $match = gemini_ocr_match_patient($conn, $extracted_identity['first_name'], $extracted_identity['last_name'], $extracted_identity['birthdate']);
-    if ($match) {
-        $matched_patient = [
-            'id'        => (int) $match['id'],
-            'full_name' => $match['full_name'],
-            'first_name' => $match['first_name'],
-            'middle_name' => $match['middle_name'] ?? '',
-            'last_name' => $match['last_name'],
-            'birthdate' => $match['birthdate'],
-        ];
-    }
-}
-
+// This page reads the clinical fields directly at the top level (no wrapper).
 echo json_encode($fields + [
     'success'             => true,
     'extracted_fields'    => $fields,
     'extracted_identity'  => $extracted_identity,
     'matched_patient'     => $matched_patient,
 ]);
-?>

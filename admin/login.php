@@ -140,13 +140,19 @@ if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
             <p>Staff Console</p>
         </div>
 
-        <?php if($success_msg): ?><div class="alert alert-success" style="display:flex; align-items:center; gap:8px;"><?php echo mh_icon('check-circle'); ?> <?php echo $success_msg; ?></div><?php endif; ?>
-        <?php if($error_msg): ?><div class="alert alert-error" style="display:flex; align-items:center; gap:8px;"><?php echo mh_icon('x-circle'); ?> <?php echo $error_msg; ?></div><?php endif; ?>
+        <?php
+        // ONE banner at a time. Priority: error > success > first-login welcome.
+        // (Before, a wrong first-login password showed the red error AND the blue "Welcome" banner stacked.)
+        $welcome = !empty($require_password_change);
+        if ($error_msg !== '')      { $banner = ['alert-error',   'x-circle',     $error_msg]; }
+        elseif ($success_msg !== ''){ $banner = ['alert-success', 'check-circle', $success_msg]; }
+        elseif ($welcome)           { $banner = ['alert-info',    'info',         'Welcome! Please set a secure, private password to continue.']; }
+        else                        { $banner = null; }
+        if ($banner): ?>
+            <div class="alert <?php echo $banner[0]; ?>" role="alert" style="display:flex; align-items:center; gap:8px;"><?php echo mh_icon($banner[1]); ?> <span><?php echo mh_h($banner[2]); ?></span></div>
+        <?php endif; ?>
 
-        <?php if(isset($require_password_change) && $require_password_change): ?>
-            <div class="alert alert-success" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">
-                Welcome! Please set a secure, private password to continue.
-            </div>
+        <?php if ($welcome): ?>
             <form method="POST">
                 <div class="form-group">
                     <label>New Password</label>
@@ -175,7 +181,7 @@ if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
                     </div>
                 </div>
                 <div style="text-align: right; margin-top: -12px; margin-bottom: 15px;">
-                    <a href="../forgot_password.php" style="color: #4ca1af; font-size: 0.85rem; text-decoration: none; font-weight: bold;">Forgot Password?</a>
+                    <a href="../forgot_password.php?for=staff" style="color: #4ca1af; font-size: 0.85rem; text-decoration: none; font-weight: bold;">Forgot Password?</a>
                 </div>
                 <button type="submit" name="login" class="btn-submit">Sign In</button>
             </form>

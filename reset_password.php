@@ -86,7 +86,8 @@ if ($view === 'password' && $action === 'reset_password') {
         }
     }
 }
-$loginUrl = (($resetRow['user_type'] ?? '') === 'staff') ? 'admin/login.php' : 'patient_login.php';
+$isStaffFlow = (($resetRow['user_type'] ?? '') === 'staff') || (($_SESSION['pr_for'] ?? '') === 'staff');
+$loginUrl = $isStaffFlow ? 'admin/login.php' : 'patient_login.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -120,7 +121,7 @@ $loginUrl = (($resetRow['user_type'] ?? '') === 'staff') ? 'admin/login.php' : '
 
 <?php elseif ($view === 'invalid'): ?>
     <div class="pr-alert err"><?php echo mh_pr_icon('alert'); ?><span><?php echo mh_pr_h($fatal); ?></span></div>
-    <a class="pr-btn" href="forgot_password.php?restart=1">Request a New Link or Code</a>
+    <a class="pr-btn" href="forgot_password.php?restart=1<?php echo $isStaffFlow ? '&amp;for=staff' : ''; ?>">Request a New Link or Code</a>
 
 <?php elseif ($view === 'otp'): ?>
     <form method="POST" action="reset_password.php?method=sms" autocomplete="off">
@@ -154,7 +155,7 @@ $loginUrl = (($resetRow['user_type'] ?? '') === 'staff') ? 'admin/login.php' : '
 <?php endif; ?>
 
     <?php if ($view !== 'success'): ?>
-    <div class="pr-links"><a href="patient_login.php">&larr; Back to Login</a></div>
+    <div class="pr-links"><a href="<?php echo mh_pr_h($loginUrl); ?>">&larr; Back to Login</a></div>
     <?php endif; ?>
 </div>
 <script>
