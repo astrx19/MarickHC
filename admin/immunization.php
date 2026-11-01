@@ -19,6 +19,7 @@ require_capability(['can_log_immunization', 'can_view_immunization_records']);
 require_once __DIR__ . '/../includes/settings_helper.php';
 mh_check_module_enabled('immunization');
 
+require_once __DIR__ . '/../includes/patient_profile_helper.php';
 mh_ensure_patient_name_columns($conn);   // adds patient_name / nullable patient_id if the migration was never run
 $can_log          = mh_has_capability('can_log_immunization');
 $can_view_history = mh_has_capability('can_view_immunization_records');
@@ -86,7 +87,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
         $mmr_date                = null_if_empty($_POST['mmr_date'] ?? '');
         $next_visit_date         = null_if_empty($_POST['next_visit_date'] ?? '');
 
-        $stmt = $conn->prepare("INSERT INTO child_immunization_records 
+        // A child who is not a registered patient yet is registered NOW, so the record (and the child)
+        // appear in the Patient Masterlist instead of floating around with patient_id = NULL.
+        $registration_error = null; $child_created_id = null;
+        if ($patient_id === null) {
+            list($new_pid, $registration_error, $was_created) = mh_register_child_patient(
+                $conn, $pn, $_POST['child_birthdate'] ?? '', $_POST['child_sex'] ?? '', $contact_no, $family_no
+            );
+            if ($new_pid !== null) { $patient_id = $new_pid; if ($was_created) { $child_created_id = $new_pid; } }
+        }
+
+        $stmt = $registration_error !== null ? false : $conn->prepare("INSERT INTO child_immunization_records 
             (patient_id, patient_name, attending_staff_id, family_no, others_header, newborn_screening_date, tt_of_mother_date, 
              birth_time, birth_weight, birth_height, birth_place, type_of_delivery, place_of_delivery, 
              type_of_breastfeeding, mother_name, mother_bday, mother_age, father_name, father_bday, father_age, 
@@ -130,6 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
                 }
 
                 $success_msg = "Child Immunization Record saved successfully!";
+                if ($child_created_id !== null) { $success_msg .= " The child was added to the Patient Masterlist."; }
                 if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
                     && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
                     $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " #" . (int) $queue_ctx_post['queue_number'] : "") . " marked as Completed.";
@@ -152,11 +164,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
                     }
                 }
             } else {
-                $error_msg = "Error saving record: " . $stmt->error;
+                error_log('immunization save failed: ' . $stmt->error);
+                $error_msg = "The record could not be saved. Please check the form and try again.";
+                if ($child_created_id !== null) {   // do not leave a half-created patient behind
+                    $rb = $conn->prepare("DELETE FROM patients WHERE id = ?");
+                    $rb->bind_param('i', $child_created_id); $rb->execute(); $rb->close();
+                }
             }
             $stmt->close();
         } else {
-            $error_msg = "Database prepare error: " . $conn->error;
+            $error_msg = $registration_error !== null ? $registration_error : "Database prepare error: " . $conn->error;
         }
     }
 }
@@ -167,6 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
 // ---------------------------------------------------------------------------------------------
 $queue_ctx = null; $queue_open_modal = false; $queue_prefill = []; $queue_label = '';
 $prefill_name_parts = [];
+$prefill_child_bdate = ''; $prefill_child_sex = '';
 if ($can_log && $success_msg === '' && (isset($_GET['walkin_id']) || isset($_GET['apt_id']))) {
     $q_patient = (int) ($_GET['walkin_id'] ?? 0);
     $queue_ctx = mh_queue_open_context($conn, $_GET['apt_id'] ?? 0, 'immunization', $q_patient);
@@ -176,6 +194,8 @@ if ($can_log && $success_msg === '' && (isset($_GET['walkin_id']) || isset($_GET
         $queue_open_modal   = true;
         $prefill_name_parts = mh_patient_name_parts_by_id($conn, $q_patient);
         $queue_label        = $profile['last_name'] . ', ' . $profile['first_name'];
+        $prefill_child_bdate = (string) ($profile['birthdate'] ?? '');
+        $prefill_child_sex   = (string) ($profile['sex'] ?? '');
 
         $pf = [
             'family_no'  => $profile['family_no'] ?? '',
@@ -375,6 +395,17 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
                     <div>
                         
                         <?php mh_render_patient_name_fields('Child / Patient Name', $prefill_name_parts); ?>
+                        <div class="paper-grid" style="grid-template-columns: 1fr 1fr; margin-top: 8px;">
+                            <div><label>Child's Birthdate: <span style="color:#dc2626;">*</span></label>
+                                <input type="date" id="childBirthdate" name="child_birthdate" min="1900-01-01" max="<?php echo date('Y-m-d'); ?>" data-mh-date value="<?php echo mh_h($prefill_child_bdate); ?>"></div>
+                            <div><label>Sex: <span style="color:#dc2626;">*</span></label>
+                                <select name="child_sex" id="childSex">
+                                    <option value="">Select...</option>
+                                    <option value="Male"<?php echo $prefill_child_sex === 'Male' ? ' selected' : ''; ?>>Male</option>
+                                    <option value="Female"<?php echo $prefill_child_sex === 'Female' ? ' selected' : ''; ?>>Female</option>
+                                </select></div>
+                        </div>
+                        <small style="display:block; margin-top:4px; opacity:.75;">Needed to add a new child to the Patient Masterlist (already-registered children are matched automatically).</small>
                     </div>
                     <div><label>Birth Time:</label><input type="time" name="birth_time"></div>
                 </div>
@@ -572,6 +603,11 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
         // nothing in the patients table matched what the OCR read.
         function applyOcrPatientMatch(matchedPatient, extractedIdentity) {
             const badge = document.getElementById('ocrMatchBadge');
+            // the scanned card's birthdate fills the form's birthdate (only when it is still empty)
+            if (extractedIdentity && extractedIdentity.birthdate) {
+                const cb = document.getElementById('childBirthdate');
+                if (cb && !cb.value) { cb.value = extractedIdentity.birthdate; }
+            }
             if (!badge) return;
 
             if (matchedPatient && matchedPatient.id) {

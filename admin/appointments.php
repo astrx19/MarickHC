@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/settings_helper.php';
 require_once __DIR__ . '/../includes/icons.php';
+require_once __DIR__ . '/../includes/queue_helper.php';
 
 // Granular: viewing the queue and acting on it (approve/proceed/reschedule/
 // reject) are separate permissions.
@@ -173,14 +174,35 @@ if ($visible !== null) {
     }
 }
 
-// Optional department filter, choices straight from the masterlist.
+// Department filter.
+//  - Roles that may see every department (Health Head / "Queue: See All Departments") get the
+//    "All departments" choice.
+//  - Everybody else is limited to their own department(s): no "All" choice, and the list is
+//    always narrowed to ONE of the departments they are allowed to see.
 $filter_dept = trim($_GET['dept'] ?? '');
-if ($filter_dept !== '' && in_array($filter_dept, $candidates, true)) {
-    $where_parts[]  = "a.department = ?";
-    $where_params[] = $filter_dept;
+$can_see_all = ($visible === null);
+if ($can_see_all) {
+    if ($filter_dept !== '' && in_array($filter_dept, $candidates, true)) {
+        $where_parts[]  = "a.department = ?";
+        $where_params[] = $filter_dept;
+    } else {
+        $filter_dept = '';
+    }
 } else {
-    $filter_dept = '';
+    if (!in_array($filter_dept, $visible, true)) { $filter_dept = $visible ? (string) $visible[0] : ''; }
+    if ($filter_dept !== '') {
+        $where_parts[]  = "a.department = ?";
+        $where_params[] = $filter_dept;
+    }
 }
+
+// TODAY only. Yesterday's entries are history (see the patient's profile), not part of the live queue.
+$where_parts[] = "a.appointment_date = CURDATE()";
+// Finished entries leave the list by themselves; "Show finished today" brings them back for a look.
+$show_finished = (($_GET['show'] ?? '') === 'all');
+if (!$show_finished) { $where_parts[] = "a.status IN ('Pending', 'Rescheduled', 'Waiting', 'Approved')"; }
+
+$clinic_closed = mh_clinic_closed_reason($conn);
 $where_clause = $where_parts ? 'WHERE ' . implode(' AND ', $where_parts) : '';
 
 $sql_fetch = "
@@ -198,7 +220,7 @@ $sql_fetch = "
             WHEN 'Cancelled' THEN 5 
             WHEN 'Rejected' THEN 6
         END ASC,
-        a.appointment_date ASC, 
+        COALESCE(a.queue_number, 9999) ASC, 
         a.id ASC
 ";
 $stmt_fetch = $conn->prepare($sql_fetch);
@@ -259,15 +281,31 @@ $stmt_fetch->close();
             if($error_msg) echo "<div class='alert alert-error' style='background:#fee2e2; color:#b91c1c; padding:15px; border-radius:8px; border:1px solid #fecaca; margin-bottom:20px; display:flex; align-items:center; gap:8px;'>" . mh_icon('x-circle') . " $error_msg</div>";
             ?>
 
+            <?php if ($clinic_closed !== null): ?>
+            <div class="alert alert-warn" role="alert" style="padding:15px; margin-bottom:20px; display:flex; align-items:flex-start; gap:10px;"><?php echo mh_icon('alert-triangle'); ?> <span><strong>Clinic closed.</strong> <?php echo mh_h($clinic_closed); ?></span></div>
+            <?php endif; ?>
+
             <div class="unified-panel">
                 <div class="panel-controls">
-                    <h3 style="margin:0; font-size: 1.1rem; color: var(--heading-color, #1e293b);">Incoming & Scheduled Queue</h3>
-                    <form method="GET" style="margin:0; display:flex; align-items:center; gap:8px;">
+                    <h3 style="margin:0; font-size: 1.1rem; color: var(--heading-color, #1e293b);">Today's Queue <small style="font-weight:600; color: var(--text-muted, #64748b);">&middot; <?php echo date('l, F j, Y'); ?></small></h3>
+                    <form method="GET" style="margin:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <?php if ($show_finished): ?><input type="hidden" name="show" value="all"><?php endif; ?>
+                        <a href="?<?php echo mh_h(http_build_query(array_filter(['dept' => $filter_dept, 'show' => $show_finished ? '' : 'all']))); ?>" style="font-size:0.82rem; font-weight:700; color: var(--primary, #4ca1af); text-decoration:none;">
+                            <?php echo $show_finished ? 'Hide finished' : 'Show finished today'; ?>
+                        </a>
+                        <?php if ($can_see_all || count($visible) > 1): ?>
                         <label for="deptFilter" style="margin:0; font-size:0.8rem; font-weight:700; color:var(--text-muted, #64748b);">Department</label>
-                        <select id="deptFilter" name="dept" onchange="this.form.submit()" style="padding:8px 10px; border-radius:6px; border:1px solid var(--border-color, #cbd5e1);">
-                            <option value="">All departments</option>
-                            <?php echo mh_department_options($conn, $filter_dept); ?>
+                        <select id="deptFilter" name="dept" onchange="this.form.submit()">
+                            <?php if ($can_see_all): ?>
+                                <option value="">All departments</option>
+                                <?php echo mh_department_options($conn, $filter_dept); ?>
+                            <?php else: foreach ($visible as $v): ?>
+                                <option value="<?php echo mh_h($v); ?>"<?php echo $v === $filter_dept ? ' selected' : ''; ?>><?php echo mh_h($v); ?></option>
+                            <?php endforeach; endif; ?>
                         </select>
+                        <?php elseif ($filter_dept !== ''): ?>
+                            <span class="mh-badge mh-badge-info"><?php echo mh_h($filter_dept); ?></span>
+                        <?php endif; ?>
                     </form>
                 </div>
                 
@@ -413,6 +451,16 @@ $stmt_fetch->close();
         function closeModal(id) {
             document.getElementById(id).classList.remove('active');
         }
+
+        // The queue changes while staff work in other tabs (a patient completed in General Consultation,
+        // a new walk-in...). Reload quietly every 30 s, but never while a dialog is open or a field is being used.
+        setInterval(function () {
+            if (document.hidden) { return; }
+            if (document.querySelector('.modal-overlay.active, .mh-modal-backdrop')) { return; }
+            var a = document.activeElement;
+            if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { return; }
+            window.location.href = window.location.pathname + window.location.search;   // GET: never re-sends a form
+        }, 30000);
     </script>
 </body>
 </html>

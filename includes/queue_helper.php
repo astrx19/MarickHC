@@ -34,6 +34,38 @@ function mh_ensure_queue_schema(mysqli $conn)
     $done = true;
 }
 
+/**
+ * Is the clinic closed TODAY? Returns a user-facing reason, or null when it is open.
+ *
+ * Closed = a holiday declared on the dashboard calendar (table `holidays`) OR a weekend
+ * (the clinic is open Monday-Friday). "Today" is the DATABASE's CURDATE() - the same clock the
+ * queue numbers and the "today only" list use, so they can never disagree.
+ * If the check itself fails the clinic is treated as OPEN (a database hiccup must never block patient care).
+ *
+ * @param string|null $date 'Y-m-d' to test another day (defaults to today)
+ */
+function mh_clinic_closed_reason(mysqli $conn, $date = null)
+{
+    $date = ($date !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date)) ? $date : null;
+    $d    = $date === null ? 'CURDATE()' : '?';
+    $st   = $conn->prepare("SELECT DAYOFWEEK($d) AS dow,
+                                   (SELECT description FROM holidays WHERE holiday_date = $d LIMIT 1) AS holiday");
+    if (!$st) { return null; }
+    if ($date !== null) { $st->bind_param('ss', $date, $date); }
+    if (!$st->execute()) { $st->close(); return null; }
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    if (!$row) { return null; }
+
+    if ($row['holiday'] !== null) {
+        return 'The clinic is closed today (' . trim((string) $row['holiday']) . '). Patients cannot be added to the queue on a declared holiday.';
+    }
+    if ((int) $row['dow'] === 1 || (int) $row['dow'] === 7) {   // MySQL: 1 = Sunday, 7 = Saturday
+        return 'The clinic is closed on weekends (open Monday to Friday). Patients cannot be added to the queue today.';
+    }
+    return null;
+}
+
 /** Status values meaning "in today's queue, ready to be called". 'Approved' = a staff-approved appointment. */
 function mh_queue_active_statuses()
 {
@@ -74,6 +106,9 @@ function mh_queue_department_problem(mysqli $conn, $department)
 function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Walk-In Queue Registration')
 {
     $patientId = (int) $patientId;
+
+    // 0) Closed day? (holiday / weekend) - enforced here so no screen can bypass it.
+    if (($closed = mh_clinic_closed_reason($conn)) !== null) { return [null, $closed]; }
 
     // 1) Patient must exist and be active (status = 1, i.e. not archived).
     $st = $conn->prepare("SELECT status FROM patients WHERE id = ? LIMIT 1 FOR UPDATE");

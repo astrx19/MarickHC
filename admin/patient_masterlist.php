@@ -62,7 +62,17 @@ if(isset($_POST['update_patient'])) {
     }
 }
 
-$query = "SELECT * FROM patients WHERE status = 1 ORDER BY last_name ASC";
+// One query: every active patient + their additional contacts (secondary / "number ng anak"...) folded into one text column.
+require_once __DIR__ . '/../includes/patient_profile_helper.php';
+mh_ensure_patient_contacts_schema($conn);
+$query = "SELECT p.*, pc.extra_contacts
+            FROM patients p
+            LEFT JOIN (SELECT patient_id,
+                              GROUP_CONCAT(CONCAT(contact_name, IF(relationship IS NULL OR relationship = '', '', CONCAT(' (', relationship, ')')), ': ', contact_number)
+                                           ORDER BY id SEPARATOR ' | ') AS extra_contacts
+                         FROM patient_contacts GROUP BY patient_id) pc ON pc.patient_id = p.id
+           WHERE p.status = 1
+           ORDER BY p.last_name ASC";
 $patients_result = $conn->query($query);
 ?>
 <!DOCTYPE html>
@@ -165,7 +175,10 @@ $patients_result = $conn->query($query);
                                 <tr>
                                     <td class="patient-name"><span style="display:inline-flex; align-items:center; gap:10px;"><?php echo mh_avatar_html(mh_initials($row['first_name'], $row['last_name']), 32, $row['first_name'] . ' ' . $row['last_name']); ?><span><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></span></span></td>
                                     <td><?php echo $age; ?></td>
-                                    <td><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?></td>
+                                    <td><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?>
+                                        <?php if (!empty($row['extra_contacts'])): ?>
+                                            <div style="font-size:0.78rem; color: var(--text-muted, #64748b); margin-top:3px; max-width:240px;" title="<?php echo mh_h($row['extra_contacts']); ?>"><?php echo mh_icon('users'); ?> <?php echo mh_h(str_replace(' | ', ' · ', $row['extra_contacts'])); ?></div>
+                                        <?php endif; ?></td>
                                     
                                     <td>
                                         <span class="badge <?php echo $badge_class; ?>">
@@ -327,6 +340,13 @@ $patients_result = $conn->query($query);
                 }
             }
         }
+
+        // Linked from a patient profile: ?q=<last name> pre-fills the search box.
+        (function () {
+            var q = new URLSearchParams(window.location.search).get('q');
+            var box = document.getElementById('searchInput');
+            if (q && box) { box.value = q; filterTable(); }
+        })();
     </script>
 </body>
 </html>

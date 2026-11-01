@@ -21,6 +21,7 @@ require_permission('walkin_registration');   // page load
 $system_name = $system_name ?? mh_setting('system_name');
 
 require_once __DIR__ . '/../includes/queue_helper.php';
+$clinic_closed = mh_clinic_closed_reason($conn);   // null = open; otherwise the reason (holiday / weekend)
 require_once __DIR__ . '/../includes/patient_duplicate_helper.php';   // smart duplicate detection (name+birthdate / email / mobile)
 // Straight from the Clinic Departments masterlist (database), not a cached config file.
 $clinic_departments = mh_clinic_departments($conn);
@@ -59,6 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_walkin'])) {
     if (!mh_csrf_check()) {
         http_response_code(403);
         $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
+    } elseif ($clinic_closed !== null) {
+        $error_msg = $clinic_closed;   // nothing is created while the clinic is closed
     } else {
         $department   = trim($_POST['department'] ?? '');
         $patient_type = (($_POST['patient_type'] ?? 'existing') === 'new') ? 'new' : 'existing';
@@ -255,13 +258,17 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
             <div class='alert alert-error' style='background:#fee2e2; color:#b91c1c; padding:15px; border-radius:8px; border:1px solid #fecaca; margin-bottom:20px;'><?php echo mh_icon('x-circle'); ?> <?php echo htmlspecialchars($error_msg); ?></div>
             <?php endif; ?>
 
+            <?php if ($clinic_closed !== null): ?>
+            <div class="alert alert-warn" role="alert" style="padding:15px; margin-bottom:20px; display:flex; align-items:flex-start; gap:10px;"><?php echo mh_icon('alert-triangle'); ?> <span><strong>Walk-in registration is closed.</strong> <?php echo mh_h($clinic_closed); ?></span></div>
+            <?php endif; ?>
+
             <form method="POST">
                 <?php echo mh_csrf_field(); ?>
                 <div class="routing-section">
                     <h3 style="margin: 0 0 15px 0; color: #b45309; display: flex; align-items: center; gap: 10px;">
                         Where does this patient need to go?
                     </h3>
-                    <select name="department" required style="width: 100%; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; font-size: 1.1rem; font-weight: bold; color: var(--text-main, #92400e); background: var(--bg-card, white);">
+                    <select name="department" required <?php echo $clinic_closed !== null ? 'disabled title="The clinic is closed today"' : ''; ?> style="width: 100%; padding: 15px; border-radius: 8px; border: 1px solid #fde68a; font-size: 1.1rem; font-weight: bold; color: var(--text-main, #92400e); background: var(--bg-card, white);">
                         <option value="" disabled selected>Select Clinic Department...</option>
                         <?php echo mh_department_options($conn); ?>
                     </select>
@@ -353,7 +360,7 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
                     </div>
                 </div>
 
-                <button type="submit" name="process_walkin" data-confirm="Add this patient to the queue?" data-confirm-title="Add to queue?" data-confirm-type="info" data-confirm-ok="Add to queue" class="btn-submit" style="width: 100%; padding: 18px; font-size: 1.2rem; background: #0ea5e9; border-color: #0284c7; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.2);">
+                <button type="submit" name="process_walkin" <?php echo $clinic_closed !== null ? 'disabled title="The clinic is closed today"' : ''; ?> data-confirm="Add this patient to the queue?" data-confirm-title="Add to queue?" data-confirm-type="info" data-confirm-ok="Add to queue" class="btn-submit" style="width: 100%; padding: 18px; font-size: 1.2rem; background: #0ea5e9; border-color: #0284c7; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.2);">
                     Add to Queue & Go to Appointments Dashboard
                 </button>
             </form>
