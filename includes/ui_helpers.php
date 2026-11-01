@@ -58,3 +58,26 @@ if (!function_exists('mh_h')) {
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }
+
+if (!function_exists('mh_clean_temperature')) {
+    /**
+     * Body temperature in degrees Celsius: digits with an optional decimal part ("36", "36.8").
+     * A trailing "C" / "°C" (what OCR or habit adds) is tolerated and dropped; anything else is rejected.
+     * Empty input is fine (the field is optional).
+     *
+     * @return array ['ok' => bool, 'value' => string ('' when empty), 'error' => string|null]
+     */
+    function mh_clean_temperature($raw)
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '') { return ['ok' => true, 'value' => '', 'error' => null]; }
+        if (!preg_match('/^(\d{2}(?:\.\d{1,2})?)\s*(?:°\s*C|C)?$/iu', $raw, $m)) {
+            return ['ok' => false, 'value' => '', 'error' => 'Temperature must be a number only, like 36.8 (degrees Celsius).'];
+        }
+        $v = (float) $m[1];
+        if ($v < 30 || $v > 45) {
+            return ['ok' => false, 'value' => '', 'error' => 'Temperature must be between 30 and 45 degrees Celsius (for example 36.8).'];
+        }
+        return ['ok' => true, 'value' => $m[1], 'error' => null];
+    }
+}

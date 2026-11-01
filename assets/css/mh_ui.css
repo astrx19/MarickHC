@@ -522,3 +522,30 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .mh-error-list { margin: 8px 0 0; padding-left: 20px; text-align: left; }
 .mh-error-list li { margin: 4px 0; line-height: 1.4; }
 .mh-modal-message .mh-error-list strong { color: var(--mh-danger-fg, #b91c1c); }
+
+/* ---------- 15. Step 6: "Search registered patients" picker (department forms) ---------- */
+.mh-ps { position: relative; margin: 4px 0 12px; }
+.mh-ps-input {
+    width: 100%; box-sizing: border-box; min-height: 42px; padding: 0 14px 0 38px; border-radius: 10px;
+    border: 1px dashed var(--primary, #4ca1af); background-color: var(--bg-input, #f8fafc); color: var(--text-main, #334155); font-family: inherit; font-size: 0.95rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: 12px center;
+}
+.mh-ps-input:focus { outline: none; border-style: solid; box-shadow: var(--mh-focus-ring, 0 0 0 3px rgba(76,161,175,.22)); }
+.mh-ps-list {
+    position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; max-height: 280px; overflow-y: auto;
+    background: var(--bg-card, #fff); border: 1px solid var(--border-color, #cbd5e1); border-radius: 12px; box-shadow: var(--mh-shadow-pop, 0 12px 30px rgba(15,23,42,.25));
+    animation: mh-dropdown-in 0.15s var(--mh-ease, ease) both;
+}
+.mh-ps-list[hidden] { display: none; }
+.mh-ps-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; color: var(--text-main, #334155); font-size: 0.93rem; }
+.mh-ps-list li span { color: var(--text-muted, #64748b); font-size: 0.8rem; white-space: nowrap; }
+.mh-ps-list li.is-active, .mh-ps-list li[data-i]:hover { background: rgba(var(--primary-rgb, 76, 161, 175), 0.16); }
+.mh-ps-list li.mh-ps-empty { cursor: default; color: var(--text-muted, #64748b); font-size: 0.85rem; display: block; }
+.mh-ps-badge {
+    margin-top: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; font-size: 0.85rem;
+    background: var(--mh-success-bg, #ecfdf5); color: var(--mh-success-fg, #047857); border: 1px solid var(--mh-success-border, #a7f3d0);
+}
+.mh-ps-badge[hidden] { display: none; }
+.mh-ps-clear { border: 0; background: none; color: inherit; font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 6px; }
+.mh-ps-clear:hover { background: rgba(0, 0, 0, 0.08); }

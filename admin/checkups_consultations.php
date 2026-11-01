@@ -38,6 +38,10 @@ if(isset($_POST['add_consultation'])) {
     $name_error   = $pn['error'];
     $visit_date   = $_POST['visit_date'] ?? '';
 
+    // Temperature: numbers / decimals only (e.g. 36.8) - checked before anything is saved.
+    $temp_check = mh_clean_temperature($_POST['temp'] ?? '');
+    if ($name_error === null && !$temp_check['ok']) { $name_error = $temp_check['error']; }
+
     if ($name_error !== null) {
         $_SESSION['error_msg'] = $name_error;
         header("Location: checkups_consultations.php");
@@ -52,7 +56,7 @@ if(isset($_POST['add_consultation'])) {
     $patient_id = mh_queue_resolve_patient($conn, $queue_ctx_post, $pn);
 
     $txt = function ($k) { $v = trim($_POST[$k] ?? ''); return $v === '' ? null : $v; };
-    $weight = $txt('weight'); $height = $txt('height'); $temp = $txt('temp'); $bp = $txt('bp');
+    $weight = $txt('weight'); $height = $txt('height'); $temp = ($temp_check['value'] === '' ? null : $temp_check['value']); $bp = $txt('bp');
     $complaints   = trim($_POST['chief_complaints'] ?? '');
     $diagnosis    = trim($_POST['diagnosis'] ?? '');
     $prescription = trim($_POST['prescription'] ?? '');
@@ -181,13 +185,13 @@ $consultations = !$can_view_history ? false : $conn->query("
         <div class="dashboard-container du-wrap">
             
             <div class="du-pagehead">
-                <div><h1>General Consultations Log</h1><p>General consultations, vitals and clinical notes.</p></div>
+                <div><h1>General Consultation Records</h1><p>General consultations, vitals and clinical notes.</p></div>
                 <div class="du-actions">
                         <?php if($can_view_history): ?>
                         <input type="text" id="searchCheckup" class="search-box" placeholder="Search patient..." onkeyup="filterTable()">
                         <?php endif; ?>
                         <?php if($can_log): ?>
-                        <button class="du-btn du-btn-primary" onclick="openModal('addCheckupModal')"><?php echo mh_icon('plus'); ?> Log New Checkup</button>
+                        <button class="du-btn du-btn-primary" onclick="openModal('addCheckupModal')"><?php echo mh_icon('plus'); ?> New Consultation Record</button>
                         <?php endif; ?>
                     </div>
             </div>
@@ -278,9 +282,6 @@ $consultations = !$can_view_history ? false : $conn->query("
 
                         <?php mh_render_patient_name_fields('Patient Name', $prefill_name_parts, 'width: 100%; box-sizing: border-box; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 1rem;'); ?>
 
-                        <div id="maternalPrompt" style="display:block; margin-top:10px; background:#fce7f3; border:1px dashed #fbcfe8; padding:10px; border-radius:6px; font-size:0.85rem; color:#be185d;">
-                            <?php echo mh_icon('heart'); ?> <strong>Pregnancy Visit?</strong> If this is for prenatal care instead, <a href="maternal_care.php" style="color:#db2777; font-weight:bold;">Log it in Maternal Care here</a>.
-                        </div>
 
                     </div>
                     <div class="form-group">
@@ -293,7 +294,7 @@ $consultations = !$can_view_history ? false : $conn->query("
                 <div class="vitals-grid">
                     <div><label>Weight</label><input type="text" name="weight" placeholder="e.g., 65 kg"></div>
                     <div><label>Height</label><input type="text" name="height" placeholder="e.g., 160 cm"></div>
-                    <div><label>Temp</label><input type="text" name="temp" placeholder="e.g., 37.2 °C"></div>
+                    <div><label>Temp</label><input type="text" inputmode="decimal" data-mh-decimal="2" maxlength="5" autocomplete="off" name="temp" placeholder="e.g., 37.2"></div>
                     <div><label>BP</label><input type="text" name="bp" placeholder="e.g., 120/80"></div>
                 </div>
 
@@ -393,6 +394,7 @@ $consultations = !$can_view_history ? false : $conn->query("
                     let element = document.querySelector(`[name="${field}"]`);
                     if (element && data[field]) {
                         element.value = data[field];
+                        element.dispatchEvent(new Event('input', { bubbles: true }));   // numeric fields (temp) clean themselves
                     }
                 });
 

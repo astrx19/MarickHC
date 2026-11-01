@@ -111,12 +111,17 @@ function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Wa
     if (($closed = mh_clinic_closed_reason($conn)) !== null) { return [null, $closed]; }
 
     // 1) Patient must exist and be active (status = 1, i.e. not archived).
-    $st = $conn->prepare("SELECT status FROM patients WHERE id = ? LIMIT 1 FOR UPDATE");
+    $st = $conn->prepare("SELECT status, sex FROM patients WHERE id = ? LIMIT 1 FOR UPDATE");
     $st->bind_param('i', $patientId);
     $st->execute();
     $p = $st->get_result()->fetch_assoc();
     $st->close();
     if (!$p || (int) $p['status'] !== 1) { return [null, 'That patient record is not active.']; }
+
+    // Male patients cannot join the Maternal Care queue (also stops a new walk-in registered as male).
+    if (mh_department_module($department) === 'maternal_care' && strcasecmp(trim((string) $p['sex']), 'Male') === 0) {
+        return [null, 'Maternal Care is for female patients. This patient is registered as male, so they cannot be added to that queue.'];
+    }
 
     // 2) No double booking: already waiting in this department today?
     $statuses = mh_queue_active_statuses();
@@ -212,6 +217,26 @@ function mh_queue_complete(mysqli $conn, $aptId, $patientId)
     return $changed;
 }
 
+/**
+ * Maternal Care is for female patients. Returns an error message when this registered patient is male
+ * (null = fine, or the patient is not registered / not found - an unregistered typed name cannot be checked).
+ */
+function mh_maternal_sex_error(mysqli $conn, $patientId)
+{
+    $patientId = (int) $patientId;
+    if ($patientId <= 0) { return null; }
+    $st = $conn->prepare("SELECT sex FROM patients WHERE id = ? LIMIT 1");
+    if (!$st) { return null; }
+    $st->bind_param('i', $patientId);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    if ($row && strcasecmp(trim((string) $row['sex']), 'Male') === 0) {
+        return 'Maternal Care is for female patients. This patient is registered as male, so nothing was saved.';
+    }
+    return null;
+}
+
 /** Normalises a name part for comparison (case, dots, commas, extra spaces). */
 function mh_queue_norm_name($v)
 {
@@ -249,6 +274,10 @@ function mh_queue_name_matches(mysqli $conn, $patientId, array $pn)
 function mh_queue_resolve_patient(mysqli $conn, $ctx, array $pn)
 {
     if ($ctx && mh_queue_name_matches($conn, $ctx['patient_id'], $pn)) { return (int) $ctx['patient_id']; }
+    // A patient chosen from the "Search registered patients" box wins over a name guess - it is the only way
+    // to tell apart two registered patients who share a name. Still verified: the typed name must match them.
+    $picked = (int) ($_POST['picked_patient_id'] ?? 0);
+    if ($picked > 0 && mh_queue_name_matches($conn, $picked, $pn)) { return $picked; }
     return mh_find_patient_id_by_parts($conn, $pn['last'], $pn['first'], $pn['mi']);
 }
 

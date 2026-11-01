@@ -90,7 +90,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
         // A child who is not a registered patient yet is registered NOW, so the record (and the child)
         // appear in the Patient Masterlist instead of floating around with patient_id = NULL.
         $registration_error = null; $child_created_id = null;
-        if ($patient_id === null) {
+        // Child check-up temperatures: numbers only. Checked first so nothing is created for a bad value.
+        $clean_temps = [];
+        foreach ((array) ($_POST['consultation_temp'] ?? []) as $ti => $traw) {
+            $tc = mh_clean_temperature($traw);
+            if (!$tc['ok']) { $registration_error = $tc['error']; break; }
+            $clean_temps[$ti] = $tc['value'];
+        }
+        if ($registration_error === null && $patient_id === null) {
             list($new_pid, $registration_error, $was_created) = mh_register_child_patient(
                 $conn, $pn, $_POST['child_birthdate'] ?? '', $_POST['child_sex'] ?? '', $contact_no, $family_no
             );
@@ -128,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
                             if ($c_date !== NULL) {
                                 $c_wt   = null_if_empty($_POST['consultation_weight'][$idx] ?? '');
                                 $c_ht   = null_if_empty($_POST['consultation_height'][$idx] ?? '');
-                                $c_temp = null_if_empty($_POST['consultation_temp'][$idx] ?? '');
+                                $c_temp = null_if_empty($clean_temps[$idx] ?? '');
                                 $c_cc   = null_if_empty($_POST['consultation_cc'][$idx] ?? '');
                                 $c_rem  = null_if_empty($_POST['consultation_remarks'][$idx] ?? '');
 
@@ -489,7 +496,7 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
                             <td><input type="date" name="consultation_date[]"></td>
                             <td><input type="text" name="consultation_weight[]" placeholder="kg"></td>
                             <td><input type="text" name="consultation_height[]" placeholder="cm"></td>
-                            <td><input type="text" name="consultation_temp[]" placeholder="°C"></td>
+                            <td><input type="text" inputmode="decimal" data-mh-decimal="2" maxlength="5" autocomplete="off" name="consultation_temp[]" placeholder="°C"></td>
                             <td><input type="text" name="consultation_cc[]"></td>
                             <td><input type="text" name="consultation_remarks[]"></td>
                             <td style="text-align: center;"><button type="button" class="btn-remove-row" onclick="removeConsultationRow(this)"><?php echo mh_icon('x'); ?></button></td>
@@ -515,6 +522,13 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
     <script>
+        // Picking a registered child from the search box also fills in their birthdate and sex.
+        document.addEventListener('mh:patient-picked', function (e) {
+            var d = e.detail || {};
+            var b = document.getElementById('childBirthdate'), x = document.getElementById('childSex');
+            if (b && d.birthdate) { b.value = d.birthdate; }
+            if (x && d.sex) { x.value = d.sex; }
+        });
         const MH_ICON_CHECK = <?php echo json_encode(mh_icon('check')); ?>;
         const MH_ICON_X = <?php echo json_encode(mh_icon('x')); ?>;
         const MH_ICON_CHECK_CIRCLE = <?php echo json_encode(mh_icon('check-circle')); ?>;
@@ -540,7 +554,7 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
                     <td><input type="date" name="consultation_date[]"></td>
                     <td><input type="text" name="consultation_weight[]" placeholder="kg"></td>
                     <td><input type="text" name="consultation_height[]" placeholder="cm"></td>
-                    <td><input type="text" name="consultation_temp[]" placeholder="°C"></td>
+                    <td><input type="text" inputmode="decimal" data-mh-decimal="2" maxlength="5" autocomplete="off" name="consultation_temp[]" placeholder="°C"></td>
                     <td><input type="text" name="consultation_cc[]"></td>
                     <td><input type="text" name="consultation_remarks[]"></td>
                     <td style="text-align: center;"><button type="button" class="btn-remove-row" onclick="removeConsultationRow(this)"><?php echo mh_icon('x'); ?></button></td>

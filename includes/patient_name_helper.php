@@ -189,6 +189,15 @@ if (!function_exists('mh_render_patient_name_fields')) {
         $st = $inputStyle !== '' ? ' style="' . $e($inputStyle) . '"' : '';
         ?>
         <label><?php echo $e($label); ?> <span style="color:red;">*</span></label>
+
+        <?php /* Step 6: pick an already-registered patient instead of retyping the name. */ ?>
+        <div class="mh-ps" data-url="api/patient_search.php">
+            <input type="search" class="mh-ps-input" placeholder="Search registered patients by name..." autocomplete="off" role="combobox" aria-expanded="false" aria-label="Search registered patients">
+            <ul class="mh-ps-list" role="listbox" hidden></ul>
+            <div class="mh-ps-badge" hidden></div>
+            <input type="hidden" name="picked_patient_id" id="pnPickedId" value="">
+        </div>
+
         <div style="display:grid; grid-template-columns: 2fr 2fr 0.7fr; gap:10px;">
             <div><span class="mh-name-sub" style="display:block; font-size:0.75rem; opacity:.75; margin-bottom:3px;">Last Name</span>
                 <input type="text" name="last_name" id="pnLast" placeholder="Last name" required maxlength="60" autocomplete="off" value="<?php echo $e($prefill['last'] ?? ''); ?>"<?php echo $st; ?> oninput="<?php echo $e($letters); ?>"></div>
@@ -204,6 +213,7 @@ if (!function_exists('mh_render_patient_name_fields')) {
                 set('pnMI', (middle || '').trim().charAt(0).toUpperCase());
             };
         </script>
+        <script src="../assets/js/mh_patient_search.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_patient_search.js'); ?>" defer></script>
         <?php
     }
 }

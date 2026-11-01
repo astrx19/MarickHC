@@ -16,7 +16,7 @@ require_once __DIR__ . '/../includes/settings_helper.php';
 mh_check_module_enabled('inventory');
 
 $can_dispense = mh_has_permission('dispense_medicine');
-$can_view_log = mh_has_permission('view_dispensing_history');   // Dispensing Log History - NOT implied by dispensing
+$can_view_log = mh_has_permission('view_dispensing_history');   // Dispensing Records - NOT implied by dispensing
 
 $system_name = $system_name ?? mh_setting('system_name');
 
@@ -29,7 +29,7 @@ if (!empty($_SESSION['dispense_flash'])) {
     unset($_SESSION['dispense_flash']);
 }
 
-/** Rows of the Dispensing Log History table (latest 100 matches). Every word typed must match something. */
+/** Rows of the Dispensing Records table (latest 100 matches). Every word typed must match something. */
 function mh_render_dispense_rows(mysqli $conn, $q)
 {
     $sql = "SELECT d.dispense_date, d.quantity, d.is_fefo_override,
@@ -588,7 +588,7 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
                 <?php if($can_view_log): ?>
                 <div class="unified-panel" style="margin: 0;">
                     <div class="panel-controls">
-                        <h3 style="margin:0; font-size: 1.1rem; color: var(--heading-color, #1e293b);"><?php echo mh_icon('file-text'); ?> Dispensing Log History</h3>
+                        <h3 style="margin:0; font-size: 1.1rem; color: var(--heading-color, #1e293b);"><?php echo mh_icon('file-text'); ?> Dispensing Records</h3>
                         <input type="text" id="searchLog" class="search-box" placeholder="Search patient, ID #, item, lot, staff, date..." oninput="debouncedLoadLog()" autocomplete="off" style="width: 260px; max-width: 100%; padding: 6px 12px;">
                     </div>
                     

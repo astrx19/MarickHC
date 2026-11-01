@@ -37,6 +37,12 @@ if(isset($_POST['add_prenatal'])) {
     $name_error   = $pn['error'];
     $visit_date   = $_POST['visit_date'] ?? '';
 
+    // Prenatal care is for female patients: refuse BEFORE anything is saved when the (registered) patient is male.
+    if ($name_error === null) {
+        $pre_ctx = mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'maternal_care');
+        $name_error = mh_maternal_sex_error($conn, mh_queue_resolve_patient($conn, $pre_ctx, $pn));
+    }
+
     // Helpers: empty form value -> SQL NULL; ISO date check for date columns.
     $txt  = function ($k) { $v = trim($_POST[$k] ?? ''); return $v === '' ? null : $v; };
     $date = function ($k) { $v = trim($_POST[$k] ?? ''); return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : null; };
@@ -187,13 +193,13 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
             <?php echo mh_flash_scripts($success_msg ?? '', $error_msg ?? ''); ?>
 
             <div class="du-pagehead">
-                <div><h1>Prenatal Care Log</h1><p>Prenatal visits and maternal health records.</p></div>
+                <div><h1>Prenatal Care Records</h1><p>Prenatal visits and maternal health records.</p></div>
                 <div class="du-actions">
                         <?php if($can_view_history): ?>
                         <input type="text" id="searchPrenatal" class="search-box" placeholder="Search mother's name..." onkeyup="filterTable()">
                         <?php endif; ?>
                         <?php if($can_log): ?>
-                        <button class="du-btn du-btn-primary" onclick="openModal('addPrenatalModal')"><?php echo mh_icon('plus'); ?> Log Prenatal Checkup</button>
+                        <button class="du-btn du-btn-primary" onclick="openModal('addPrenatalModal')"><?php echo mh_icon('plus'); ?> New Prenatal Record</button>
                         <?php endif; ?>
                     </div>
             </div>
@@ -345,6 +351,15 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
     <script>
+        // A male patient picked from the search box cannot be added to Maternal Care.
+        document.addEventListener('mh:patient-picked', function (e) {
+            if (e.detail && String(e.detail.sex).toLowerCase() === 'male') {
+                mh_alert('Maternal Care is for female patients. ' + e.detail.first_name + ' ' + e.detail.last_name + ' is registered as male.', 'Cannot add to Maternal Care', 'warning');
+                var hid = document.getElementById('pnPickedId'); if (hid) { hid.value = ''; }
+                var badge = document.querySelector('.mh-ps-badge'); if (badge) { badge.hidden = true; badge.innerHTML = ''; }
+                ['pnLast', 'pnFirst', 'pnMI'].forEach(function (id) { var el = document.getElementById(id); if (el) { el.value = ''; } });
+            }
+        });
         const MH_ICON_CHECK = <?php echo json_encode(mh_icon('check')); ?>;
         const MH_ICON_X = <?php echo json_encode(mh_icon('x')); ?>;
         const MH_ICON_CHECK_CIRCLE = <?php echo json_encode(mh_icon('check-circle')); ?>;

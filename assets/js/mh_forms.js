@@ -139,6 +139,25 @@
         t.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
+    /* ---------- decimal-only fields: <input data-mh-decimal="2">  e.g. temperature 36.8 ---------- */
+    function cleanDecimal(el) {
+        var places = parseInt(el.getAttribute('data-mh-decimal'), 10);
+        var v = String(el.value).replace(/[^0-9.]/g, '');          // drop letters, units, signs
+        var parts = v.split('.');
+        v = parts.shift() + (parts.length ? '.' + parts.join('') : '');   // keep only the first dot
+        if (v.indexOf('.') > -1 && places >= 0) { var seg = v.split('.'); v = seg[0] + '.' + seg[1].slice(0, places); }
+        if (v !== el.value) { el.value = v; }
+    }
+    document.addEventListener('input', function (e) { if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-mh-decimal')) { cleanDecimal(e.target); } });
+    document.addEventListener('paste', function (e) {
+        var t = e.target;
+        if (!t || !t.hasAttribute || !t.hasAttribute('data-mh-decimal')) { return; }
+        e.preventDefault();
+        t.value = (e.clipboardData || window.clipboardData).getData('text') || '';
+        cleanDecimal(t);
+        t.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
     /* ---------- birthdate guard: 1900-01-01 .. today ---------- */
     var MIN_DATE = '1900-01-01';
     function dateProblem(v) {

@@ -45,12 +45,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vitals'])) {
         $bp = $f('bp'); $temp = $f('temp'); $pulse = $f('pulse'); $rr = $f('resp_rate');
         $spo2 = $f('spo2'); $weight = $f('weight'); $height = $f('height'); $notes = $f('notes', 255);
 
+        $temp_check = mh_clean_temperature($temp);   // numbers / decimals only
+        $temp = $temp_check['value'];
+
         $chk = $conn->prepare("SELECT id FROM patients WHERE id = ? AND status = 1 LIMIT 1");
         $chk->bind_param('i', $patient_id); $chk->execute();
         $exists = $chk->get_result()->num_rows > 0; $chk->close();
 
         if (!$exists) {
             $error_msg = 'Please choose a registered patient.';
+        } elseif (!$temp_check['ok']) {
+            $error_msg = $temp_check['error'];
         } elseif ($bp === '' && $temp === '' && $pulse === '' && $rr === '' && $spo2 === '' && $weight === '' && $height === '') {
             $error_msg = 'Enter at least one vital sign.';
         } else {
@@ -129,7 +134,7 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
                     </div>
                     <div class="vs-grid">
                         <div><label>BP (mmHg)</label><input type="text" name="bp" maxlength="20" placeholder="120/80"></div>
-                        <div><label>Temp (&deg;C)</label><input type="text" name="temp" maxlength="20" placeholder="36.5"></div>
+                        <div><label>Temp (&deg;C)</label><input type="text" inputmode="decimal" data-mh-decimal="2" maxlength="5" autocomplete="off" name="temp" placeholder="36.5"></div>
                         <div><label>Pulse (bpm)</label><input type="text" name="pulse" maxlength="20"></div>
                         <div><label>Resp. rate</label><input type="text" name="resp_rate" maxlength="20"></div>
                         <div><label>SpO&#8322; (%)</label><input type="text" name="spo2" maxlength="20"></div>
