@@ -91,6 +91,18 @@ function mh_disease_load_cases(mysqli $conn, string $from, string $to)
         while ($res && ($r = $res->fetch_assoc())) { $rows[] = $r; }
         $st->close();
     }
+    // Dental visits: the dentist's diagnosis (column added by the dental module; skipped quietly if it does not exist yet).
+    $st = @$conn->prepare("SELECT dr.visit_date AS d,
+                                 COALESCE(NULLIF(TRIM(dr.diagnosis), ''), NULLIF(TRIM(dr.chief_complaint), '')) AS txt,
+                                 p.sex, p.birthdate, p.address_type
+                          FROM dental_records dr JOIN patients p ON p.id = dr.patient_id
+                          WHERE dr.visit_date BETWEEN ? AND ? AND (TRIM(COALESCE(dr.diagnosis, '')) <> '' OR TRIM(COALESCE(dr.chief_complaint, '')) <> '')");
+    if ($st) {
+        $st->bind_param('ss', $from, $to); $st->execute();
+        $res = $st->get_result();
+        while ($res && ($r = $res->fetch_assoc())) { $rows[] = $r; }
+        $st->close();
+    }
     $st = $conn->prepare("SELECT cl.consultation_date AS d,
                                  CONCAT_WS(' ', cl.chief_complaints, cl.remarks) AS txt,
                                  p.sex, p.birthdate, p.address_type

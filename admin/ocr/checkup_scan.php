@@ -12,7 +12,7 @@ require_once __DIR__ . '/../../config/database.php';          // kept at top lev
 require_once __DIR__ . '/../../includes/settings_helper.php';
 mh_require_ocr_access_json('checkups');   // module switch + 'use_ocr_scanner' toggle
 
-$upload = mh_ocr_begin(['field' => 'document', 'attempts' => 3, 'base_ms' => 600, 'cap_ms' => 6000, 'timeout' => 45]);
+$upload = mh_ocr_begin(['module' => 'General Consultation', 'field' => 'document', 'attempts' => 3, 'base_ms' => 600, 'cap_ms' => 6000, 'timeout' => 45]);
 
 // Schema mirrors the Checkups/Consultations form fields (see admin/checkups_consultations.php).
 //

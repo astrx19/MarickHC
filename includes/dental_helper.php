@@ -72,6 +72,132 @@ function mh_dental_ensure_tables(mysqli $conn)
         PRIMARY KEY (id),
         KEY idx_treat_patient (patient_id, treatment_date)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    mh_dental_ensure_visit_columns($conn);
+    mh_dental_ensure_snapshot_table($conn);
+}
+
+/**
+ * Part 1 (visit-based dental records): extra columns on dental_records for the quick visit form, and
+ * dental_charts.profile_completed_at (the "first visit profile is done" flag). Idempotent; mirrors
+ * database/dental_part1_migration.sql so the page works even if that file was never run.
+ */
+function mh_dental_ensure_visit_columns(mysqli $conn)
+{
+    if (!empty($_SESSION['mh_dn_cols_v1'])) { return; }
+    $want = [
+        'dental_records' => [
+            'chief_complaint' => "VARCHAR(255) NULL AFTER `procedure_done`",
+            'diagnosis'       => "VARCHAR(255) NULL AFTER `chief_complaint`",
+            'referral'        => "VARCHAR(255) NULL AFTER `notes`",
+            'next_visit_date' => "DATE NULL AFTER `referral`",
+            'bp'              => "VARCHAR(20) NULL AFTER `next_visit_date`",
+            'temp'            => "VARCHAR(10) NULL AFTER `bp`",
+        ],
+        'dental_charts' => [
+            'profile_completed_at' => "DATETIME NULL AFTER `odontogram`",
+        ],
+    ];
+    $ok = true;
+    foreach ($want as $table => $cols) {
+        foreach ($cols as $col => $def) {
+            $st = $conn->prepare("SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?");
+            if (!$st) { $ok = false; continue; }
+            $st->bind_param('ss', $table, $col);
+            $st->execute();
+            $has = (int) ($st->get_result()->fetch_assoc()['n'] ?? 0) > 0;
+            $st->close();
+            if ($has) { continue; }
+            if (!@$conn->query("ALTER TABLE `$table` ADD COLUMN `$col` $def")) {   // fixed names from the array above
+                error_log("mh_dental_ensure_visit_columns($table.$col): " . $conn->error);
+                $ok = false;
+            }
+        }
+    }
+    // Charts that were already filled in before this feature count as "profile completed".
+    @$conn->query("UPDATE dental_charts SET profile_completed_at = COALESCE(updated_at, created_at)
+                    WHERE profile_completed_at IS NULL AND medical_history IS NOT NULL AND medical_history <> ''");
+    if ($ok) { $_SESSION['mh_dn_cols_v1'] = true; }
+}
+
+/** Has this patient's initial dental profile (the paper chart, filled once at the first visit) been completed? */
+function mh_dental_profile_completed(mysqli $conn, $patientId)
+{
+    $patientId = (int) $patientId;
+    $st = $conn->prepare("SELECT profile_completed_at FROM dental_charts WHERE patient_id = ? LIMIT 1");
+    if (!$st) { return false; }
+    $st->bind_param('i', $patientId);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    return $row && !empty($row['profile_completed_at']);
+}
+
+/** "OP,Exo" style code lists -> readable names ("Oral Prophylaxis, Tooth Extraction"). Unknown codes are kept as they are. */
+function mh_dental_code_names($routineCsv, $otherCsv = '')
+{
+    $all = mh_dental_routine_codes() + mh_dental_other_codes();
+    $out = [];
+    foreach (array_filter(array_map('trim', explode(',', (string) $routineCsv . ',' . (string) $otherCsv))) as $c) {
+        $out[] = $all[$c] ?? $c;
+    }
+    return $out;
+}
+
+/**
+ * Saves ONE dental visit atomically: dental_records (what the profile / dashboard / portal read) + dental_treatments
+ * (the chart's treatment list). Returns [ok(bool), dentalRecordId(int), error(string|null)].
+ * $v: date, complaint, diagnosis, routine[], other[], teeth (csv), referral, notes, bp, temp, next (Y-m-d|null)
+ */
+function mh_dental_save_visit(mysqli $conn, $patientId, $dentistId, array $v)
+{
+    $patientId = (int) $patientId; $dentistId = (int) $dentistId;
+    $fail = function ($stmtOrConn, $what) { throw new RuntimeException($what . ': ' . ($stmtOrConn->error ?? 'unknown')); };
+    $conn->begin_transaction();
+    try {
+        $st = $conn->prepare("INSERT IGNORE INTO dental_charts (patient_id, created_by, updated_by) VALUES (?, ?, ?)");
+        $st->bind_param('iii', $patientId, $dentistId, $dentistId);
+        if (!$st->execute()) { $fail($st, 'chart'); }
+        $st->close();
+
+        $st = $conn->prepare("SELECT id FROM dental_charts WHERE patient_id = ?");
+        $st->bind_param('i', $patientId); $st->execute();
+        $chartId = (int) ($st->get_result()->fetch_assoc()['id'] ?? 0); $st->close();
+        if ($chartId <= 0) { throw new RuntimeException('chart missing'); }
+
+        $rc = implode(',', $v['routine']); $oc = implode(',', $v['other']);
+        $names = mh_dental_code_names($rc, $oc);
+        $proc  = $names ? mb_substr(implode(', ', $names), 0, 255) : ($v['diagnosis'] !== '' ? mb_substr($v['diagnosis'], 0, 255) : 'Dental visit');
+        $tooth = $v['teeth'] !== '' ? $v['teeth'] : null;
+        $notes = $v['notes'] !== '' ? $v['notes'] : null;
+        $ref   = $v['referral'] !== '' ? $v['referral'] : null;
+        $cc    = $v['complaint'] !== '' ? $v['complaint'] : null;
+        $dx    = $v['diagnosis'] !== '' ? $v['diagnosis'] : null;
+        $bp    = $v['bp'] !== '' ? $v['bp'] : null;
+        $temp  = $v['temp'] !== '' ? $v['temp'] : null;
+        $next  = $v['next'];
+
+        $st = $conn->prepare("INSERT INTO dental_records (patient_id, dentist_id, visit_date, procedure_done, chief_complaint, diagnosis, tooth_number, notes, referral, next_visit_date, bp, temp)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $st->bind_param('iissssssssss', $patientId, $dentistId, $v['date'], $proc, $cc, $dx, $tooth, $notes, $ref, $next, $bp, $temp);
+        if (!$st->execute()) { $fail($st, 'record'); }
+        $recordId = (int) $conn->insert_id; $st->close();
+
+        $teeth = (string) $v['teeth'];
+        $st = $conn->prepare("INSERT INTO dental_treatments (chart_id, patient_id, treatment_date, routine_codes, other_codes, tooth_numbers, referrals, remarks, dentist_id, dental_record_id)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $refText = (string) $v['referral']; $remarks = (string) $v['notes'];
+        $st->bind_param('iissssssii', $chartId, $patientId, $v['date'], $rc, $oc, $teeth, $refText, $remarks, $dentistId, $recordId);
+        if (!$st->execute()) { $fail($st, 'treatment'); }
+        $st->close();
+
+        $conn->commit();
+        return [true, $recordId, null];
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log('mh_dental_save_visit: ' . $e->getMessage());
+        return [false, 0, 'The dental record could not be saved. Please try again.'];
+    }
 }
 
 /* =====================================================================
@@ -600,3 +726,149 @@ function mh_dental_ocr_catalog()
 }
 
 } // MH_LOADED_INCLUDES_DENTAL_HELPER
+
+
+/* =====================================================================
+ * PART 2 - TOOTH CHART HISTORY (a snapshot of the odontogram whenever it changes)
+ * ================================================================== */
+
+/** Same as database/dental_part2_migration.sql - the page creates it by itself when it is missing. */
+function mh_dental_ensure_snapshot_table(mysqli $conn)
+{
+    if (!empty($_SESSION['mh_dn_snap_v1'])) { return; }
+    $ok = @$conn->query("CREATE TABLE IF NOT EXISTS dental_odontogram_snapshots (
+        id INT(11) NOT NULL AUTO_INCREMENT,
+        patient_id INT(11) NOT NULL,
+        chart_id INT(11) DEFAULT NULL,
+        dental_record_id INT(11) DEFAULT NULL,
+        source VARCHAR(20) NOT NULL DEFAULT 'profile',
+        content_hash CHAR(32) NOT NULL,
+        odontogram LONGTEXT NOT NULL,
+        taken_by INT(11) DEFAULT NULL,
+        taken_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_snap_patient (patient_id, taken_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if ($ok) { $_SESSION['mh_dn_snap_v1'] = true; } else { error_log('mh_dental_ensure_snapshot_table: ' . $conn->error); }
+}
+
+/** Stable JSON for an odontogram (tooth order fixed) so equal charts always hash equal. */
+function mh_dental_odontogram_canonical(array $odo)
+{
+    ksort($odo, SORT_NUMERIC);
+    return json_encode((object) $odo, JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Stores a snapshot unless the chart is identical to the latest one. $source: 'profile' (chart saved) | 'visit'.
+ * @return bool true when a new snapshot row was written
+ */
+function mh_dental_snapshot_save(mysqli $conn, $patientId, $chartId, array $odo, $source, $recordId, $userId, $takenAt = null)
+{
+    $patientId = (int) $patientId; $chartId = $chartId ? (int) $chartId : null; $userId = (int) $userId;
+    $recordId = $recordId ? (int) $recordId : null;
+    $json = mh_dental_odontogram_canonical($odo);
+    $hash = md5($json);
+
+    $st = $conn->prepare("SELECT content_hash FROM dental_odontogram_snapshots WHERE patient_id = ? ORDER BY taken_at DESC, id DESC LIMIT 1");
+    if (!$st) { return false; }
+    $st->bind_param('i', $patientId); $st->execute();
+    $last = $st->get_result()->fetch_assoc(); $st->close();
+    if ($last && $last['content_hash'] === $hash) { return false; }   // nothing changed on the chart
+    if (!$last && !$odo) { return false; }                             // an empty first chart is not worth a snapshot
+
+    $when = $takenAt ?: date('Y-m-d H:i:s');
+    $st = $conn->prepare("INSERT INTO dental_odontogram_snapshots (patient_id, chart_id, dental_record_id, source, content_hash, odontogram, taken_by, taken_at)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    if (!$st) { return false; }
+    $st->bind_param('iiisssis', $patientId, $chartId, $recordId, $source, $hash, $json, $userId, $when);
+    $ok = $st->execute();
+    if (!$ok) { error_log('mh_dental_snapshot_save: ' . $st->error); }
+    $st->close();
+    return $ok;
+}
+
+/**
+ * The visit form lets the dentist set what the teeth they worked on look like afterwards.
+ * $teeth = the visit's valid tooth numbers; $condPost / $statPost = tooth => key ('' = no change, '-' = remove).
+ * @return int number of teeth whose chart entry changed (the chart + a new snapshot are saved when > 0)
+ */
+function mh_dental_apply_tooth_updates(mysqli $conn, $patientId, array $teeth, $condPost, $statPost, $recordId, $userId)
+{
+    $patientId = (int) $patientId;
+    if (!$teeth) { return 0; }
+    $condPost = is_array($condPost) ? $condPost : []; $statPost = is_array($statPost) ? $statPost : [];
+
+    $st = $conn->prepare("SELECT id, odontogram FROM dental_charts WHERE patient_id = ? LIMIT 1");
+    $st->bind_param('i', $patientId); $st->execute();
+    $row = $st->get_result()->fetch_assoc(); $st->close();
+    if (!$row) { return 0; }
+
+    $odo = mh_dental_clean_odontogram($row['odontogram'] ?? '');
+    $conds = mh_dental_tooth_conditions(); $stats = mh_dental_tooth_statuses();
+    $changed = 0;
+    foreach ($teeth as $t) {
+        $t = (string) $t;
+        $c = isset($condPost[$t]) ? (string) $condPost[$t] : '';
+        $s = isset($statPost[$t]) ? (string) $statPost[$t] : '';
+        $cur = $odo[$t] ?? ['c' => '', 's' => ''];
+        $new = $cur;
+        if ($c === '-') { $new['c'] = ''; } elseif ($c !== '' && isset($conds[$c])) { $new['c'] = $c; }
+        if ($s === '-') { $new['s'] = ''; } elseif ($s !== '' && isset($stats[$s])) { $new['s'] = $s; }
+        if ($new !== $cur) {
+            if ($new['c'] === '' && $new['s'] === '') { unset($odo[$t]); } else { $odo[$t] = $new; }
+            $changed++;
+        }
+    }
+    if ($changed === 0) { return 0; }
+
+    $json = json_encode((object) $odo, JSON_FORCE_OBJECT);
+    $uid = (int) $userId; $cid = (int) $row['id'];
+    $st = $conn->prepare("UPDATE dental_charts SET odontogram = ?, updated_by = ? WHERE id = ?");
+    $st->bind_param('sii', $json, $uid, $cid);
+    $ok = $st->execute(); $st->close();
+    if (!$ok) { return 0; }
+    mh_dental_snapshot_save($conn, $patientId, $cid, $odo, 'visit', $recordId, $uid);
+    return $changed;
+}
+
+/** All snapshots of a patient, newest first. Charts that predate this feature get their current chart as a baseline snapshot. */
+function mh_dental_snapshots(mysqli $conn, $patientId)
+{
+    $patientId = (int) $patientId;
+    $fetch = function () use ($conn, $patientId) {
+        $st = $conn->prepare("SELECT s.id, s.taken_at, s.source, s.dental_record_id, s.odontogram, st.first_name AS s_first, st.last_name AS s_last,
+                                     r.procedure_done, r.visit_date
+                                FROM dental_odontogram_snapshots s
+                                LEFT JOIN staff st ON st.id = s.taken_by
+                                LEFT JOIN dental_records r ON r.id = s.dental_record_id
+                               WHERE s.patient_id = ?
+                               ORDER BY s.taken_at DESC, s.id DESC LIMIT 50");
+        if (!$st) { return []; }
+        $st->bind_param('i', $patientId); $st->execute();
+        $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC); $st->close();
+        return $rows;
+    };
+    $rows = $fetch();
+    if (!$rows) {
+        $st = $conn->prepare("SELECT id, odontogram, COALESCE(updated_at, created_at) AS at, updated_by FROM dental_charts WHERE patient_id = ? LIMIT 1");
+        if ($st) {
+            $st->bind_param('i', $patientId); $st->execute();
+            $c = $st->get_result()->fetch_assoc(); $st->close();
+            if ($c) {
+                $odo = mh_dental_clean_odontogram($c['odontogram'] ?? '');
+                if ($odo && mh_dental_snapshot_save($conn, $patientId, (int) $c['id'], $odo, 'profile', null, (int) $c['updated_by'], $c['at'])) { $rows = $fetch(); }
+            }
+        }
+    }
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = [
+            'id' => (int) $r['id'], 'taken_at' => $r['taken_at'], 'source' => $r['source'],
+            'by' => trim(($r['s_first'] ?? '') . ' ' . ($r['s_last'] ?? '')),
+            'visit' => $r['dental_record_id'] ? trim(($r['visit_date'] ? date('M d, Y', strtotime($r['visit_date'])) : '') . ' - ' . ($r['procedure_done'] ?? ''), ' -') : '',
+            'odontogram' => (object) mh_dental_clean_odontogram($r['odontogram']),
+        ];
+    }
+    return $out;
+}

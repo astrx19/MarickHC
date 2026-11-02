@@ -12,7 +12,7 @@ require_once __DIR__ . '/../../config/database.php';          // kept at top lev
 require_once __DIR__ . '/../../includes/settings_helper.php';
 mh_require_ocr_access_json('maternal_care');   // module switch + 'use_ocr_scanner' toggle
 
-$upload = mh_ocr_begin(['field' => 'ocr_image', 'attempts' => 3, 'base_ms' => 700, 'cap_ms' => 6000, 'timeout' => 60]);
+$upload = mh_ocr_begin(['module' => 'Maternal Care', 'field' => 'ocr_image', 'attempts' => 3, 'base_ms' => 700, 'cap_ms' => 6000, 'timeout' => 60]);
 
 // Schema mirrors the Prenatal/Maternal Care form fields (see admin/maternal_care.php).
 //

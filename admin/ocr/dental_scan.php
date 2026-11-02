@@ -191,6 +191,11 @@ if ($first !== '' && $last !== '') {
     }
 }
 
+if (function_exists('logActivity')) {
+    logActivity($conn, (int) $_SESSION['user_id'], (string) ($_SESSION['role'] ?? 'staff'), 'OCR Scan',
+        'Dental scan (' . ($pt !== '' ? $pt : 'unknown page') . '): ' . count($fields) . ' fields, ' . count($odo) . ' teeth, ' . count($caries) . ' caries answers, ' . count($treatments) . ' treatment rows.');
+}
+
 echo json_encode([
     'success'       => true,
     'page_type'     => $pt,

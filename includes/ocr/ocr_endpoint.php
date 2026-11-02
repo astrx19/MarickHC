@@ -82,6 +82,8 @@ if (!function_exists('mh_ocr_begin')) {
      */
     function mh_ocr_begin(array $o)
     {
+        global $mh_ocr_module;
+        $mh_ocr_module = (string) ($o['module'] ?? '');
         // Defined BEFORE config/gemini.php, so these per-endpoint values win over its defaults.
         if (!defined('GEMINI_MAX_ATTEMPTS'))    { define('GEMINI_MAX_ATTEMPTS',    (int) ($o['attempts'] ?? 3)); }
         if (!defined('GEMINI_BACKOFF_BASE_MS')) { define('GEMINI_BACKOFF_BASE_MS', (int) ($o['base_ms'] ?? 700)); }
@@ -126,6 +128,13 @@ if (!function_exists('mh_ocr_extract')) {
     {
         $result = gemini_ocr_extract_fields($upload['path'], $upload['mime_type'], $prompt, $schema);
         if (!empty($result['success'])) {
+            // Every successful scan is written to the audit trail (System Logs), so OCR usage can be reported.
+            global $conn, $mh_ocr_module;
+            if (isset($conn) && $conn instanceof mysqli && function_exists('logActivity') && !empty($_SESSION['user_id'])) {
+                $n = 0;
+                foreach ($result['fields'] as $v) { if ($v !== '' && $v !== null && $v !== []) { $n++; } }
+                logActivity($conn, (int) $_SESSION['user_id'], (string) ($_SESSION['role'] ?? 'staff'), 'OCR Scan', ($mh_ocr_module ?: 'Form') . ' scan: ' . $n . ' fields read.');
+            }
             return $result['fields'];
         }
 

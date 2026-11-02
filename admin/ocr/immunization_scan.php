@@ -12,7 +12,7 @@ require_once __DIR__ . '/../../config/database.php';          // kept at top lev
 require_once __DIR__ . '/../../includes/settings_helper.php';
 mh_require_ocr_access_json('immunization');   // module switch + 'use_ocr_scanner' toggle
 
-$upload = mh_ocr_begin(['field' => 'ocr_file', 'attempts' => 4, 'base_ms' => 700, 'cap_ms' => 8000, 'timeout' => 75]);
+$upload = mh_ocr_begin(['module' => 'Child Immunization', 'field' => 'ocr_file', 'attempts' => 4, 'base_ms' => 700, 'cap_ms' => 8000, 'timeout' => 75]);
 
 // Schema mirrors the "Child Immunization Form" fields exactly (see
 // admin/immunization.php) so the JSON response can be dropped straight

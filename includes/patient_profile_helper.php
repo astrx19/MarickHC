@@ -236,7 +236,8 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         }
 
         foreach (mh_ph_rows($conn, "SELECT d.*, s.first_name AS sf, s.last_name AS sl FROM dental_records d LEFT JOIN staff s ON d.dentist_id = s.id WHERE d.patient_id = ?", $patientId) as $r) {
-            $f = mh_ph_fields($r, ['procedure_done' => 'Procedure', 'tooth_number' => 'Tooth no.', 'notes' => 'Notes']);
+            $f = mh_ph_fields($r, ['chief_complaint' => 'Reason for visit', 'diagnosis' => 'Diagnosis', 'procedure_done' => 'Procedure / services', 'tooth_number' => 'Tooth no.',
+                                    'bp' => 'Blood pressure', 'temp' => 'Temperature', 'notes' => 'Notes', 'referral' => 'Referral', 'next_visit_date' => 'Next visit']);
             $items[] = ['type' => 'Dental Clinic', 'date' => $r['visit_date'], 'color' => [245, 158, 11],
                         'attending' => mh_ph_staff($r['sf'], $r['sl'], 'Dr.'), 'fields' => $f];
         }

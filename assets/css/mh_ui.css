@@ -549,3 +549,47 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .mh-ps-badge[hidden] { display: none; }
 .mh-ps-clear { border: 0; background: none; color: inherit; font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 6px; }
 .mh-ps-clear:hover { background: rgba(0, 0, 0, 0.08); }
+
+/* ---------- 16. Dental visit form + records (Part 1) ---------- */
+.dv-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.dv-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .dv-grid-3, .dv-grid-2 { grid-template-columns: 1fr; } }
+.dv-alerts { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--mh-danger-border, #fecaca); background: var(--mh-danger-bg, #fef2f2); color: var(--mh-danger-fg, #b91c1c); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: .88rem; }
+.dv-alerts[hidden], #dvGate[hidden], #dvBody[hidden] { display: none; }
+.dv-seg { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 8px; }
+.dv-seg .du-btn.is-on { background: var(--primary, #4ca1af); color: #fff; border-color: var(--primary, #4ca1af); }
+.dv-teeth { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 12px; background: var(--bg-hover, #f8fafc); overflow-x: auto; }
+.dv-arch { display: grid; gap: 4px; min-width: 520px; }
+.dv-tooth { padding: 7px 0; font-size: .78rem; font-weight: 700; border-radius: 8px; border: 1px solid var(--border-color, #cbd5e1); background: var(--bg-card, #fff); color: var(--text-main, #334155); cursor: pointer; transition: background-color .12s ease, transform .12s ease; }
+.dv-tooth:hover { border-color: var(--primary, #4ca1af); }
+.dv-tooth.is-on { background: var(--primary, #4ca1af); border-color: var(--primary, #4ca1af); color: #fff; transform: translateY(-1px); }
+.dv-chips { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; min-height: 4px; }
+.dv-checks { display: grid; gap: 6px; }
+.dv-check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 10px; background: var(--bg-input, #f8fafc); cursor: pointer; font-weight: 500; }
+.dv-check:hover { border-color: var(--primary, #4ca1af); }
+.dv-check input { margin: 0; }
+.dv-dl { margin: 0; padding: 8px 4px; display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.dv-dl dt { font-size: .74rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); letter-spacing: .04em; }
+.dv-dl dd { margin: 2px 0 0; color: var(--text-main, #334155); word-break: break-word; }
+.dv-detail td { background: var(--bg-hover, #f8fafc); }
+.dv-detail[hidden] { display: none; }
+
+/* ---------- 17. Dental Part 2: per-tooth rows + chart history ---------- */
+.dv-toothrows { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 12px; background: var(--bg-hover, #f8fafc); }
+.dv-toothrows[hidden] { display: none; }
+.dv-tr-head { margin-bottom: 8px; font-size: .88rem; }
+.dv-tr { display: grid; grid-template-columns: 44px 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
+.dv-tr b { text-align: center; padding: 6px 0; border-radius: 8px; background: var(--primary, #4ca1af); color: #fff; font-size: .82rem; }
+.dv-cmp { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 6px 0 12px; }
+.dv-cmp label { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-muted, #64748b); font-size: .85rem; }
+.dv-cmp select { max-width: 100%; }
+.dv-snaplist { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 8px; font-size: .88rem; }
+@media (max-width: 640px) { .dv-tr { grid-template-columns: 38px 1fr; } .dv-tr select + select { grid-column: 2; } }
+
+/* ---------- 18. Dental Part 3: scan from the New Dental Record form ---------- */
+.dv-scanbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+.dv-scan { margin: 0 0 14px; padding: 12px; border: 1px solid var(--mh-info-border, #bae6fd); background: var(--mh-info-bg, #eff6ff); border-radius: 12px; }
+.dv-scan[hidden] { display: none; }
+.dv-scan-head { margin-bottom: 8px; font-size: .9rem; }
+.dv-scan-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.dv-scan input[type="date"] { min-height: 34px; }

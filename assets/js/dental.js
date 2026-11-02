@@ -389,12 +389,19 @@
         var fileInput = $('#dnFiles'), listEl = $('#dnFileList'), resEl = $('#dnOcrResult'), startBtn = $('#dnOcrStart');
         var openers = $$('#dnOpenOcr');
         function openModal() { modal.hidden = false; document.body.style.overflow = 'hidden'; }
-        function hideModal() { modal.hidden = true; document.body.style.overflow = ''; }
+        function hideModal() {
+            modal.hidden = true; document.body.style.overflow = '';
+            // Opened from the New Dental Record form? Give the form back (it keeps everything that was typed).
+            var back = window.DN_ocrClosed; window.DN_ocrClosed = null; window.DN_ocrHandler = null;
+            if (back) { back(); }
+        }
         function closeModal() {
             if (!running) { hideModal(); return; }
             ask('A scan is still running. Close anyway?', 'Scan in progress', 'warning', 'Close anyway').then(function (ok) { if (ok) { hideModal(); } });
         }
         openers.forEach(function (b) { b.addEventListener('click', openModal); });
+        // "Scan the paper forms instead" on the first-visit message lands here with ?scan=1
+        if (/[?&]scan=1\b/.test(window.location.search) && openers[0]) { setTimeout(function () { openModal(); }, 150); }
         $('#dnOcrClose').addEventListener('click', closeModal); $('#dnOcrCancel').addEventListener('click', closeModal);
         modal.addEventListener('click', function (e) { if (e.target === modal) { closeModal(); } });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden && !document.querySelector('.mh-modal-backdrop')) { closeModal(); } });
@@ -484,6 +491,12 @@
             resEl.hidden = false;
             if (!okPages || !total) {
                 resEl.innerHTML = '<strong>Nothing could be read.</strong> Check the photos are sharp, well lit and show the whole page, then try again. Some pages may also have failed (see the list above).';
+                return;
+            }
+            if (window.DN_ocrHandler) {   // started from the New Dental Record form: hand the rows over for review instead of opening a chart
+                var handler = window.DN_ocrHandler;
+                resEl.innerHTML = '<strong>Done.</strong> ' + total + ' item(s) read from ' + okPages + ' page(s). Opening the review...';
+                setTimeout(function () { var h = handler; hideModal(); window.DN_ocrHandler = null; h(merged); }, 700);
                 return;
             }
             if (CFG.onChart) {
