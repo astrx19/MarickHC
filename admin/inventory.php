@@ -27,6 +27,8 @@ mh_check_module_enabled('inventory');
 $system_name = $system_name ?? mh_setting('system_name');
 
 $inv_categories = mh_inventory_categories($conn);   // Inventory Categories masterlist (database)
+require_once __DIR__ . '/../includes/disposal_helper.php';
+mh_disp_ensure_table($conn);
 
 $success_msg = ""; $error_msg = "";
 
@@ -125,17 +127,27 @@ if(isset($_POST['update_stock'])) {
             $error_msg = "Could not update the expiry date. Please try again.";
         }
 
-    } elseif($action === 'add') {
-        $amount = (int) ($_POST['amount'] ?? 0);
-        $st = $conn->prepare("UPDATE inventory SET quantity = quantity + ? WHERE id = ?");
-        $st->bind_param('ii', $amount, $item_id);
-        $ok = $st->execute(); $st->close();
-        if($ok) {
-            $success_msg = "Stock updated successfully!";
-            logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Updated Stock", "Restocked $amount units of $item_name.");
+    } elseif($action === 'dispose') {
+        // Expired / damaged stock leaves the shelf through a recorded disposal (see Disposal History).
+        if (!mh_csrf_check()) {
+            $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
         } else {
-            $error_msg = "Could not update the stock. Please try again.";
+            list($ok, $err, $remaining) = mh_disp_dispose($conn, $item_id, [
+                'amount' => $_POST['amount'] ?? 0, 'item_form' => $_POST['item_form'] ?? '', 'reason' => $_POST['reason'] ?? '',
+                'method' => $_POST['method'] ?? '', 'disposed_on' => $_POST['disposed_on'] ?? '',
+                'witness' => $_POST['witness'] ?? '', 'remarks' => $_POST['remarks'] ?? '',
+            ], (int) $_SESSION['user_id']);
+            if ($ok) {
+                $amt = (int) ($_POST['amount'] ?? 0);
+                $success_msg = "Disposal recorded: " . number_format($amt) . " disposed" . ($remaining <= 0 ? " - the batch is now empty and was archived." : ", " . number_format($remaining) . " left in the batch.");
+                logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Disposed Inventory", "Disposed $amt of $item_name (" . (string) ($_POST['reason'] ?? '') . ").");
+            } else {
+                $error_msg = $err;
+            }
         }
+    } else {
+        // New stock comes in as a NEW BATCH ("+ Add New Batch") so every lot keeps its own expiry date (FEFO).
+        $error_msg = "Restocking is done by adding a new batch with its own lot number and expiry date.";
     }
 }
 
@@ -325,6 +337,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
             
             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px;">
                 <div>
+                    <div class="mh-tabs" style="margin-bottom:10px;"><a class="active" href="inventory.php">Stock</a><a href="inventory_disposals.php">Disposal History</a></div>
                     <h1 style="margin: 0 0 5px 0; color: var(--heading-color, #1e293b); font-family: Georgia, serif; font-size: 1.8rem;">Supply Masterlist</h1>
                     <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem;">Manage active stock levels and register new batches. Batches are grouped by generic name so brand variants and lots stay together.</p>
                 </div>
@@ -535,62 +548,88 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
     </div>
 
     <div class="modal-overlay" id="updateStockModal">
-        <div class="modal-content" style="max-width: 420px; border-top: 5px solid #0369a1;">
+        <div class="modal-content" style="max-width: 480px; max-height: 92vh; overflow-y: auto; border-top: 5px solid #0369a1;">
             <span class="close-btn" onclick="closeModal('updateStockModal')">&times;</span>
             <div style="text-align: center; margin-bottom: 15px;">
-                <h2 style="margin:0; color:#0369a1;">Manage Stock</h2>
+                <h2 style="margin:0; color:#0369a1;">Manage Batch</h2>
                 <h3 id="modalItemName" style="margin:5px 0 0 0; color:var(--heading-color, #1e293b); font-size: 1.1rem;">Item Name</h3>
                 <p style="margin:5px 0 0 0; font-size: 0.85rem; color: var(--text-muted);">SKU: <span id="modalBatchNo" style="font-family: monospace; font-weight: bold; color:#1d4ed8;">000</span></p>
                 <p style="margin:5px 0 0 0; color:var(--text-muted); font-size: 0.9rem;">Current Stock: <strong id="modalCurrentQty">0</strong> <span id="modalUnit">pcs</span></p>
             </div>
             
-            <form method="POST">
+            <form method="POST" id="stockForm">
+                <?php echo mh_csrf_field(); ?>
                 <input type="hidden" name="item_id" id="modalItemId">
                 <input type="hidden" name="item_name_hidden" id="modalItemNameHidden">
-                
+
                 <div class="form-group" style="margin-bottom: 15px;">
                     <label>Action <span style="color:red;">*</span></label>
-                    <select name="stock_action" id="stockAction" onchange="toggleStockAction()" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-weight: bold;">
-                        <option value="add" style="color: #10b981;">[+] Restock / Add Delivery</option>
-                        <option value="edit_expiry" style="color: #f59e0b;">Update Expiry Date</option>
-                        <option value="archive" style="color: #b91c1c;">Archive / Remove Item</option>
+                    <select name="stock_action" id="stockAction" onchange="toggleStockAction()" required>
+                        <option value="dispose">Dispose Stock (expired / damaged)</option>
+                        <option value="edit_expiry">Update Expiry Date</option>
+                        <option value="archive">Archive / Remove Item</option>
                     </select>
+                    <small class="field-hint">New deliveries are added with &ldquo;+ Add New Batch&rdquo; so each lot keeps its own expiry date.</small>
                 </div>
 
-                <div class="form-group" id="adjustAmountGroup" style="margin-bottom: 20px;">
-                    <label>Amount to Restock (Base Unit) <span style="color:red;">*</span></label>
-                    <input type="number" name="amount" id="adjustAmountInput" required min="1" placeholder="Enter total base units..." style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-size: 1.1rem; margin-bottom: 10px;">
-                    
-                    <div class="packaging-config-box" style="margin-bottom: 0;">
-                        <label style="font-size: 0.8rem; color: var(--primary); margin-bottom: 8px; display: block; font-weight: bold;">Optional Calculator</label>
-                        <div class="packaging-grid" style="grid-template-columns: 1fr 1fr 1fr;">
-                            <div class="form-group">
-                                <label id="upd_box_qty_label" style="font-size:0.72rem;">Boxes</label>
-                                <input type="number" id="upd_box_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color, #cbd5e1); font-size: 0.85rem; box-sizing: border-box;">
-                            </div>
-                            <div class="form-group">
-                                <label id="upd_pack_qty_label" style="font-size:0.72rem;">Packs</label>
-                                <input type="number" id="upd_pack_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color, #cbd5e1); font-size: 0.85rem; box-sizing: border-box;">
-                            </div>
-                            <div class="form-group">
-                                <label style="font-size:0.72rem;">Loose Units</label>
-                                <input type="number" id="upd_loose_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color, #cbd5e1); font-size: 0.85rem; box-sizing: border-box;">
-                            </div>
-                        </div>
-                        <div class="packaging-total-readout" id="upd_total_readout" style="margin-top: 8px;">Adds: <strong>0</strong> base units</div>
+                <div id="disposeGroup" style="display:none;">
+                    <div id="disposeNote" class="alert alert-warn" style="padding:10px 12px; margin-bottom: 14px; font-size:.88rem;"></div>
+
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label>Type of stock <span style="color:red;">*</span></label>
+                        <select name="item_form" id="disposeForm" onchange="updateDisposeLabels()">
+                            <?php foreach (mh_disp_forms() as $k => $lbl): ?><option value="<?php echo $k; ?>"><?php echo htmlspecialchars($lbl); ?></option><?php endforeach; ?>
+                        </select>
                     </div>
+
+                    <div class="form-group" style="margin-bottom: 12px;" id="adjustAmountGroup">
+                        <label id="disposeAmountLabel">Amount to dispose <span style="color:red;">*</span></label>
+                        <div style="display:flex; gap:8px;">
+                            <input type="number" name="amount" id="adjustAmountInput" min="1" step="1" placeholder="Base units...">
+                            <button type="button" class="btn-secondary btn-sm" onclick="disposeAll()" style="white-space:nowrap;">Dispose all</button>
+                        </div>
+                        <div class="packaging-config-box" style="margin: 10px 0 0;">
+                            <label style="font-size: 0.8rem; color: var(--primary); margin-bottom: 8px; display: block; font-weight: bold;">Optional calculator</label>
+                            <div class="packaging-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+                                <div class="form-group"><label id="upd_box_qty_label" style="font-size:0.72rem;">Boxes</label>
+                                    <input type="number" id="upd_box_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" onchange="calcUpdTotal()"></div>
+                                <div class="form-group"><label id="upd_pack_qty_label" style="font-size:0.72rem;">Packs</label>
+                                    <input type="number" id="upd_pack_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" onchange="calcUpdTotal()"></div>
+                                <div class="form-group"><label style="font-size:0.72rem;">Loose Units</label>
+                                    <input type="number" id="upd_loose_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" onchange="calcUpdTotal()"></div>
+                            </div>
+                            <div class="packaging-total-readout" id="upd_total_readout" style="margin-top: 8px;">Disposes: <strong>0</strong> base units</div>
+                        </div>
+                    </div>
+
+                    <div class="form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                        <div class="form-group"><label>Reason <span style="color:red;">*</span></label>
+                            <select name="reason" id="disposeReason" onchange="updateDisposeLabels()">
+                                <?php foreach (mh_disp_reasons() as $k => $lbl): ?><option value="<?php echo $k; ?>"><?php echo htmlspecialchars($lbl); ?></option><?php endforeach; ?>
+                            </select></div>
+                        <div class="form-group"><label>Date disposed <span style="color:red;">*</span></label>
+                            <input type="date" name="disposed_on" id="disposeDate" value="<?php echo date('Y-m-d'); ?>" max="<?php echo date('Y-m-d'); ?>"></div>
+                    </div>
+                    <div class="form-group"><label>How was it disposed? <span style="color:red;">*</span></label>
+                        <select name="method" id="disposeMethod">
+                            <?php foreach (mh_disp_methods() as $k => $lbl): ?><option value="<?php echo htmlspecialchars($k); ?>"><?php echo htmlspecialchars($lbl); ?></option><?php endforeach; ?>
+                        </select></div>
+                    <div class="form-group"><label>Witnessed by <small class="field-hint" style="display:inline;">(optional)</small></label>
+                        <input type="text" name="witness" id="disposeWitness" maxlength="100" placeholder="Name of the witness / receiving person"></div>
+                    <div class="form-group"><label>Remarks <small class="field-hint" style="display:inline;" id="disposeRemarksHint">(optional)</small></label>
+                        <textarea name="remarks" id="disposeRemarks" rows="2" maxlength="500" placeholder="Anything the audit should know"></textarea></div>
                 </div>
 
                 <div class="form-group" id="editExpiryGroup" style="display: none; margin-bottom: 20px;">
                     <label>New Expiry Date <span style="color:red;">*</span></label>
-                    <input type="date" name="new_expiry_date" id="newExpiryInput" min="<?php echo date('Y-m-d'); ?>" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-size: 1.1rem;">
+                    <input type="date" name="new_expiry_date" id="newExpiryInput" min="<?php echo date('Y-m-d'); ?>">
                 </div>
 
-                <div id="archiveWarningGroup" style="display: none; margin-bottom: 20px; background: #fee2e2; border: 1px solid #fca5a5; padding: 15px; border-radius: 8px; color: #991b1b; font-size: 0.9rem;">
-                    <strong>Warning:</strong> This will move the item to the Archives and hide it from the active masterlist.
+                <div id="archiveWarningGroup" style="display: none; margin-bottom: 20px; background: var(--mh-danger-bg, #fee2e2); border: 1px solid var(--mh-danger-border, #fca5a5); padding: 15px; border-radius: 8px; color: var(--mh-danger-fg, #991b1b); font-size: 0.9rem;">
+                    <strong>Warning:</strong> This will move the item to the Archives and hide it from the active masterlist. To remove expired medicine properly, use <em>Dispose Stock</em> so the disposal is recorded.
                 </div>
 
-                <button type="submit" name="update_stock" id="confirmBtn" data-confirm="Apply this stock update?" data-confirm-title="Update stock?" data-confirm-type="warning" data-confirm-ok="Apply" class="btn-submit" style="width: 100%; padding: 12px; font-size: 1rem; background: #0369a1; border:none; color:white; border-radius:6px; cursor:pointer; font-weight:bold;">Confirm Update</button>
+                <button type="submit" name="update_stock" id="confirmBtn" data-confirm="Record this disposal?" data-confirm-title="Dispose stock?" data-confirm-type="danger" data-confirm-ok="Dispose" class="btn-submit" style="width: 100%;">Confirm</button>
             </form>
         </div>
     </div>
@@ -971,7 +1010,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
                     <td><span class="status-pill ${b.statusClass}">${b.label}</span></td>
                     <td>
                         <div class="action-btn-group">
-                            ${MH_CAN_EDIT_STOCK ? `<button class="btn-manage" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('package')} Restock</button>
+                            ${MH_CAN_EDIT_STOCK ? `${b.isExpired && b.quantity > 0 ? `<button class="btn-manage" style="background:#b91c1c;color:#fff;" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id], 'dispose')">${mhIconSvg('archive')} Dispose</button>` : `<button class="btn-manage" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('package')} Manage</button>`}
                             <button class="btn-icon icon-edit" data-id="${b.id}" title="Edit Batch" onclick="openEditBatchModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('edit')}</button>
                             <button class="btn-icon icon-delete" data-id="${b.id}" data-name="${escapeHtml(modalName)}" title="Archive Batch" onclick="archiveBatchQuick(this.dataset.id, this.dataset.name)">${mhIconSvg('archive')}</button>` : ''}
                         </div>
@@ -1238,85 +1277,65 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
 
         function toggleStockAction() {
             var action = document.getElementById('stockAction').value;
-            var amountGroup = document.getElementById('adjustAmountGroup');
-            var expiryGroup = document.getElementById('editExpiryGroup');
-            var archiveGroup = document.getElementById('archiveWarningGroup');
-            
-            var amountInput = document.getElementById('adjustAmountInput');
-            var expiryInput = document.getElementById('newExpiryInput');
-            var confirmBtn = document.getElementById('confirmBtn');
+            var show = function (id, on) { document.getElementById(id).style.display = on ? 'block' : 'none'; };
+            show('disposeGroup', action === 'dispose');
+            show('editExpiryGroup', action === 'edit_expiry');
+            show('archiveWarningGroup', action === 'archive');
 
-            amountGroup.style.display = 'none';
-            expiryGroup.style.display = 'none';
-            archiveGroup.style.display = 'none';
-            amountInput.removeAttribute('required');
-            expiryInput.removeAttribute('required');
-            confirmBtn.style.background = '#0369a1';
-            confirmBtn.innerText = "Confirm Update";
-            var MSG = {add: ['Add this delivery to the stock?', 'Restock item?', 'warning', 'Add stock'],
-                       edit_expiry: ['Change the expiry date of this batch?', 'Update expiry?', 'warning', 'Update'],
-                       archive: ['Archive this item? It will be hidden from the active Supply Masterlist.', 'Archive item?', 'danger', 'Archive']};
-            var m = MSG[action] || MSG.add;
+            // only the visible section's fields are required
+            var req = function (id, on) { var el = document.getElementById(id); if (on) { el.setAttribute('required', ''); } else { el.removeAttribute('required'); } };
+            req('adjustAmountInput', action === 'dispose'); req('disposeReason', action === 'dispose'); req('disposeMethod', action === 'dispose');
+            req('disposeDate', action === 'dispose'); req('newExpiryInput', action === 'edit_expiry');
+
+            var confirmBtn = document.getElementById('confirmBtn');
+            var MSG = {dispose: ['Record this disposal? The quantity is removed from the batch and saved in Disposal History.', 'Dispose stock?', 'danger', 'Dispose', 'Record Disposal', '#b91c1c'],
+                       edit_expiry: ['Change the expiry date of this batch?', 'Update expiry?', 'warning', 'Update', 'Update Expiry', '#0369a1'],
+                       archive: ['Archive this item? It will be hidden from the active Supply Masterlist.', 'Archive item?', 'danger', 'Archive', 'Archive Item', '#b91c1c']};
+            var m = MSG[action] || MSG.dispose;
             confirmBtn.dataset.confirm = m[0]; confirmBtn.dataset.confirmTitle = m[1];
             confirmBtn.dataset.confirmType = m[2]; confirmBtn.dataset.confirmOk = m[3];
-
-            if(action === 'edit_expiry') {
-                expiryGroup.style.display = 'block';
-                expiryInput.setAttribute('required', 'required');
-            } else if (action === 'archive') {
-                archiveGroup.style.display = 'block';
-                confirmBtn.style.background = '#b91c1c';
-                confirmBtn.innerText = "Yes, Archive Item";
-            } else {
-                amountGroup.style.display = 'block';
-                amountInput.setAttribute('required', 'required');
-            }
+            confirmBtn.innerText = m[4]; confirmBtn.style.background = m[5];
+            if (action === 'dispose') { updateDisposeLabels(); }
         }
 
-        /* ---------------------------------------------------------
-           Smart unit conversion calculators
-           Boxes -> Packs (Blister/Banig) -> Base Units, using whatever
-           multipliers/labels were entered for THIS batch (no more
-           hardcoded "1 box = 100 pcs" assumption).
-           --------------------------------------------------------- */
-        function calcAddTotal() {
-            var packsPerBox = parseInt(document.getElementById('add_packs_per_box').value) || 0;
-            var unitsPerPack = parseInt(document.getElementById('add_units_per_pack').value) || 0;
-            var boxQty = parseInt(document.getElementById('add_box_qty').value) || 0;
-            var packQty = parseInt(document.getElementById('add_pack_qty').value) || 0;
-            var looseQty = parseInt(document.getElementById('add_loose_qty').value) || 0;
-
-            var boxLabel = document.getElementById('add_box_label').value.trim() || 'Box';
-            var packLabel = document.getElementById('add_pack_label').value.trim() || 'Pack';
-            document.getElementById('add_box_qty_label').innerText = 'No. of ' + boxLabel + 's';
-            document.getElementById('add_pack_qty_label').innerText = 'No. of ' + packLabel + 's';
-
-            var total = looseQty;
-            if (unitsPerPack > 0) {
-                total += packQty * unitsPerPack;
-                if (packsPerBox > 0) total += boxQty * packsPerBox * unitsPerPack;
+        // Words that fit the type of stock: liquid = volume, capsule = tablets/capsules, item = pieces.
+        function updateDisposeLabels() {
+            var form = document.getElementById('disposeForm').value;
+            var unit = document.getElementById('modalUnit').innerText || 'units';
+            var label = {liquid: 'Volume to dispose', capsule: 'Capsules / tablets to dispose', piece: 'Pieces to dispose'}[form] || 'Amount to dispose';
+            document.getElementById('disposeAmountLabel').innerHTML = label + ' (in ' + escapeHtml(unit) + ') <span style="color:red;">*</span>';
+            var reason = document.getElementById('disposeReason').value;
+            var needText = (reason === 'damaged' || reason === 'other');
+            document.getElementById('disposeRemarks').toggleAttribute('required', needText);
+            document.getElementById('disposeRemarksHint').innerText = needText ? '(required - explain briefly)' : '(optional)';
+            var b = window._disposeBatch;
+            if (b) {
+                var expired = b.expiry_date && b.expiry_date < new Date().toISOString().slice(0, 10);
+                var note = document.getElementById('disposeNote');
+                note.innerHTML = '<strong>' + escapeHtml(b.item_name) + '</strong> - ' + Number(b.quantity).toLocaleString() + ' ' + escapeHtml(b.unit) + ' in this batch. '
+                    + (b.expiry_date ? (expired ? 'It <strong>expired on ' + escapeHtml(b.expiry_date) + '</strong>.' : 'It has not expired yet (' + escapeHtml(b.expiry_date) + '), so use "Damaged", "Recalled" or "Other".') : 'No expiry date is recorded.');
             }
-            document.getElementById('add_total_qty').value = total;
-            document.getElementById('add_total_readout').innerHTML = 'Total: <strong>' + total.toLocaleString() + '</strong> base units';
+        }
+        function disposeAll() {
+            var b = window._disposeBatch; if (!b) { return; }
+            document.getElementById('adjustAmountInput').value = b.quantity;
+            document.getElementById('upd_total_readout').innerHTML = 'Disposes: <strong>' + Number(b.quantity).toLocaleString() + '</strong> base units';
         }
 
         function calcUpdTotal() {
-            // Packaging config for the batch currently open in the Manage
-            // Stock modal is stashed on window by openUpdateModal() below.
+            // Packaging of the batch open in the dialog is stashed on window by openUpdateModal().
             var packsPerBox = window._updPacksPerBox || 0;
             var unitsPerPack = window._updUnitsPerPack || 0;
-
             var boxQty = parseInt(document.getElementById('upd_box_qty').value) || 0;
             var packQty = parseInt(document.getElementById('upd_pack_qty').value) || 0;
             var looseQty = parseInt(document.getElementById('upd_loose_qty').value) || 0;
-
             var total = looseQty;
             if (unitsPerPack > 0) {
                 total += packQty * unitsPerPack;
                 if (packsPerBox > 0) total += boxQty * packsPerBox * unitsPerPack;
             }
-            document.getElementById('adjustAmountInput').value = total;
-            document.getElementById('upd_total_readout').innerHTML = 'Adds: <strong>' + total.toLocaleString() + '</strong> base units';
+            document.getElementById('adjustAmountInput').value = total > 0 ? total : '';
+            document.getElementById('upd_total_readout').innerHTML = 'Disposes: <strong>' + total.toLocaleString() + '</strong> base units';
         }
 
         function openModal(id) { document.getElementById(id).classList.add('active'); }
@@ -1370,7 +1389,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
             openModal('addItemModal');
         }
 
-        function openUpdateModal(batch) {
+        function openUpdateModal(batch, preset) {
             document.getElementById('modalItemId').value = batch.id;
             document.getElementById('modalItemNameHidden').value = batch.item_name + (batch.brand_name ? ' (' + batch.brand_name + ')' : '');
             document.getElementById('modalItemName').innerText = batch.item_name + (batch.brand_name ? ' — ' + batch.brand_name : '');
@@ -1378,7 +1397,16 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
             document.getElementById('modalUnit').innerText = batch.unit;
             document.getElementById('modalBatchNo').innerText = batch.tracking_code || 'N/A';
 
-            document.getElementById('stockAction').value = 'add';
+            // Expired batches open straight on "Dispose"; for everything else the common job is the expiry date.
+            var isExpired = batch.expiry_date && batch.expiry_date < new Date().toISOString().slice(0, 10);
+            document.getElementById('stockAction').value = preset || (isExpired && batch.quantity > 0 ? 'dispose' : 'edit_expiry');
+            window._disposeBatch = batch;
+            var guess = {liquid: /\b(ml|l|liter|litre|bottles?|vials?|ampou?les?|sachets?)\b/i, capsule: /\b(caps?|capsules?|tabs?|tablets?|pills?)\b/i};
+            document.getElementById('disposeForm').value = guess.liquid.test(batch.unit || '') ? 'liquid' : (guess.capsule.test(batch.unit || '') ? 'capsule' : 'piece');
+            document.getElementById('disposeReason').value = isExpired ? 'expired' : 'damaged';
+            document.getElementById('disposeDate').value = new Date().toISOString().slice(0, 10);
+            ['disposeWitness', 'disposeRemarks'].forEach(function (id) { document.getElementById(id).value = ''; });
+            document.getElementById('adjustAmountInput').max = batch.quantity;
 
             window._updUnitsPerPack = batch.units_per_pack || 0;
             window._updPacksPerBox = batch.packs_per_box || 0;
@@ -1388,7 +1416,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
             document.getElementById('upd_pack_qty').value = '';
             document.getElementById('upd_loose_qty').value = '';
             document.getElementById('adjustAmountInput').value = '';
-            document.getElementById('upd_total_readout').innerHTML = 'Adds: <strong>0</strong> base units';
+            document.getElementById('upd_total_readout').innerHTML = 'Disposes: <strong>0</strong> base units';
 
             toggleStockAction(); 
             openModal('updateStockModal');

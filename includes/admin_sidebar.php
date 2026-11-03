@@ -127,7 +127,7 @@ $nav_show_archives  = mh_has_permission('view_system_archives');
             <?php endif; ?>
 
             <?php if($nav_show_inventory): 
-                $inv_active = in_array($current_page, ['inventory.php', 'dispense_medicine.php']);
+                $inv_active = in_array($current_page, ['inventory.php', 'inventory_disposals.php', 'dispense_medicine.php']);
             ?>
                 <li class="has-submenu <?php echo $inv_active ? 'open' : ''; ?>">
                     <a href="#" onclick="toggleSubmenu(event, 'invSubmenu')" title="Medicine Inventory" class="<?php echo $inv_active ? 'active' : ''; ?>">
@@ -139,6 +139,7 @@ $nav_show_archives  = mh_has_permission('view_system_archives');
                     <ul id="invSubmenu" class="sidebar-submenu" style="display: <?php echo $inv_active ? 'block' : 'none'; ?>;">
                         <?php if($nav_can_supply): ?>
                         <li><a href="inventory.php" class="<?php echo ($current_page == 'inventory.php') ? 'active' : ''; ?>">Supply Masterlist</a></li>
+                        <li><a href="inventory_disposals.php" class="<?php echo ($current_page == 'inventory_disposals.php') ? 'active' : ''; ?>">Disposal History</a></li>
                         <?php endif; ?>
                         <?php if($nav_can_dispense || $nav_can_disp_log): ?>
                         <li><a href="dispense_medicine.php" class="<?php echo ($current_page == 'dispense_medicine.php') ? 'active' : ''; ?>"><?php echo $nav_can_dispense ? 'Dispense Medicine' : 'Dispensing History'; ?></a></li>

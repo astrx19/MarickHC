@@ -593,3 +593,9 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .dv-scan-head { margin-bottom: 8px; font-size: .9rem; }
 .dv-scan-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .dv-scan input[type="date"] { min-height: 34px; }
+
+/* ---------- 19. Step 7: Stock / Disposal History tabs ---------- */
+.mh-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--bg-hover, #f1f5f9); border: 1px solid var(--border-color, #e2e8f0); }
+.mh-tabs a { padding: 7px 18px; border-radius: 999px; font-weight: 700; font-size: .85rem; text-decoration: none; color: var(--text-muted, #64748b); transition: background-color .15s ease, color .15s ease; }
+.mh-tabs a:hover { color: var(--text-main, #334155); }
+.mh-tabs a.active { background: var(--primary, #4ca1af); color: #fff; }
