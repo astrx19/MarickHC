@@ -41,8 +41,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!array_key_exists($mod, $choices)) { $mod = ''; }
     $nameLen = mb_strlen($name);
 
+    /* ---------- LOCK / UNLOCK (Health Head / Admin only) ---------- */
+    if (isset($_POST['toggle_dept_lock'])) {
+        if (!mh_is_admin_tier()) { dept_done(false, 'Only the Health Head or an Admin can change this policy.'); }
+        $lock = ($_POST['toggle_dept_lock'] === 'lock');
+        mh_departments_set_locked($conn, $lock, $user_id);
+        logActivity($conn, $user_id, $role, $lock ? 'Departments Locked' : 'Departments Unlocked', $lock ? 'Adding new departments is now blocked (center policy).' : 'Adding new departments was allowed again.');
+        dept_done(true, $lock ? 'Adding departments is locked again.' : 'Adding departments is now allowed. Lock it again when you are done.');
+    }
+
     /* ---------- ADD ---------- */
     if (isset($_POST['add_department'])) {
+        if (mh_departments_locked()) { dept_done(false, 'Adding departments is disabled by center policy.'); }
         if ($name === '' || $nameLen > 100) { dept_done(false, 'Enter a department name (up to 100 characters).'); }
         [$ok, $msg] = mh_add_option($conn, $LIST, $name);
         if (!$ok) { dept_done(false, $msg); }
@@ -154,13 +164,23 @@ while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r
             <div class="unified-panel">
                 <h2 style="margin:0 0 6px 0;">Clinic Departments</h2>
                 <p style="margin:0 0 14px 0; color:var(--text-muted, #64748b);">
-                    Departments appear in walk-in registration and Patient Queueing. Link a department to a module so
+                    Departments appear in walk-in registration and Patient Queueing. Each is linked to a module so
                     &ldquo;Proceed&rdquo; opens the right page, or choose &ldquo;General department&rdquo; for one with no special page.
                     Which staff roles see it follows each module's access settings in System Settings.
                 </p>
                 <?php if ($success_msg): ?><div class="dp-msg dp-ok"><?php echo $h($success_msg); ?></div><?php endif; ?>
                 <?php if ($error_msg): ?><div class="dp-msg dp-err"><?php echo $h($error_msg); ?></div><?php endif; ?>
 
+<?php if (mh_departments_locked()): ?>
+                <div style="background: var(--mh-info-bg, #eff6ff); border: 1px solid var(--mh-info-border, #bae6fd); color: var(--mh-info-fg, #0369a1); border-radius: 12px; padding: 16px 18px; display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
+                <div style="max-width: 640px;"><strong>Departments are fixed by center policy.</strong>
+                    The clinic's departments are tied to their pages, queues, staff roles and reports, so new ones cannot be added. You can still rename or hide the existing ones below.</div>
+                <?php if (mh_is_admin_tier()): ?><form method="POST" action="departments.php" style="margin:0;"><input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dept_csrf']); ?>">
+                    <button type="submit" name="toggle_dept_lock" value="unlock" class="btn-primary" data-confirm="Allow adding new departments? New departments are not part of the center's fixed list." data-confirm-title="Unlock departments?" data-confirm-type="warning" data-confirm-ok="Unlock">Unlock adding</button></form><?php endif; ?>
+            </div>
+                <?php else: ?>
+                <?php if (mh_is_admin_tier()): ?><form method="POST" action="departments.php" style="margin:0 0 12px;"><input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dept_csrf']); ?>">
+                    <button type="submit" name="toggle_dept_lock" value="lock" class="btn-secondary btn-sm">Lock adding departments (center policy)</button></form><?php endif; ?>
                 <form method="POST" action="departments.php" class="dp-form" autocomplete="off">
                     <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dept_csrf']); ?>">
                     <div><label>New department name</label><input type="text" name="dept_name" maxlength="100" required placeholder="e.g. TB-DOTS"></div>
@@ -171,6 +191,7 @@ while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r
                     <div><label>Description (optional)</label><input type="text" name="description" maxlength="255"></div>
                     <div><button type="submit" name="add_department" class="btn-primary">Add Department</button></div>
                 </form>
+                <?php endif; ?>
             </div>
 
             <div class="unified-panel" style="margin-top:20px;">

@@ -121,6 +121,7 @@ function mh_setting_defaults()
         'semaphore_api_key'     => '',
         'semaphore_sender_name' => 'SEMAPHORE',
         'sms_password_reset_enabled' => '0',
+        'departments_locked'    => '1',   // 1 = the center's departments are fixed by policy: nobody can add new ones
         // ---- SMS provider routing + Android SMS Gateway ---------------
         'sms_provider'          => 'semaphore', // 'semaphore' | 'android_gateway'
         'android_gateway_url'   => '',
@@ -235,6 +236,20 @@ function mh_setting($key, $fallback = '')
         return $defaults[$key];
     }
     return $fallback;
+}
+
+/**
+ * Departments are fixed by center policy (Child Immunization, Dental Clinic, General Consultation, Maternal Care):
+ * each one is wired to a module, its queue, its staff roles and its reports. While locked, nobody can ADD a
+ * department (renaming / hiding existing ones still works). The Health Head / Admin can lift the lock on purpose.
+ */
+function mh_departments_locked()
+{
+    return mh_setting('departments_locked', '1') !== '0';
+}
+function mh_departments_set_locked(mysqli $conn, $locked, $userId = null)
+{
+    return mh_set_setting($conn, 'departments_locked', $locked ? '1' : '0', $userId);
 }
 
 /**
@@ -886,6 +901,10 @@ function mh_render_select(mysqli $conn, $name, $listKey, $selected = '', array $
 /** Adds an option. Returns [bool, message]. */
 function mh_add_option(mysqli $conn, $listKey, $value, $sortOrder = null)
 {
+    // Whatever screen calls this, a department cannot be added while the policy lock is on.
+    if ($listKey === 'clinic_departments' && mh_departments_locked()) {
+        return [false, 'Adding departments is disabled by center policy.'];
+    }
     $value = trim($value);
     if ($value === '') {
         return [false, 'Please type a value before adding it.'];

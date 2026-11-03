@@ -18,6 +18,15 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
 
 /* ---------------- data ---------------- */
 $stats  = mh_disease_compute($conn);
+
+// Period overview (Step 8): default last 30 days; any range up to one year.
+$is_d = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) !== false; };
+$ov_to   = $is_d($_GET['to'] ?? '')   ? $_GET['to']   : date('Y-m-d');
+$ov_from = $is_d($_GET['from'] ?? '') ? $_GET['from'] : date('Y-m-d', strtotime($ov_to . ' -29 days'));
+if ($ov_from > $ov_to) { list($ov_from, $ov_to) = [$ov_to, $ov_from]; }
+if ($ov_to > date('Y-m-d')) { $ov_to = date('Y-m-d'); }
+if ($ov_from < date('Y-m-d', strtotime($ov_to . ' -365 days'))) { $ov_from = date('Y-m-d', strtotime($ov_to . ' -365 days')); }
+$ov = mh_disease_overview($conn, $ov_from, $ov_to);
 $tracked_total = count($stats['conditions']);
 // Only illnesses that actually have logged cases (last 12 weeks) are listed.
 $conds  = array_values(array_filter($stats['conditions'], function ($c) { return $c['total'] > 0; }));
@@ -72,7 +81,7 @@ $status_style = [
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
                 <div>
                     <h1 style="margin:0 0 4px; font-family: Georgia, serif; color:var(--heading-color, #1e293b);">Disease Statistics</h1>
-                    <p style="margin:0; color:var(--text-muted, #64748b);">Community illness trends from consultation diagnoses. Counts only &mdash; no patient names are shown. As of <?php echo $h(date('F j, Y', strtotime($stats['today']))); ?>.</p>
+                    <p style="margin:0; color:var(--text-muted, #64748b);">Community illness trends from consultation, dental and child check-up diagnoses. Counts only &mdash; no patient names are shown. As of <?php echo $h(date('F j, Y', strtotime($stats['today']))); ?>.</p>
                 </div>
                 <button type="button" class="btn-primary no-print" onclick="window.print()">Print</button>
             </div>
@@ -94,6 +103,64 @@ $status_style = [
                 <div class="ds-stat"><b style="color:#991b1b;"><?php echo (int) $stats['spikes']; ?></b><span>Active spikes</span></div>
                 <div class="ds-stat"><b style="color:#92400e;"><?php echo (int) $stats['rising']; ?></b><span>Rising</span></div>
                 <div class="ds-stat"><b><?php echo count($conds); ?></b><span>Conditions with cases</span></div>
+            </div>
+
+            <div class="unified-panel">
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+                    <div>
+                        <h2 style="margin:0 0 4px; font-size:1.2rem;">Overview for a period</h2>
+                        <p style="margin:0; color:var(--text-muted, #64748b); font-size:.9rem;"><?php echo $h(date('M d, Y', strtotime($ov['from']))); ?> &ndash; <?php echo $h(date('M d, Y', strtotime($ov['to']))); ?> (<?php echo (int) $ov['days']; ?> days). Consultations, dental visits and child check-ups.</p>
+                    </div>
+                    <form method="GET" class="no-print" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+                        <div><label style="font-size:.72rem; font-weight:700; text-transform:uppercase; color:var(--text-muted,#64748b); display:block;">From</label><input type="date" name="from" value="<?php echo $h($ov['from']); ?>" max="<?php echo date('Y-m-d'); ?>"></div>
+                        <div><label style="font-size:.72rem; font-weight:700; text-transform:uppercase; color:var(--text-muted,#64748b); display:block;">To</label><input type="date" name="to" value="<?php echo $h($ov['to']); ?>" max="<?php echo date('Y-m-d'); ?>"></div>
+                        <button type="submit" class="btn-submit btn-sm">Apply</button>
+                    </form>
+                </div>
+                <div class="ds-presets no-print" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+                    <?php foreach ([7 => 'Last 7 days', 30 => 'Last 30 days', 90 => 'Last 90 days', 365 => 'Last 12 months'] as $n => $lbl): ?>
+                        <a class="ds-small" style="border:1px solid var(--border-color,#cbd5e1); border-radius:999px; text-decoration:none; color:var(--text-muted,#64748b); font-weight:700;" href="?from=<?php echo date('Y-m-d', strtotime('-' . ($n - 1) . ' days')); ?>&to=<?php echo date('Y-m-d'); ?>"><?php echo $lbl; ?></a>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="ds-stats">
+                    <div class="ds-stat"><b><?php echo (int) $ov['total']; ?></b><span>Cases in period</span></div>
+                    <div class="ds-stat"><b style="color:<?php echo ($ov['change_pct'] ?? 0) > 0 ? '#991b1b' : (($ov['change_pct'] ?? 0) < 0 ? '#166534' : 'inherit'); ?>;"><?php echo $ov['change_pct'] === null ? '&mdash;' : (($ov['change_pct'] > 0 ? '+' : '') . (int) $ov['change_pct'] . '%'); ?></b><span>vs previous <?php echo (int) $ov['days']; ?> days (<?php echo (int) $ov['prev_total']; ?>)</span></div>
+                    <div class="ds-stat"><b><?php echo (int) $ov['patients']; ?></b><span>Different patients</span></div>
+                    <div class="ds-stat"><b><?php echo $ov['days'] > 0 ? number_format($ov['total'] / $ov['days'], 1) : '0'; ?></b><span>Cases per day</span></div>
+                </div>
+
+                <?php
+                $bars = function ($title, array $data) use ($h) {
+                    $tot = max(1, array_sum($data));
+                    echo '<div><h4 style="margin:0 0 8px;">' . $h($title) . '</h4>';
+                    if (!array_sum($data)) { echo '<p style="color:var(--text-muted,#64748b); margin:0;">No data.</p>'; }
+                    foreach ($data as $label => $n) {
+                        if ($n <= 0) { continue; }
+                        echo '<div class="ds-bar"><span style="width:110px;">' . $h($label) . '</span><div><i style="width:' . round($n / $tot * 100) . '%"></i></div><b>' . (int) $n . '</b></div>';
+                    }
+                    echo '</div>';
+                };
+                ?>
+                <div class="ds-grid3">
+                    <?php $bars('By department', $ov['by_source']); $bars('By sex', $ov['by_sex']); $bars('By age group', $ov['by_age']); $bars('By area', $ov['by_area']); ?>
+                </div>
+
+                <h4 style="margin:22px 0 8px;">Cases per week</h4>
+                <?php $wmax = max(1, max($ov['by_week'] ?: [0])); ?>
+                <div style="display:flex; align-items:flex-end; gap:6px; height:120px; overflow-x:auto; padding-bottom:4px;">
+                    <?php foreach ($ov['by_week'] as $wk => $n): ?>
+                        <div style="flex:1; min-width:34px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="Week of <?php echo $h(date('M d', strtotime($wk))); ?>: <?php echo (int) $n; ?> case(s)">
+                            <small style="font-weight:700;"><?php echo (int) $n; ?></small>
+                            <div style="width:100%; background:#4ca1af; border-radius:5px 5px 0 0; height:<?php echo max(2, round($n / $wmax * 80)); ?>%;"></div>
+                            <small style="color:var(--text-muted,#64748b); font-size:.68rem;"><?php echo $h(date('M j', strtotime($wk))); ?></small>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="ds-grid3" style="margin-top:22px;">
+                    <?php $bars('Top tracked conditions', $ov['by_cond']); $bars('Other diagnoses / complaints', $ov['other']); ?>
+                </div>
             </div>
 
             <div class="unified-panel">

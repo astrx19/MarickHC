@@ -76,11 +76,11 @@ function mh_disease_age_group(?string $birthdate, string $onDate)
     return '60+';
 }
 
-/** One row per case: [date, text, sex, birthdate, address_type]. */
+/** One row per case: [date, src (department), pid, text, sex, birthdate, address_type]. */
 function mh_disease_load_cases(mysqli $conn, string $from, string $to)
 {
     $rows = [];
-    $st = $conn->prepare("SELECT c.visit_date AS d,
+    $st = $conn->prepare("SELECT c.visit_date AS d, 'General Consultation' AS src, p.id AS pid,
                                  COALESCE(NULLIF(TRIM(c.diagnosis), ''), c.chief_complaints) AS txt,
                                  p.sex, p.birthdate, p.address_type
                           FROM consultations c JOIN patients p ON p.id = c.patient_id
@@ -92,7 +92,7 @@ function mh_disease_load_cases(mysqli $conn, string $from, string $to)
         $st->close();
     }
     // Dental visits: the dentist's diagnosis (column added by the dental module; skipped quietly if it does not exist yet).
-    $st = @$conn->prepare("SELECT dr.visit_date AS d,
+    $st = @$conn->prepare("SELECT dr.visit_date AS d, 'Dental Clinic' AS src, p.id AS pid,
                                  COALESCE(NULLIF(TRIM(dr.diagnosis), ''), NULLIF(TRIM(dr.chief_complaint), '')) AS txt,
                                  p.sex, p.birthdate, p.address_type
                           FROM dental_records dr JOIN patients p ON p.id = dr.patient_id
@@ -103,7 +103,7 @@ function mh_disease_load_cases(mysqli $conn, string $from, string $to)
         while ($res && ($r = $res->fetch_assoc())) { $rows[] = $r; }
         $st->close();
     }
-    $st = $conn->prepare("SELECT cl.consultation_date AS d,
+    $st = $conn->prepare("SELECT cl.consultation_date AS d, 'Child Immunization' AS src, p.id AS pid,
                                  CONCAT_WS(' ', cl.chief_complaints, cl.remarks) AS txt,
                                  p.sex, p.birthdate, p.address_type
                           FROM child_consultation_logs cl
@@ -219,4 +219,58 @@ function mh_disease_sparkline(array $values, string $color = '#4ca1af', int $w =
         $out .= '<rect x="' . round($i * $bw + 1, 1) . '" y="' . round($h - $bh, 1) . '" width="' . round($bw - 2, 1) . '" height="' . round($bh, 1) . '" rx="1.5" fill="' . $color . '" opacity="' . $op . '"/>';
     }
     return $out . '</svg>';
+}
+
+
+/**
+ * Overview of a chosen period (Step 8): totals, change against the previous period of the same length,
+ * and breakdowns by department, sex, age group, area, week, tracked condition and other diagnoses.
+ * Counts only - no names leave this function.
+ */
+function mh_disease_overview(mysqli $conn, string $from, string $to)
+{
+    $d1 = new DateTime($from); $d2 = new DateTime($to);
+    $days = (int) $d1->diff($d2)->days + 1;
+    $prevTo   = (clone $d1)->modify('-1 day')->format('Y-m-d');
+    $prevFrom = (clone $d1)->modify('-' . $days . ' days')->format('Y-m-d');
+
+    $cases = mh_disease_load_cases($conn, $from, $to);
+    $prev_total = count(mh_disease_load_cases($conn, $prevFrom, $prevTo));
+
+    $conds = [];
+    foreach (mh_disease_conditions($conn) as $c) {
+        $rx = mh_disease_regex((string) $c['keywords']);
+        if ($rx) { $conds[] = ['name' => $c['name'], 'rx' => $rx]; }
+    }
+
+    $by_source = []; $by_sex = []; $by_age = ['0-4' => 0, '5-14' => 0, '15-24' => 0, '25-59' => 0, '60+' => 0, 'Unknown' => 0];
+    $by_area = []; $by_week = []; $by_cond = []; $other = []; $patients = [];
+
+    // every week of the period, even empty ones, so the trend has no gaps
+    $cur = new DateTime(date('Y-m-d', strtotime('monday this week', strtotime($from))));
+    $endW = date('Y-m-d', strtotime('monday this week', strtotime($to)));
+    while ($cur->format('Y-m-d') <= $endW) { $by_week[$cur->format('Y-m-d')] = 0; $cur->modify('+7 days'); }
+
+    foreach ($cases as $r) {
+        $src = $r['src'] ?? 'Other';             $by_source[$src] = ($by_source[$src] ?? 0) + 1;
+        $sex = trim((string) ($r['sex'] ?? '')); $sex = $sex !== '' ? $sex : 'Not recorded'; $by_sex[$sex] = ($by_sex[$sex] ?? 0) + 1;
+        $ag  = mh_disease_age_group($r['birthdate'] ?? null, (string) $r['d']); $by_age[$ag] = ($by_age[$ag] ?? 0) + 1;
+        $ar  = trim((string) ($r['address_type'] ?? '')); $ar = $ar !== '' ? $ar : 'Not recorded'; $by_area[$ar] = ($by_area[$ar] ?? 0) + 1;
+        $wk  = date('Y-m-d', strtotime('monday this week', strtotime((string) $r['d']))); if (isset($by_week[$wk])) { $by_week[$wk]++; }
+        if (!empty($r['pid'])) { $patients[(int) $r['pid']] = true; }
+
+        $txt = mb_strtolower(trim((string) ($r['txt'] ?? '')));
+        $matched = false;
+        foreach ($conds as $c) { if ($txt !== '' && preg_match($c['rx'], $txt)) { $by_cond[$c['name']] = ($by_cond[$c['name']] ?? 0) + 1; $matched = true; } }
+        if (!$matched && $txt !== '') { $k = mb_substr($txt, 0, 60); $other[$k] = ($other[$k] ?? 0) + 1; }
+    }
+    arsort($by_source); arsort($by_sex); arsort($by_area); arsort($by_cond); arsort($other);
+    $total = count($cases);
+    return [
+        'from' => $from, 'to' => $to, 'days' => $days, 'total' => $total, 'prev_total' => $prev_total,
+        'change_pct' => $prev_total > 0 ? round(($total - $prev_total) / $prev_total * 100) : null,
+        'patients' => count($patients), 'by_source' => $by_source, 'by_sex' => $by_sex, 'by_age' => $by_age,
+        'by_area' => $by_area, 'by_week' => $by_week, 'by_cond' => array_slice($by_cond, 0, 10, true),
+        'other' => array_slice($other, 0, 10, true),
+    ];
 }

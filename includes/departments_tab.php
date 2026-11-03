@@ -58,8 +58,18 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
     if (!array_key_exists($mod, $choices)) { $mod = ''; }
     $nameLen = mb_strlen($name);
 
+    /* ---------- LOCK / UNLOCK (Health Head / Admin only) ---------- */
+    if (isset($_POST['toggle_dept_lock'])) {
+        if (!mh_is_admin_tier()) { mh_redirect('departments', 'error', 'Only the Health Head or an Admin can change this policy.'); }
+        $lock = ($_POST['toggle_dept_lock'] === 'lock');
+        mh_departments_set_locked($conn, $lock, $user_id);
+        logActivity($conn, $user_id, $user_role, $lock ? 'Departments Locked' : 'Departments Unlocked', $lock ? 'Adding new departments is now blocked (center policy).' : 'Adding new departments was allowed again.');
+        mh_redirect('departments', 'success', $lock ? 'Adding departments is locked again.' : 'Adding departments is now allowed. Lock it again when you are done.');
+    }
+
     /* ---------- ADD ---------- */
     if (isset($_POST['add_department'])) {
+        if (mh_departments_locked()) { mh_redirect('departments', 'error', 'Adding departments is disabled by center policy.'); }
         if ($name === '' || $nameLen > 100) { mh_redirect('departments', 'error', 'Enter a department name (up to 100 characters).'); }
         [$ok, $msg] = mh_add_option($conn, MH_DEPT_LIST, $name);
         if (!$ok) { mh_redirect('departments', 'error', $msg); }
@@ -230,6 +240,16 @@ function mh_depts_render(mysqli $conn)
         <div class="dpt-stat"><b><?php echo $n_custom; ?></b><span>Custom pages</span></div>
     </div>
 
+    <?php if (mh_departments_locked()): ?>
+    <div style="background: var(--mh-info-bg, #eff6ff); border: 1px solid var(--mh-info-border, #bae6fd); color: var(--mh-info-fg, #0369a1); border-radius: 12px; padding: 16px 18px; display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
+                <div style="max-width: 640px;"><strong>Departments are fixed by center policy.</strong>
+                    The clinic's departments are tied to their pages, queues, staff roles and reports, so new ones cannot be added. You can still rename or hide the existing ones below.</div>
+                <?php if (mh_is_admin_tier()): ?><form method="POST" style="margin:0;"><?php echo mh_csrf_field(); ?>
+                    <button type="submit" name="toggle_dept_lock" value="unlock" class="btn" data-confirm="Allow adding new departments? New departments are not part of the center's fixed list." data-confirm-title="Unlock departments?" data-confirm-type="warning" data-confirm-ok="Unlock">Unlock adding</button></form><?php endif; ?>
+            </div>
+    <?php else: ?>
+<?php if (mh_is_admin_tier()): ?><form method="POST" style="margin:0 0 14px;"><?php echo mh_csrf_field(); ?>
+        <button type="submit" name="toggle_dept_lock" value="lock" class="btn">Lock adding departments (center policy)</button></form><?php endif; ?>
     <div class="card">
         <header>
             <h3>Add a department</h3>
@@ -257,8 +277,10 @@ function mh_depts_render(mysqli $conn)
         </div>
     </div>
 
+    <?php endif; ?>
+
     <h3 style="margin:26px 0 12px; color:var(--ss-heading);">Your departments</h3>
-    <?php if (!$rows): ?><p style="color:var(--ss-muted);">No departments yet. Add the first one above.</p><?php endif; ?>
+    <?php if (!$rows): ?><p style="color:var(--ss-muted);">No departments yet.</p><?php endif; ?>
     <div class="dpt-grid">
     <?php foreach ($rows as $o):
         $name  = $o['option_value'];
