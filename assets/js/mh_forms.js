@@ -217,7 +217,112 @@
         confirm.addEventListener('input', update);
     }
 
+    /* ---------- vitals: numbers only, everywhere (Round A) ----------
+       Fields are recognised by NAME so every present and future form is covered without editing each page.
+         decimal: weight, height, temperature, birth weight / height, BMI...   whole numbers: pulse, respiratory rate, SpO2
+         blood pressure: digits and ONE "/"  (120/80)
+       Letters, units ("65 kg"), e / + / - and every other character are blocked as they are typed or pasted. */
+    var RULES = [
+        { re: /(^|[_\[\-])(bp|blood_?pressure)([_\]\-]|$)/i, kind: 'bp',  max: 7,  hint: '120/80' },
+        { re: /(^|[_\[\-])(pulse|pulse_?rate|heart_?rate|resp(_?rate|iratory_?rate)?|rr|spo2|o2_?sat\w*|oxygen\w*)([_\]\-]|$)/i, kind: 'int', max: 3 },
+        { re: /(^|[_\[\-])(temp|temperature)([_\]\-]|$)/i,  kind: 'dec', places: 2, max: 5 },
+        { re: /(^|[_\[\-])(birth_?)?(weight|height|wt|ht)([_\]\-]|$)/i, kind: 'dec', places: 2, max: 6 },
+        { re: /(^|[_\[\-])(bmi)([_\]\-]|$)/i, kind: 'dec', places: 1, max: 5 }
+    ];
+    function ruleFor(el) {
+        if (!el.matches || !el.matches('input')) { return null; }
+        var t = (el.type || 'text').toLowerCase();
+        if (t !== 'text' && t !== 'number' && t !== 'tel' && t !== 'search') { return null; }
+        if (el.hasAttribute('data-mh-free')) { return null; }          // opt-out
+        var key = (el.getAttribute('name') || '') + ' ' + (el.id || '');
+        for (var i = 0; i < RULES.length; i++) { if (RULES[i].re.test(key.split(' ')[0]) || (el.id && RULES[i].re.test(el.id))) { return RULES[i]; } }
+        return null;
+    }
+    function tagNumeric(root) {
+        Array.prototype.forEach.call((root || document).querySelectorAll('input'), function (el) {
+            if (el.getAttribute('data-mh-num')) { return; }
+            var r = ruleFor(el);
+            if (!r) { return; }
+            el.setAttribute('data-mh-num', r.kind);
+            if (el.type === 'number') { el.type = 'text'; }              // type=number still accepts "e" and "-"
+            el.setAttribute('inputmode', r.kind === 'bp' ? 'numeric' : (r.kind === 'int' ? 'numeric' : 'decimal'));
+            el.setAttribute('autocomplete', 'off');
+            if (!el.getAttribute('maxlength')) { el.setAttribute('maxlength', String(r.max)); }
+            el.removeAttribute('min'); el.removeAttribute('max'); el.removeAttribute('step');
+            var ph = el.getAttribute('placeholder') || '';
+            if (ph) { el.setAttribute('placeholder', ph.replace(/\s*(kgs?|cms?|lbs?|°\s*c|bpm|mmhg)\b/gi, '')); }   // the unit belongs in the label, not in the value
+            if (r.kind === 'dec' && !el.hasAttribute('data-mh-decimal')) { el.setAttribute('data-mh-decimal', String(r.places)); }
+            cleanNumeric(el);
+        });
+    }
+    function sanitize(el, v) {
+        var kind = el.getAttribute('data-mh-num');
+        if (kind === 'int') { return v.replace(/\D+/g, ''); }
+        if (kind === 'bp')  { v = v.replace(/[^0-9\/]/g, ''); var i = v.indexOf('/'); return i < 0 ? v : v.slice(0, i + 1) + v.slice(i + 1).replace(/\//g, ''); }
+        if (kind === 'dec') {
+            v = v.replace(/[^0-9.]/g, ''); var p = v.split('.'); v = p.shift() + (p.length ? '.' + p.join('') : '');
+            var places = parseInt(el.getAttribute('data-mh-decimal'), 10); if (isNaN(places)) { places = 2; }
+            if (v.indexOf('.') > -1) { var q = v.split('.'); v = q[0] + '.' + q[1].slice(0, places); }
+            return v;
+        }
+        return v;
+    }
+    function cleanNumeric(el) { var c = sanitize(el, String(el.value)); if (c !== el.value) { el.value = c; } }
+    // Block the keystroke itself (nothing flickers), then sanitize again for paste / drop / autofill / OCR fills.
+    document.addEventListener('beforeinput', function (e) {
+        var el = e.target;
+        if (!el || !el.getAttribute || !el.getAttribute('data-mh-num') || e.inputType.indexOf('insert') !== 0 || e.data == null) { return; }
+        var next = String(el.value).slice(0, el.selectionStart) + e.data + String(el.value).slice(el.selectionEnd);
+        if (sanitize(el, next) !== next) { e.preventDefault(); }
+    });
+    document.addEventListener('input', function (e) { if (e.target && e.target.getAttribute && e.target.getAttribute('data-mh-num')) { cleanNumeric(e.target); } });
+    document.addEventListener('change', function (e) { if (e.target && e.target.getAttribute && e.target.getAttribute('data-mh-num')) { cleanNumeric(e.target); } }, true);
+    window.mhTagNumeric = tagNumeric;
+
+    /* ---------- red * on every required field (Round A) ----------
+       Any field with the `required` attribute (or data-required) gets a red asterisk on its label, unless the label
+       already has one. Re-checked when fields are added or `required` is toggled by a page script. */
+    function labelFor(el) {
+        if (el.id) { var l = document.querySelector('label[for="' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]'); if (l) { return l; } }
+        var wrap = el.closest('label'); if (wrap) { return wrap; }
+        if (el.type === 'radio' || el.type === 'checkbox') {
+            var g = el.closest('.form-group, .paper-field, .reg-field, fieldset');
+            if (g) { return g.querySelector('legend, label'); }
+        }
+        var grp = el.closest('.form-group, .paper-field, .mh-field, .pr-field, .field');
+        if (grp) {
+            var labs = grp.querySelectorAll('label'), found = null;
+            Array.prototype.forEach.call(labs, function (lb) { if (!found && (lb.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) { found = lb; } });
+            return found || labs[0] || null;
+        }
+        var prev = el.previousElementSibling;
+        return (prev && prev.tagName === 'LABEL') ? prev : null;
+    }
+    function markRequired(root) {
+        Array.prototype.forEach.call((root || document).querySelectorAll('input[required], select[required], textarea[required], [data-required]'), function (el) {
+            var t = (el.type || '').toLowerCase();
+            if (t === 'hidden' || t === 'submit' || t === 'button') { return; }
+            var lb = labelFor(el);
+            if (!lb || lb.getAttribute('data-mh-req')) { return; }
+            if (/\*/.test(lb.textContent) || lb.querySelector('.required, .req, .mh-req')) { lb.setAttribute('data-mh-req', '1'); return; }
+            var star = document.createElement('span');
+            star.className = 'mh-req'; star.setAttribute('aria-hidden', 'true'); star.textContent = '*';
+            lb.appendChild(document.createTextNode(' ')); lb.appendChild(star);
+            lb.setAttribute('data-mh-req', '1');
+        });
+    }
+    var reqObs = null;
+    function watchRequired() {
+        if (!window.MutationObserver || reqObs) { return; }
+        var t = null;
+        reqObs = new MutationObserver(function () { clearTimeout(t); t = setTimeout(function () { markRequired(); tagNumeric(); }, 60); });
+        reqObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['required'] });
+    }
+
     function init() {
+        tagNumeric();
+        markRequired();
+        watchRequired();
         initEyes();
         initDates();
         Array.prototype.forEach.call(document.querySelectorAll('form'), bindPasswordMatch);

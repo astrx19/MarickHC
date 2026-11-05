@@ -41,6 +41,8 @@ if(isset($_POST['add_consultation'])) {
     // Temperature: numbers / decimals only (e.g. 36.8) - checked before anything is saved.
     $temp_check = mh_clean_temperature($_POST['temp'] ?? '');
     if ($name_error === null && !$temp_check['ok']) { $name_error = $temp_check['error']; }
+    $vc = mh_clean_vitals(['bp' => $_POST['bp'] ?? '', 'weight' => $_POST['weight'] ?? '', 'height' => $_POST['height'] ?? '']);
+    if ($name_error === null && $vc['errors']) { $name_error = implode(' ', $vc['errors']); }
 
     if ($name_error !== null) {
         $_SESSION['error_msg'] = $name_error;
@@ -56,7 +58,7 @@ if(isset($_POST['add_consultation'])) {
     $patient_id = mh_queue_resolve_patient($conn, $queue_ctx_post, $pn);
 
     $txt = function ($k) { $v = trim($_POST[$k] ?? ''); return $v === '' ? null : $v; };
-    $weight = $txt('weight'); $height = $txt('height'); $temp = ($temp_check['value'] === '' ? null : $temp_check['value']); $bp = $txt('bp');
+    $weight = ($vc['values']['weight'] === '' ? null : $vc['values']['weight']); $height = ($vc['values']['height'] === '' ? null : $vc['values']['height']); $temp = ($temp_check['value'] === '' ? null : $temp_check['value']); $bp = ($vc['values']['bp'] === '' ? null : $vc['values']['bp']);
     $complaints   = trim($_POST['chief_complaints'] ?? '');
     $diagnosis    = trim($_POST['diagnosis'] ?? '');
     $prescription = trim($_POST['prescription'] ?? '');
@@ -74,7 +76,7 @@ if(isset($_POST['add_consultation'])) {
         $_SESSION['success_msg'] = "Consultation record saved successfully!";
         if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
             && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
-            $_SESSION['success_msg'] .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " #" . (int) $queue_ctx_post['queue_number'] : "") . " marked as Completed.";
+            $_SESSION['success_msg'] .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
             logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the consultation.");
         }
         logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Added Consultation", "Logged general checkup for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));

@@ -599,3 +599,14 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .mh-tabs a { padding: 7px 18px; border-radius: 999px; font-weight: 700; font-size: .85rem; text-decoration: none; color: var(--text-muted, #64748b); transition: background-color .15s ease, color .15s ease; }
 .mh-tabs a:hover { color: var(--text-main, #334155); }
 .mh-tabs a.active { background: var(--primary, #4ca1af); color: #fff; }
+
+/* ---------- 20. Round A: live updates, required marker ---------- */
+@keyframes mh-live-flash { from { background-color: rgba(var(--primary-rgb, 76, 161, 175), 0.18); } to { background-color: transparent; } }
+.mh-live-flash { animation: mh-live-flash 1.4s ease-out 1; }
+.mh-live-pill {
+    position: fixed; right: 18px; bottom: 18px; z-index: 100001; padding: 10px 16px; border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--primary, #4ca1af); color: #fff; font-family: inherit; font-size: .88rem; box-shadow: var(--mh-shadow-pop, 0 12px 30px rgba(15,23,42,.3));
+    animation: mh-slide-down .25s var(--mh-ease, ease) both;
+}
+.mh-live-pill:hover { filter: brightness(1.08); }
+.mh-req { color: #dc2626; font-weight: 700; margin-left: 2px; }

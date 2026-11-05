@@ -47,6 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vitals'])) {
 
         $temp_check = mh_clean_temperature($temp);   // numbers / decimals only
         $temp = $temp_check['value'];
+        $vc = mh_clean_vitals(['bp' => $bp, 'pulse' => $pulse, 'resp_rate' => $rr, 'spo2' => $spo2, 'weight' => $weight, 'height' => $height]);
+        $bp = $vc['values']['bp']; $pulse = $vc['values']['pulse']; $rr = $vc['values']['resp_rate'];
+        $spo2 = $vc['values']['spo2']; $weight = $vc['values']['weight']; $height = $vc['values']['height'];
 
         $chk = $conn->prepare("SELECT id FROM patients WHERE id = ? AND status = 1 LIMIT 1");
         $chk->bind_param('i', $patient_id); $chk->execute();
@@ -56,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vitals'])) {
             $error_msg = 'Please choose a registered patient.';
         } elseif (!$temp_check['ok']) {
             $error_msg = $temp_check['error'];
+        } elseif ($vc['errors']) {
+            $error_msg = implode(' ', $vc['errors']);
         } elseif ($bp === '' && $temp === '' && $pulse === '' && $rr === '' && $spo2 === '' && $weight === '' && $height === '') {
             $error_msg = 'Enter at least one vital sign.';
         } else {

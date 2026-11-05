@@ -404,7 +404,7 @@ $widget_ctx     = [
                                     <button type="button" class="widget-remove-btn" title="Remove widget" onclick="mhRemoveWidget(this)"><?php echo mh_icon('x'); ?></button>
                                 </div>
                             </div>
-                            <div class="widget-body">
+                            <div class="widget-body" data-live="w-<?php echo htmlspecialchars((string) $widget['render']); ?>">
                                 <?php call_user_func($widget['render'], $conn, $widget_ctx); ?>
                             </div>
                         </div>
@@ -803,5 +803,7 @@ $widget_ctx     = [
             }
         }
     </script>
+<script>window.MH_LIVE = { url: 'api/queue_sync.php', interval: 5000, refreshAll: 60000 };</script>
+<script src="../assets/js/mh_live.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_live.js'); ?>" defer></script>
 </body>
 </html>

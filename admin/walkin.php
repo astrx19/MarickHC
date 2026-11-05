@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_walkin'])) {
                         $conn->rollback();                            // nothing is kept (not even a just-created patient)
                         $error_msg = $queue_err;
                     } else {
-                        if (!logActivity($conn, $user_id, $_SESSION['role'], "Walk-In Queue", "Added Patient ID $patient_id to $department queue as #$queue_no (Waiting).")) {
+                        if (!logActivity($conn, $user_id, $_SESSION['role'], "Walk-In Queue", "Added Patient ID $patient_id to $department queue as " . mh_queue_label($department, $queue_no) . " (Waiting).")) {
                             throw new RuntimeException('Audit log write failed');   // keep patient + queue + log all-or-nothing
                         }
                         $conn->commit();

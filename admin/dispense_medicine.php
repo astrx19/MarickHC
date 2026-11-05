@@ -284,7 +284,7 @@ if (isset($_POST['dispense_item'])) {
                         $conn->commit();   // stock deduction + dispensation record + audit log succeed together, or not at all
                         $success_msg = "Successfully dispensed $amount {$item['unit']} of $item_full_name!";
                         if ($q_done) {
-                            $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " #" . (int) $queue_ctx_post['queue_number'] : "") . " marked as Completed.";
+                            $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
                         }
                         $_SESSION['dispense_flash'] = $success_msg;   // PRG: show it after the redirect, never re-POST on refresh
                         header('Location: dispense_medicine.php');

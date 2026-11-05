@@ -97,6 +97,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
             if (!$tc['ok']) { $registration_error = $tc['error']; break; }
             $clean_temps[$ti] = $tc['value'];
         }
+        // Birth and check-up measurements: numbers only.
+        $vc_birth = mh_clean_vitals(['birth_weight' => $_POST['birth_weight'] ?? '', 'birth_height' => $_POST['birth_height'] ?? '']);
+        if ($registration_error === null && $vc_birth['errors']) { $registration_error = implode(' ', $vc_birth['errors']); }
+        $birth_weight = $vc_birth['values']['birth_weight'] === '' ? null : $vc_birth['values']['birth_weight'];
+        $birth_height = $vc_birth['values']['birth_height'] === '' ? null : $vc_birth['values']['birth_height'];
+        $clean_wts = []; $clean_hts = [];
+        foreach ((array) ($_POST['consultation_weight'] ?? []) as $wi => $wraw) {
+            $r1 = mh_clean_vitals(['weight' => $wraw, 'height' => ($_POST['consultation_height'][$wi] ?? '')]);
+            if ($registration_error === null && $r1['errors']) { $registration_error = 'Check-up row ' . ((int) $wi + 1) . ': ' . implode(' ', $r1['errors']); }
+            $clean_wts[$wi] = $r1['values']['weight']; $clean_hts[$wi] = $r1['values']['height'];
+        }
         if ($registration_error === null && $patient_id === null) {
             list($new_pid, $registration_error, $was_created) = mh_register_child_patient(
                 $conn, $pn, $_POST['child_birthdate'] ?? '', $_POST['child_sex'] ?? '', $contact_no, $family_no
@@ -133,8 +144,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
                         foreach ($_POST['consultation_date'] as $idx => $c_date_val) {
                             $c_date = null_if_empty($c_date_val ?? '');
                             if ($c_date !== NULL) {
-                                $c_wt   = null_if_empty($_POST['consultation_weight'][$idx] ?? '');
-                                $c_ht   = null_if_empty($_POST['consultation_height'][$idx] ?? '');
+                                $c_wt   = null_if_empty($clean_wts[$idx] ?? '');
+                                $c_ht   = null_if_empty($clean_hts[$idx] ?? '');
                                 $c_temp = null_if_empty($clean_temps[$idx] ?? '');
                                 $c_cc   = null_if_empty($_POST['consultation_cc'][$idx] ?? '');
                                 $c_rem  = null_if_empty($_POST['consultation_remarks'][$idx] ?? '');
@@ -151,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
                 if ($child_created_id !== null) { $success_msg .= " The child was added to the Patient Masterlist."; }
                 if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
                     && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
-                    $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " #" . (int) $queue_ctx_post['queue_number'] : "") . " marked as Completed.";
+                    $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
                     if (function_exists('logActivity')) {
                         logActivity($conn, $user_id, $user_role, "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the immunization record.");
                     }

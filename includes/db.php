@@ -157,6 +157,7 @@ if (!function_exists('mh_db_run')) {
             $stmt->execute($params);
             return $stmt;
         } catch (PDOException $e) {
+            $GLOBALS['mh_db_last_error'] = $e->getMessage();
             error_log('[MarickHealth] SQL error: ' . $e->getMessage() . ' | ' . preg_replace('/\s+/', ' ', $sql));
             return null;
         }
@@ -171,6 +172,7 @@ if (!function_exists('mh_db_driver')) {
         return [
             'driver' => $GLOBALS['mh_db_driver'] ?? 'unknown',
             'error'  => $GLOBALS['mh_db_driver_error'] ?? null,
+            'last_sql_error' => $GLOBALS['mh_db_last_error'] ?? null,
         ];
     }
 }

@@ -42,6 +42,9 @@ if(isset($_POST['add_prenatal'])) {
         $pre_ctx = mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'maternal_care');
         $name_error = mh_maternal_sex_error($conn, mh_queue_resolve_patient($conn, $pre_ctx, $pn));
     }
+    // Vitals: numbers only (BP like 120/80).
+    $vc = mh_clean_vitals(['bp' => $_POST['blood_pressure'] ?? '', 'weight' => $_POST['weight'] ?? '', 'height' => $_POST['height'] ?? '', 'bmi' => $_POST['bmi'] ?? '']);
+    if ($name_error === null && $vc['errors']) { $name_error = implode(' ', $vc['errors']); }
 
     // Helpers: empty form value -> SQL NULL; ISO date check for date columns.
     $txt  = function ($k) { $v = trim($_POST[$k] ?? ''); return $v === '' ? null : $v; };
@@ -61,8 +64,8 @@ if(isset($_POST['add_prenatal'])) {
         $lmp = $date('lmp');         $edc = $date('edc');
         $tt1 = $date('tt1_date');    $tt2 = $date('tt2_date'); $tt3 = $date('tt3_date');
         $tt4 = $date('tt4_date');    $tt5 = $date('tt5_date');
-        $bp = $txt('blood_pressure'); $weight = $txt('weight'); $height = $txt('height');
-        $bmi = $txt('bmi');           $fh_fht = $txt('fh_fht');  $notes = $txt('notes');
+        $bp = ($vc['values']['bp'] === '' ? null : $vc['values']['bp']); $weight = ($vc['values']['weight'] === '' ? null : $vc['values']['weight']); $height = ($vc['values']['height'] === '' ? null : $vc['values']['height']);
+        $bmi = ($vc['values']['bmi'] === '' ? null : $vc['values']['bmi']);           $fh_fht = $txt('fh_fht');  $notes = $txt('notes');
         $next_visit_raw = trim($_POST['next_visit_date'] ?? '');
         $next_visit = $date('next_visit_date');
 
@@ -78,7 +81,7 @@ if(isset($_POST['add_prenatal'])) {
             $success_msg = "Prenatal record saved successfully!";
             if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
                 && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
-                $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " #" . (int) $queue_ctx_post['queue_number'] : "") . " marked as Completed.";
+                $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
                 logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the prenatal record.");
             }
             logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Added Prenatal Record", "Logged maternal checkup for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));

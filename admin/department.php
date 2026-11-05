@@ -143,7 +143,7 @@ if ($can_write) {
                     <form method="POST" action="department.php?id=<?php echo (int) $dept_id; ?>" class="dp-row<?php echo ((int) ($_GET['apt'] ?? 0) === (int) $q['id']) ? ' dp-hl' : ''; ?>">
                         <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['deptpage_csrf']); ?>">
                         <input type="hidden" name="appointment_id" value="<?php echo (int) $q['id']; ?>">
-                        <strong>#<?php echo $h($q['queue_number'] ?? '-'); ?></strong>
+                        <strong><?php echo $h(!empty($q['queue_number']) ? mh_queue_label($dept, $q['queue_number']) : '-'); ?></strong>
                         <span><strong><?php echo $h(mh_format_patient_name($q['first_name'], $q['middle_name'], $q['last_name'])); ?></strong><br>
                               <small style="color:var(--text-muted, #64748b);"><?php echo $h($q['reason']); ?></small></span>
                         <?php if ($can_write): ?>

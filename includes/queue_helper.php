@@ -66,6 +66,31 @@ function mh_clinic_closed_reason(mysqli $conn, $date = null)
     return null;
 }
 
+/**
+ * Queue number as people read it: department initials + 3 digits, e.g. GC-001 (General Consultation),
+ * DC-014 (Dental Clinic), MC-003 (Maternal Care), CI-002 (Child Immunization). The stored number stays a plain integer.
+ */
+function mh_queue_label($department, $number)
+{
+    $n = (int) $number;
+    if ($n <= 0) { return ''; }
+    $words = preg_split('/[^A-Za-z0-9]+/', trim((string) $department), -1, PREG_SPLIT_NO_EMPTY);
+    $prefix = '';
+    foreach ($words as $w) { $prefix .= strtoupper($w[0]); if (strlen($prefix) >= 3) { break; } }
+    if (strlen($prefix) < 2 && isset($words[0])) { $prefix = strtoupper(substr($words[0], 0, 2)); }
+    if ($prefix === '') { $prefix = 'Q'; }
+    return $prefix . '-' . str_pad((string) $n, 3, '0', STR_PAD_LEFT);
+}
+
+/** Fingerprint of today's whole queue (every department). Changes whenever an entry is added, renumbered or changes status. */
+function mh_queue_signature(mysqli $conn)
+{
+    $parts = [];
+    $res = $conn->query("SELECT id, department, status, COALESCE(queue_number, 0) AS q FROM appointments WHERE appointment_date = CURDATE() ORDER BY id");
+    while ($res && ($r = $res->fetch_assoc())) { $parts[] = $r['id'] . ':' . $r['department'] . ':' . $r['status'] . ':' . $r['q']; }
+    return ['sig' => md5(implode('|', $parts)), 'count' => count($parts)];
+}
+
 /** Status values meaning "in today's queue, ready to be called". 'Approved' = a staff-approved appointment. */
 function mh_queue_active_statuses()
 {
@@ -136,7 +161,7 @@ function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Wa
     $dup->close();
     if ($already) {
         return [null, 'This patient is already in the ' . $department . ' queue today'
-            . ($already['queue_number'] ? ' (Queue #' . (int) $already['queue_number'] . ')' : '') . '.'];
+            . ($already['queue_number'] ? ' (Queue ' . mh_queue_label($department, $already['queue_number']) . ')' : '') . '.'];
     }
 
     // 3) Next number for THIS department and day. FOR UPDATE locks the index range -> arrivals are serialised.
@@ -333,7 +358,7 @@ function mh_queue_render_banner(array $ctx, $patientLabel, $hasPrefill = true)
     $e = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
     ?>
     <div class="mh-queue-banner" style="background:#e0f2fe; border:1px solid #7dd3fc; color:#075985; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:0.9rem; line-height:1.5;">
-        <strong>From the queue<?php echo !empty($ctx['queue_number']) ? ' &middot; Queue #' . (int) $ctx['queue_number'] : ''; ?></strong>
+        <strong>From the queue<?php echo !empty($ctx['queue_number']) ? ' &middot; Queue ' . mh_queue_label($ctx['department'] ?? '', $ctx['queue_number']) : ''; ?></strong>
         &mdash; <?php echo $e($patientLabel); ?> (<?php echo $e($ctx['department']); ?>).
         <?php if ($hasPrefill): ?>Details were filled in from the patient's records &mdash; please review them.<?php endif; ?><br>
         <span style="opacity:.85;">The queue entry is marked <strong>Completed</strong> only after you save this record.</span>

@@ -15,7 +15,6 @@ if (!function_exists('mh_is_admin_tier') || !mh_is_admin_tier($_SESSION['role'] 
     exit('Admins only.');
 }
 
-$d = mh_db_driver();
 $checks = [
     'Active patients'              => mh_db_value('SELECT COUNT(*) FROM patients WHERE status = 1', [], 'ERROR'),
     'Inventory rows'               => mh_db_value('SELECT COUNT(*) FROM inventory', [], 'ERROR'),
@@ -23,6 +22,7 @@ $checks = [
     "maternal_records.next_visit_date exists" => mh_db_table_has_column('maternal_records', 'next_visit_date') ? 'yes' : 'NO',
     "child_immunization_records.next_visit_date exists" => mh_db_table_has_column('child_immunization_records', 'next_visit_date') ? 'yes' : 'NO',
 ];
+$d = mh_db_driver();   // read AFTER the checks so a failing query shows up in last_sql_error
 function h($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); }
 ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Database check</title>
@@ -34,6 +34,7 @@ table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd5e1;padding
 <p>Driver in use: <strong class="<?php echo strpos($d['driver'], 'PDO (') === 0 ? 'ok' : 'bad'; ?>"><?php echo h($d['driver']); ?></strong></p>
 <?php if ($d['error']): ?><p>Why PDO was not used: <code><?php echo h($d['error']); ?></code></p>
 <p>The pages still work through the mysqli fallback. To use PDO, fix the reason above (usually the MySQL socket path or the pdo_mysql extension).</p><?php endif; ?>
+<?php if (!empty($d['last_sql_error'])): ?><p>Last SQL error: <code><?php echo h($d['last_sql_error']); ?></code></p><?php endif; ?>
 <table><tr><th>Check</th><th>Result</th></tr>
 <?php foreach ($checks as $label => $val): ?>
 <tr><td><?php echo h($label); ?></td><td class="<?php echo ($val === 'ERROR' || $val === 'NO') ? 'bad' : 'ok'; ?>"><?php echo h($val); ?></td></tr>

@@ -81,3 +81,51 @@ if (!function_exists('mh_clean_temperature')) {
         return ['ok' => true, 'value' => $m[1], 'error' => null];
     }
 }
+
+if (!function_exists('mh_clean_vitals')) {
+    /**
+     * Server-side twin of the numbers-only inputs (assets/js/mh_forms.js): the browser can be bypassed, this cannot.
+     * $raw may hold any of: bp, temp, pulse, resp_rate, spo2, weight, height, birth_weight, birth_height, bmi.
+     * Empty = fine (optional). A trailing unit ("65 kg", "98 %", "36.8 C") is tolerated and dropped; letters elsewhere are not.
+     *
+     * @return array ['values' => [key => cleaned string], 'errors' => [message, ...]]
+     */
+    function mh_clean_vitals(array $raw)
+    {
+        // key => [label, min, max, decimals, unit pattern]
+        $spec = [
+            'temp'         => ['Temperature', 30, 45, 2, 'c|°\s*c'],
+            'pulse'        => ['Pulse rate', 20, 250, 0, 'bpm'],
+            'resp_rate'    => ['Respiratory rate', 4, 80, 0, 'bpm|cpm'],
+            'spo2'         => ['Oxygen saturation (SpO2)', 50, 100, 0, '%'],
+            'weight'       => ['Weight', 0.3, 500, 2, 'kgs?'],
+            'height'       => ['Height', 20, 260, 2, 'cms?'],
+            'birth_weight' => ['Birth weight', 0.3, 10, 3, 'kgs?'],
+            'birth_height' => ['Birth height', 20, 70, 2, 'cms?'],
+            'bmi'          => ['BMI', 5, 90, 1, ''],
+        ];
+        $values = []; $errors = [];
+        foreach ($raw as $key => $v) {
+            $v = trim((string) $v);
+            if ($key === 'bp') {
+                if ($v === '') { $values[$key] = ''; continue; }
+                if (!preg_match('/^(\d{2,3})\s*\/\s*(\d{2,3})\s*(?:mmhg)?$/i', $v, $m) || (int) $m[1] < 50 || (int) $m[1] > 260 || (int) $m[2] < 30 || (int) $m[2] > 160 || (int) $m[1] <= (int) $m[2]) {
+                    $errors[] = 'Blood pressure must be numbers like 120/80 (top number higher than the bottom).'; $values[$key] = ''; continue;
+                }
+                $values[$key] = (int) $m[1] . '/' . (int) $m[2];
+                continue;
+            }
+            if (!isset($spec[$key])) { $values[$key] = $v; continue; }
+            list($label, $min, $max, $dec, $unit) = $spec[$key];
+            if ($v === '') { $values[$key] = ''; continue; }
+            $rx = '/^(\d+(?:\.\d+)?)\s*(?:' . ($unit !== '' ? $unit : '(?!)') . ')?$/iu';
+            if (!preg_match($rx, $v, $m) || ($dec === 0 && strpos($m[1], '.') !== false)) {
+                $errors[] = $label . ' must be ' . ($dec === 0 ? 'a whole number' : 'a number') . ' only (no letters or symbols).'; $values[$key] = ''; continue;
+            }
+            $n = (float) $m[1];
+            if ($n < $min || $n > $max) { $errors[] = $label . ' must be between ' . $min . ' and ' . $max . '.'; $values[$key] = ''; continue; }
+            $values[$key] = $dec === 0 ? (string) (int) $n : rtrim(rtrim(number_format($n, $dec, '.', ''), '0'), '.');
+        }
+        return ['values' => $values, 'errors' => $errors];
+    }
+}

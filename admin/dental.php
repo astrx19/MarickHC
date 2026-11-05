@@ -512,6 +512,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
 
     <div class="du-card">
         <h2 class="du-card-title">Today's dental queue</h2>
+        <div data-live="dental-queue">
         <?php if (!$queue): ?>
             <p class="du-muted">Nobody is waiting for the dental department today.</p>
         <?php else: ?>
@@ -520,7 +521,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 <tbody>
                 <?php foreach ($queue as $q): $qa = dn_age($q['birthdate']); ?>
                     <tr>
-                        <td><strong><?php echo $h($q['queue_number'] ?? '-'); ?></strong></td>
+                        <td><strong><?php echo $h($q['queue_number'] ? mh_queue_label('Dental Clinic', $q['queue_number']) : '-'); ?></strong></td>
                         <td class="du-person"><?php echo mh_avatar_html(mh_initials($q['first_name'], $q['last_name']), 32, $q['first_name'] . ' ' . $q['last_name']); ?>
                             <span><?php echo $h(mh_format_patient_name($q['first_name'], $q['middle_name'], $q['last_name'])); ?></span></td>
                         <td><?php echo $qa === null ? '-' : (int) $qa . ' yrs'; ?> &middot; <?php echo $h($q['sex']); ?></td>
@@ -532,6 +533,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 </tbody>
             </table></div>
         <?php endif; ?>
+        </div>
     </div>
 
     <?php if ($can_view_history): ?>

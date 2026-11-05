@@ -24,7 +24,49 @@
  */
 
 require_once __DIR__ . '/icons.php';
-require_once __DIR__ . '/db.php';   // PDO helpers: mh_db_all / mh_db_value (prepared statements)
+
+if (!function_exists('mh_wq_all')) {
+    /**
+     * Dashboard query helpers: PREPARED statements on the site's existing mysqli connection ($conn).
+     * (Positional ? only; values are bound as strings and MySQL coerces them.)
+     * Failures are logged with the real MySQL error and return an empty result instead of a blank page.
+     */
+    function mh_wq_all(mysqli $conn, $sql, array $params = [])
+    {
+        $stmt = @$conn->prepare($sql);
+        if (!$stmt) {
+            error_log('[MarickHealth] dashboard SQL prepare failed: ' . $conn->error . ' | ' . preg_replace('/\s+/', ' ', $sql));
+            return [];
+        }
+        if ($params) {
+            $params = array_values($params);
+            $stmt->bind_param(str_repeat('s', count($params)), ...$params);
+        }
+        if (!$stmt->execute()) {
+            error_log('[MarickHealth] dashboard SQL failed: ' . $stmt->error . ' | ' . preg_replace('/\s+/', ' ', $sql));
+            $stmt->close();
+            return [];
+        }
+        $res  = $stmt->get_result();
+        $rows = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+        $stmt->close();
+        return $rows;
+    }
+}
+if (!function_exists('mh_wq_one')) {
+    function mh_wq_one(mysqli $conn, $sql, array $params = [])
+    {
+        $rows = mh_wq_all($conn, $sql, $params);
+        return $rows ? $rows[0] : null;
+    }
+}
+if (!function_exists('mh_wq_value')) {
+    function mh_wq_value(mysqli $conn, $sql, array $params = [], $default = 0)
+    {
+        $row = mh_wq_one($conn, $sql, $params);
+        return $row ? reset($row) : $default;
+    }
+}
 
 if (!function_exists('mh_dashboard_catalog')) {
     /**
@@ -173,7 +215,13 @@ if (!function_exists('mh_dashboard_catalog')) {
 if (!function_exists('mh_table_exists')) {
     function mh_table_exists(mysqli $conn, string $table)
     {
-        return mh_db_table_exists($table);   // cached for the request
+        static $cache = [];
+        $key = strtolower($table);
+        if (!isset($cache[$key])) {
+            $row = mh_wq_one($conn, 'SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [$table]);
+            $cache[$key] = $row && (int) $row['n'] > 0;
+        }
+        return $cache[$key];   // cached for the request
     }
 }
 
@@ -188,7 +236,13 @@ if (!function_exists('mh_table_exists')) {
 if (!function_exists('mh_column_exists')) {
     function mh_column_exists(mysqli $conn, string $table, string $column)
     {
-        return mh_db_table_has_column($table, $column);   // cached for the request
+        static $cache = [];
+        $key = strtolower($table . '.' . $column);
+        if (!isset($cache[$key])) {
+            $row = mh_wq_one($conn, 'SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$table, $column]);
+            $cache[$key] = $row && (int) $row['n'] > 0;
+        }
+        return $cache[$key];   // cached for the request
     }
 }
 
@@ -200,7 +254,7 @@ if (!function_exists('mh_widget_walkin_queue')) {
     {
         $today = $ctx['today'];
 
-        $q = mh_db_all(
+        $q = mh_wq_all($conn, 
             "SELECT status, COUNT(*) AS total FROM appointments
              WHERE appointment_date = ? AND reason = 'Walk-In Queue Registration'
              GROUP BY status",
@@ -234,9 +288,9 @@ if (!function_exists('mh_widget_appointments_today')) {
     {
         $today = $ctx['today'];
 
-        $pending_count = (int) mh_db_value("SELECT COUNT(*) FROM appointments WHERE status = 'Pending'");
+        $pending_count = (int) mh_wq_value($conn, "SELECT COUNT(*) FROM appointments WHERE status = 'Pending'");
 
-        $rows = mh_db_all("
+        $rows = mh_wq_all($conn, "
             SELECT p.first_name, p.last_name, a.department, a.status
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
@@ -279,7 +333,7 @@ if (!function_exists('mh_widget_department_queues')) {
     {
         $today = $ctx['today'];
         $counts = [];
-        foreach (mh_db_all("SELECT department, COUNT(*) AS c FROM appointments
+        foreach (mh_wq_all($conn, "SELECT department, COUNT(*) AS c FROM appointments
                             WHERE appointment_date = ? AND status IN ('Waiting', 'Approved') GROUP BY department", [$today]) as $r) {
             $counts[$r['department']] = (int) $r['c'];
         }
@@ -359,14 +413,14 @@ if (!function_exists('mh_widget_immunization_due')) {
         $today    = $ctx['today'];
         $week_end = $ctx['week_end'];
 
-        $rows = mh_db_all("
+        $rows = mh_wq_all($conn, "
             SELECT p.id AS patient_id, p.first_name, p.last_name, c.next_visit_date
             FROM child_immunization_records c
             JOIN patients p ON c.patient_id = p.id
             WHERE c.next_visit_date BETWEEN ? AND ?
             ORDER BY c.next_visit_date ASC LIMIT 5
         ", [$today, $week_end]);
-        $count = (int) mh_db_value("SELECT COUNT(*) FROM child_immunization_records WHERE next_visit_date BETWEEN ? AND ?", [$today, $week_end]);
+        $count = (int) mh_wq_value($conn, "SELECT COUNT(*) FROM child_immunization_records WHERE next_visit_date BETWEEN ? AND ?", [$today, $week_end]);
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#8b5cf6;"><?php echo number_format($count); ?></div>
@@ -407,14 +461,14 @@ if (!function_exists('mh_widget_maternal_followups')) {
         $today    = $ctx['today'];
         $week_end = $ctx['week_end'];
 
-        $rows = mh_db_all("
+        $rows = mh_wq_all($conn, "
             SELECT p.first_name, p.last_name, m.next_visit_date
             FROM maternal_records m
             JOIN patients p ON m.patient_id = p.id
             WHERE m.next_visit_date BETWEEN ? AND ?
             ORDER BY m.next_visit_date ASC LIMIT 5
         ", [$today, $week_end]);
-        $count = (int) mh_db_value("SELECT COUNT(*) FROM maternal_records WHERE next_visit_date BETWEEN ? AND ?", [$today, $week_end]);
+        $count = (int) mh_wq_value($conn, "SELECT COUNT(*) FROM maternal_records WHERE next_visit_date BETWEEN ? AND ?", [$today, $week_end]);
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#ec4899;"><?php echo number_format($count); ?></div>
@@ -445,7 +499,7 @@ if (!function_exists('mh_widget_inventory_alerts')) {
         $today        = $ctx['today'];
         $expiry_limit = date('Y-m-d', strtotime($today . ' +30 days'));
 
-        $counts = mh_db_one("
+        $counts = mh_wq_one($conn, "
             SELECT SUM(quantity <= 20) AS low_stock,
                    SUM(expiry_date IS NOT NULL AND expiry_date BETWEEN ? AND ?) AS expiring
             FROM inventory WHERE status = 1
@@ -453,7 +507,7 @@ if (!function_exists('mh_widget_inventory_alerts')) {
         $low_stock = (int) ($counts['low_stock'] ?? 0);
         $expiring  = (int) ($counts['expiring'] ?? 0);
 
-        $rows = mh_db_all("
+        $rows = mh_wq_all($conn, "
             SELECT item_name, quantity, unit, expiry_date FROM inventory
             WHERE status = 1 AND (quantity <= 20 OR (expiry_date IS NOT NULL AND expiry_date BETWEEN ? AND ?))
             ORDER BY quantity ASC LIMIT 5
@@ -495,9 +549,9 @@ if (!function_exists('mh_widget_dental_today')) {
     {
         $today = $ctx['today'];
 
-        $count = (int) mh_db_value("SELECT COUNT(*) FROM dental_records WHERE visit_date = ?", [$today]);
+        $count = (int) mh_wq_value($conn, "SELECT COUNT(*) FROM dental_records WHERE visit_date = ?", [$today]);
 
-        $rows = mh_db_all("
+        $rows = mh_wq_all($conn, "
             SELECT p.first_name, p.last_name, d.procedure_done
             FROM dental_records d
             JOIN patients p ON d.patient_id = p.id
@@ -541,13 +595,13 @@ if (!function_exists('mh_widget_sms_queue')) {
 
         $today = $ctx['today'];
 
-        $pending = (int) mh_db_value("SELECT COUNT(*) FROM scheduled_sms WHERE status = 'pending'");
+        $pending = (int) mh_wq_value($conn, "SELECT COUNT(*) FROM scheduled_sms WHERE status = 'pending'");
 
         $failed_today = 0;
         if (mh_table_exists($conn, 'sms_logs')) {
             // range instead of DATE(created_at) = ... so idx_sms_status_created can be used
             $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
-            $failed_today = (int) mh_db_value(
+            $failed_today = (int) mh_wq_value($conn, 
                 "SELECT COUNT(*) FROM sms_logs WHERE status = 'failed' AND created_at >= ? AND created_at < ?",
                 [$today, $tomorrow]
             );
@@ -587,11 +641,11 @@ if (!function_exists('mh_widget_patient_registrations')) {
     {
         $week_ago = date('Y-m-d', strtotime($ctx['today'] . ' -7 days'));
 
-        $totals = mh_db_one("SELECT COUNT(*) AS total, SUM(created_at >= ?) AS recent FROM patients WHERE status = 1", [$week_ago]);
+        $totals = mh_wq_one($conn, "SELECT COUNT(*) AS total, SUM(created_at >= ?) AS recent FROM patients WHERE status = 1", [$week_ago]);
         $total  = (int) ($totals['total'] ?? 0);
         $recent = (int) ($totals['recent'] ?? 0);
 
-        $rows = mh_db_all("SELECT first_name, last_name, created_at FROM patients WHERE status = 1 ORDER BY created_at DESC LIMIT 4");
+        $rows = mh_wq_all($conn, "SELECT first_name, last_name, created_at FROM patients WHERE status = 1 ORDER BY created_at DESC LIMIT 4");
         ?>
         <div class="widget-stat">
             <div class="widget-stat-number" style="color:#10b981;"><?php echo number_format($total); ?></div>
@@ -622,7 +676,7 @@ if (!function_exists('mh_widget_patient_registrations')) {
 if (!function_exists('mh_widget_system_activity')) {
     function mh_widget_system_activity(mysqli $conn, array $ctx)
     {
-        $rows = mh_db_all("SELECT action, details, user_role, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 6");
+        $rows = mh_wq_all($conn, "SELECT action, details, user_role, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 6");
         ?>
         <ul class="activity-feed">
             <?php if ($rows): ?>

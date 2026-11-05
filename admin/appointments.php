@@ -24,7 +24,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !mh_csrf_check()) {
     $_POST = [];   // no handler below may run
 }
 // Redirect target of walk-in intake: confirm the queue number the patient was given.
-if (isset($_GET['queued'])) { $success_msg = "Patient added to the queue as Queue #" . (int) $_GET['queued'] . "."; }
+if (isset($_GET['queued'])) { $success_msg = "Patient added to the queue as " . mh_queue_label($_GET['dept'] ?? '', (int) $_GET['queued']) . "."; }
 
 // Which departments this staff member may see. Admin tiers and BHW see all; other roles
 // see a department only if its module is ON and their role (or a delegated capability)
@@ -70,10 +70,13 @@ if ($visible !== null && array_intersect($queue_actions, array_keys($_POST))) {
 
 if(isset($_POST['approve_appointment'])) {
     $apt_id = intval($_POST['appointment_id']);
-    $st = $conn->prepare("UPDATE appointments SET status = 'Approved', admin_remarks = NULL WHERE id = ?");
-    $st->bind_param('i', $apt_id); $st->execute(); $st->close();
-    $success_msg = "Queue Approved!";
-    logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Approved queue item #$apt_id.");
+    // Compare-and-swap: only a Pending / Rescheduled entry can be approved. A stale tab cannot re-open or overwrite a finished one.
+    $st = $conn->prepare("UPDATE appointments SET status = 'Approved', admin_remarks = NULL WHERE id = ? AND status IN ('Pending', 'Rescheduled')");
+    $st->bind_param('i', $apt_id); $st->execute(); $changed = $st->affected_rows; $st->close();
+    if ($changed > 0) {
+        $success_msg = "Queue Approved!";
+        logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Approved queue item #$apt_id.");
+    } else { $error_msg = "This queue entry was already updated by someone else (another staff member or another tab). The list has been refreshed."; }
 }
 
 // Proceed Action: open the patient's department page (patient pre-selected, details pre-filled).
@@ -120,7 +123,7 @@ if(isset($_POST['proceed_appointment'])) {
 
         // Legacy: a department with no module page and no department page has nothing to save,
         // so there is no "Save record" step to wait for - close it and show the patient's profile.
-        $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ?");
+        $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ? AND status IN ('Waiting', 'Approved')");
         $st->bind_param('i', $apt_id); $st->execute(); $st->close();
         logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #$apt_id (department has no record page).");
         header("Location: patient_masterlist.php?id=" . (int) $patient_id);
@@ -130,19 +133,22 @@ if(isset($_POST['proceed_appointment'])) {
 
 if(isset($_POST['complete_appointment'])) {
     $apt_id = intval($_POST['appointment_id']);
-    $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ?");
-    $st->bind_param('i', $apt_id); $st->execute(); $st->close();
-    $success_msg = "Queue item marked as Completed!";
+    $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ? AND status IN ('Waiting', 'Approved')");
+    $st->bind_param('i', $apt_id); $st->execute(); $changed = $st->affected_rows; $st->close();
+    if ($changed > 0) { $success_msg = "Queue item marked as Completed!"; }
+    else { $error_msg = "This queue entry was already updated by someone else (another staff member or another tab). The list has been refreshed."; }
 }
 
 if(isset($_POST['cancel_appointment'])) {
     $apt_id = intval($_POST['appointment_id']);
-    $remarks = (string) ($_POST['admin_remarks'] ?? '');
-    
-    $st = $conn->prepare("UPDATE appointments SET status = 'Rejected', admin_remarks = ? WHERE id = ?");
+    $remarks = mb_substr(trim((string) ($_POST['admin_remarks'] ?? '')), 0, 500);
+
+    // Only an entry that is still open can be rejected - never one already Completed / Rejected by someone else.
+    $st = $conn->prepare("UPDATE appointments SET status = 'Rejected', admin_remarks = ? WHERE id = ? AND status IN ('Pending', 'Rescheduled', 'Waiting', 'Approved')");
     $st->bind_param('si', $remarks, $apt_id);
-    $ok = $st->execute(); $st->close();
-    if($ok) {
+    $ok = $st->execute(); $changed = $st->affected_rows; $st->close();
+    if ($ok && $changed === 0) { $error_msg = "This queue entry was already updated by someone else (another staff member or another tab). The list has been refreshed."; }
+    elseif($ok) {
         $success_msg = "Queue request rejected. The patient will see your reason on their dashboard history.";
         logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Rejected queue item #$apt_id.");
     }
@@ -242,7 +248,7 @@ $stmt_fetch->close();
         .status-pending { background: #fef3c7; color: #b45309; border-color: #fde68a; }
         .status-rescheduled { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
         .status-waiting { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
-        .queue-no { display:inline-block; min-width:2.2em; text-align:center; background:#0ea5e9; color:#fff; border-radius:6px; padding:2px 7px; font-weight:bold; font-size:.85rem; margin-right:8px; }
+        .queue-no { display:inline-block; min-width:4.6em; white-space:nowrap; letter-spacing:.02em; text-align:center; background:#0ea5e9; color:#fff; border-radius:6px; padding:2px 7px; font-weight:bold; font-size:.85rem; margin-right:8px; }
         .status-approved { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
         .status-completed { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
         
@@ -309,7 +315,7 @@ $stmt_fetch->close();
                     </form>
                 </div>
                 
-                <div style="overflow-x: auto;">
+                <div style="overflow-x: auto;" data-live="queue-list">
                     <table class="unified-table">
                         <thead>
                             <tr>
@@ -328,7 +334,7 @@ $stmt_fetch->close();
                                 ?>
                                 <tr>
                                     <td>
-                                        <?php if (!empty($row['queue_number'])): ?><span class="queue-no">#<?php echo (int) $row['queue_number']; ?></span><?php endif; ?><strong style="color: var(--heading-color, #1e293b); font-size: 1.05rem;"><?php echo htmlspecialchars($row['last_name'] . ", " . $row['first_name']); ?></strong><br>
+                                        <?php if (!empty($row['queue_number'])): ?><span class="queue-no"><?php echo $h(mh_queue_label($row['department'], $row['queue_number'])); ?></span><?php endif; ?><strong style="color: var(--heading-color, #1e293b); font-size: 1.05rem;"><?php echo htmlspecialchars($row['last_name'] . ", " . $row['first_name']); ?></strong><br>
                                         <span style="font-size: 0.85rem; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars($row['contact_number']); ?></span>
                                     </td>
                                     <td style="color: var(--text-main, #334155); font-weight: bold;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px; background:<?php echo mh_department_color($row['department']); ?>;"></span><?php echo htmlspecialchars($row['department']); ?></td>
@@ -452,15 +458,9 @@ $stmt_fetch->close();
             document.getElementById(id).classList.remove('active');
         }
 
-        // The queue changes while staff work in other tabs (a patient completed in General Consultation,
-        // a new walk-in...). Reload quietly every 30 s, but never while a dialog is open or a field is being used.
-        setInterval(function () {
-            if (document.hidden) { return; }
-            if (document.querySelector('.modal-overlay.active, .mh-modal-backdrop')) { return; }
-            var a = document.activeElement;
-            if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { return; }
-            window.location.href = window.location.pathname + window.location.search;   // GET: never re-sends a form
-        }, 30000);
+        // (Live updates: see assets/js/mh_live.js below - the list swaps itself without reloading the page.)
     </script>
+<script>window.MH_LIVE = { url: 'api/queue_sync.php', interval: 5000 };</script>
+<script src="../assets/js/mh_live.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_live.js'); ?>" defer></script>
 </body>
 </html>
