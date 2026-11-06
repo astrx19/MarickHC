@@ -61,6 +61,14 @@ try {
     $catalog = mh_dental_ocr_catalog();
     $parsed  = vision_parse_dental_text($rawText, $catalog);
 
+    // If Textract extracted structured key-value pairs, overlay patient identity if missing
+    if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
+        $enhanced = mh_textract_map_fields($ocrResult['kv'], $rawText, 'dental');
+        if (is_array($enhanced) && !empty($enhanced['fields'])) {
+            $parsed['fields'] = array_merge($parsed['fields'], $enhanced['fields']);
+        }
+    }
+
     $pt          = $parsed['page_type'];
     $fields      = $parsed['fields'];
     $odo         = $parsed['odontogram'];

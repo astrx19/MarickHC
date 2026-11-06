@@ -30,8 +30,12 @@ try {
         mh_ocr_json_error('No readable text could be detected on this immunization card. Please ensure the photo is clear, upright, and well-lit.');
     }
 
-    // Parse structured immunization fields from the extracted text
-    $fields = vision_parse_immunization_text($rawText);
+    // Parse structured immunization fields from the extracted text (enhances with Textract key-value pairs if available)
+    if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
+        $fields = mh_textract_map_fields($ocrResult['kv'], $rawText, 'immunization');
+    } else {
+        $fields = vision_parse_immunization_text($rawText);
+    }
 
     // Every *_date field -> yyyy-mm-dd for the <input type="date"> fields
     $fields = mh_ocr_normalize_dates($fields, [

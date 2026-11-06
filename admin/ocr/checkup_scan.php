@@ -30,8 +30,12 @@ try {
         mh_ocr_json_error('No readable text could be detected on this document. Please ensure the photo is clear, upright, and well-lit.');
     }
 
-    // Parse clinical and identity fields from the extracted text
-    $fields = vision_parse_checkup_text($rawText);
+    // Parse clinical and identity fields from the extracted text (enhances with Textract key-value pairs if available)
+    if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
+        $fields = mh_textract_map_fields($ocrResult['kv'], $rawText, 'checkup');
+    } else {
+        $fields = vision_parse_checkup_text($rawText);
+    }
 
     // Normalize identity fields and perform dynamic patient matching safely
     $extracted_identity = mh_ocr_take_identity($fields);

@@ -130,9 +130,12 @@ function mh_setting_defaults()
         'android_gateway_url'   => '',
         'android_gateway_key'   => '',
         // ---- OCR engine selection + API keys --------------------------
-        'ocr_engine'            => 'vision',   // 'vision' (Google Cloud Vision) | 'gemini' (Gemini AI)
+        'ocr_engine'            => 'vision',   // 'vision' (Google Cloud Vision) | 'gemini' (Gemini AI) | 'aws_textract' (AWS Textract)
         'google_vision_api_key' => '',          // DB-backed override of config/vision.php hardcoded key
         'gemini_api_key'        => '',          // DB-backed override of config/gemini.php
+        'aws_access_key_id'     => '',          // AWS IAM Access Key ID for Textract
+        'aws_secret_access_key' => '',          // AWS IAM Secret Access Key for Textract
+        'aws_region'            => 'ap-southeast-1', // Default to Singapore for Philippines low latency
         // ---- Browser-triggered cron key (empty = browser trigger disabled, CLI only) --
         'cron_run_key'          => '',
         // ---- Jurisdiction (Address Jurisdiction masterlist rule) -----------------

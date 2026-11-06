@@ -26,7 +26,12 @@ function vision_ocr_log_error($engine, $stage, $message, array $context = [])
 {
     static $logged = [];
 
-    $engineLabel = ($engine === 'gemini') ? 'Gemini AI' : (($engine === 'vision') ? 'Cloud Vision' : ucfirst($engine));
+    $engineLabels = [
+        'gemini'       => 'Gemini AI',
+        'vision'       => 'Cloud Vision',
+        'aws_textract' => 'AWS Textract',
+    ];
+    $engineLabel = $engineLabels[$engine] ?? ucfirst($engine);
     $key = $engine . '|' . $stage . '|' . $message;
     if (isset($logged[$key])) {
         return; // Avoid duplicating identical log entries in the same request
@@ -863,6 +868,436 @@ function vision_parse_dental_text($text, array $catalog = [])
 }
 
 /* =====================================================================
+ * AWS TEXTRACT OCR ENGINE
+ * ===================================================================*/
+
+/**
+ * Calls the AWS Textract AnalyzeDocument API using raw AWS Signature V4
+ * signed cURL requests (no SDK dependency required).
+ *
+ * Returns both raw LINE text blocks (for legacy parsers) and KEY_VALUE_SET
+ * pairs (for direct form field mapping).
+ *
+ * All cURL operations are wrapped in try-catch. Auth failures and network
+ * errors are logged to system logs and a clean fallback error is returned.
+ *
+ * @param string      $imagePath  Absolute path to the image/document file.
+ * @param string|null $accessKey  Optional AWS Access Key ID override.
+ * @param string|null $secretKey  Optional AWS Secret Access Key override.
+ * @param string|null $region     Optional AWS region override (default: ap-southeast-1).
+ * @return array{success:bool, text:string, kv:array<string,string>, error?:string}
+ */
+function call_aws_textract_ocr($imagePath, $accessKey = null, $secretKey = null, $region = null)
+{
+    try {
+        require_once __DIR__ . '/../config/vision.php';
+
+        // ---- Credentials & region resolution --------------------------
+        if (empty($accessKey)) {
+            $accessKey = defined('AWS_TEXTRACT_ACCESS_KEY_ID') ? AWS_TEXTRACT_ACCESS_KEY_ID : '';
+        }
+        if (empty($secretKey)) {
+            $secretKey = defined('AWS_TEXTRACT_SECRET_ACCESS_KEY') ? AWS_TEXTRACT_SECRET_ACCESS_KEY : '';
+        }
+        if (empty($region)) {
+            $region = defined('AWS_TEXTRACT_REGION') ? AWS_TEXTRACT_REGION : 'ap-southeast-1';
+        }
+        $region = preg_replace('/[^a-z0-9-]/', '', strtolower(trim((string) $region)));
+        if ($region === '') { $region = 'ap-southeast-1'; }
+
+        if (trim((string) $accessKey) === '' || trim((string) $secretKey) === '') {
+            $err = 'AWS Textract credentials are not configured. Open System Settings › Scanner (OCR) and enter your AWS Access Key ID and Secret Access Key.';
+            vision_ocr_log_error('aws_textract', 'Config', $err);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        // ---- Validate & read image file --------------------------------
+        if (!is_file($imagePath) || !is_readable($imagePath)) {
+            $err = 'The document image file could not be read or does not exist on the server.';
+            vision_ocr_log_error('aws_textract', 'File', $err, ['path' => $imagePath]);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        $imageBytes = @file_get_contents($imagePath);
+        if ($imageBytes === false || strlen($imageBytes) === 0) {
+            $err = 'The uploaded document is empty or could not be loaded into memory.';
+            vision_ocr_log_error('aws_textract', 'File', $err);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        // ---- Determine image format for Textract ----------------------
+        $mimeType = '';
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) { $mimeType = (string) finfo_file($fi, $imagePath); finfo_close($fi); }
+        }
+        if ($mimeType === '' && function_exists('mime_content_type')) {
+            $mimeType = (string) mime_content_type($imagePath);
+        }
+        $aliases = ['image/jpg' => 'image/jpeg', 'image/pjpeg' => 'image/jpeg', 'image/x-png' => 'image/png'];
+        if (isset($aliases[$mimeType])) { $mimeType = $aliases[$mimeType]; }
+
+        // Textract supports JPEG, PNG, and PDF
+        $allowedMimes = ['image/jpeg', 'image/png', 'application/pdf'];
+        if (!in_array($mimeType, $allowedMimes, true)) {
+            $err = 'AWS Textract supports JPEG, PNG, and PDF only. Received: ' . ($mimeType ?: 'unknown');
+            vision_ocr_log_error('aws_textract', 'File', $err);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        // ---- Build Textract JSON payload (AnalyzeDocument) ------------
+        $base64Image = base64_encode($imageBytes);
+        unset($imageBytes);
+
+        // Request both FORMS (key-value pairs) and TABLES feature types
+        $payload = json_encode([
+            'Document' => [
+                'Bytes' => $base64Image,
+            ],
+            'FeatureTypes' => ['FORMS', 'TABLES'],
+        ]);
+        unset($base64Image);
+
+        if ($payload === false) {
+            $err = 'Failed to encode the document payload for AWS Textract (JSON error).';
+            vision_ocr_log_error('aws_textract', 'JSON', $err, ['json_error' => json_last_error_msg()]);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        if (!function_exists('curl_init')) {
+            $err = 'The cURL PHP extension is not enabled on this server. Contact the administrator to enable php_curl.';
+            vision_ocr_log_error('aws_textract', 'cURL', $err);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        // ---- Build AWS Signature Version 4 signed request -------------
+        $service  = 'textract';
+        $host     = "textract.{$region}.amazonaws.com";
+        $endpoint = "https://{$host}/";
+        $method   = 'POST';
+
+        $amzTarget  = 'Textract.AnalyzeDocument';
+        $dateTime   = gmdate('Ymd\THis\Z');
+        $dateOnly   = gmdate('Ymd');
+
+        $payloadHash = hash('sha256', $payload);
+
+        // Canonical headers (must be sorted and lowercased)
+        $canonicalHeaders = "content-type:application/x-amz-json-1.1\n"
+                          . "host:{$host}\n"
+                          . "x-amz-date:{$dateTime}\n"
+                          . "x-amz-target:{$amzTarget}\n";
+        $signedHeaders = 'content-type;host;x-amz-date;x-amz-target';
+
+        $canonicalRequest = implode("\n", [
+            $method,
+            '/',
+            '',                     // No query string
+            $canonicalHeaders,
+            $signedHeaders,
+            $payloadHash,
+        ]);
+
+        // String to sign
+        $credentialScope = "{$dateOnly}/{$region}/{$service}/aws4_request";
+        $stringToSign    = "AWS4-HMAC-SHA256\n{$dateTime}\n{$credentialScope}\n"
+                         . hash('sha256', $canonicalRequest);
+
+        // Signing key (HMAC chain)
+        $signingKey = hash_hmac('sha256', 'aws4_request',
+                        hash_hmac('sha256', $service,
+                          hash_hmac('sha256', $region,
+                            hash_hmac('sha256', $dateOnly, 'AWS4' . $secretKey, true),
+                          true),
+                        true),
+                      true);
+
+        $signature = hash_hmac('sha256', $stringToSign, $signingKey);
+
+        $authHeader = "AWS4-HMAC-SHA256 Credential={$accessKey}/{$credentialScope}, "
+                    . "SignedHeaders={$signedHeaders}, Signature={$signature}";
+
+        // ---- Execute cURL request ------------------------------------
+        $ch = curl_init($endpoint);
+        if (!$ch) {
+            $err = 'Failed to initialize cURL for AWS Textract.';
+            vision_ocr_log_error('aws_textract', 'cURL', $err);
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $err];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 90,
+            CURLOPT_CONNECTTIMEOUT => 20,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/x-amz-json-1.1',
+                'Content-Length: ' . strlen($payload),
+                'Host: ' . $host,
+                'X-Amz-Date: ' . $dateTime,
+                'X-Amz-Target: ' . $amzTarget,
+                'Authorization: ' . $authHeader,
+            ],
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = (string) curl_error($ch);
+        $curlNo   = (int) curl_errno($ch);
+        curl_close($ch);
+
+        // ---- Handle cURL / network errors ----------------------------
+        if ($curlNo !== 0) {
+            $errDesc = $curlErr ?: ('cURL Error #' . $curlNo);
+            vision_ocr_log_error('aws_textract', 'cURL', $errDesc, ['curl_no' => $curlNo, 'http_code' => $httpCode]);
+            return [
+                'success' => false, 'text' => '', 'kv' => [],
+                'error' => 'Network error connecting to AWS Textract: ' . $errDesc,
+            ];
+        }
+
+        // ---- Decode JSON response ------------------------------------
+        $data = json_decode((string) $response, true);
+        if (!is_array($data)) {
+            $snippet = substr(trim((string) $response), 0, 300);
+            vision_ocr_log_error('aws_textract', 'JSON', 'Invalid JSON response from AWS Textract', [
+                'http_code'        => $httpCode,
+                'response_snippet' => $snippet,
+            ]);
+            return [
+                'success' => false, 'text' => '', 'kv' => [],
+                'error'   => 'AWS Textract returned an invalid response (HTTP ' . $httpCode . '). Check system logs.',
+            ];
+        }
+
+        // ---- Handle API-level errors (auth failures, throttling, etc.) ---
+        if ($httpCode !== 200) {
+            $apiType = $data['__type'] ?? ($data['code'] ?? 'UnknownError');
+            $apiMsg  = $data['Message'] ?? ($data['message'] ?? ('AWS Textract error (HTTP ' . $httpCode . ').'));
+            vision_ocr_log_error('aws_textract', 'API', $apiMsg, ['http_code' => $httpCode, 'type' => $apiType]);
+
+            // Provide actionable messages for common auth errors
+            if ($httpCode === 400 && stripos((string) $apiType, 'InvalidSignatureException') !== false) {
+                $apiMsg = 'AWS Textract: Invalid signature. Check that your Access Key ID and Secret Access Key are correct.';
+            } elseif ($httpCode === 403) {
+                $apiMsg = 'AWS Textract: Access denied (HTTP 403). Ensure the IAM user/role has the textract:AnalyzeDocument permission.';
+            } elseif ($httpCode === 400 && stripos((string) $apiMsg, 'UnsupportedDocumentException') !== false) {
+                $apiMsg = 'AWS Textract: The document format is not supported. Use JPEG, PNG, or PDF.';
+            }
+
+            return ['success' => false, 'text' => '', 'kv' => [], 'error' => $apiMsg];
+        }
+
+        // ---- Extract raw text lines from Blocks ----------------------
+        $blocks   = $data['Blocks'] ?? [];
+        $lines    = [];
+        $kvBlocks = [];
+
+        foreach ($blocks as $block) {
+            $type = $block['BlockType'] ?? '';
+            if ($type === 'LINE') {
+                $lines[] = (string) ($block['Text'] ?? '');
+            }
+            if ($type === 'KEY_VALUE_SET') {
+                $kvBlocks[$block['Id']] = $block;
+            }
+        }
+
+        $rawText = implode("\n", $lines);
+
+        // ---- Extract key-value pairs from FORMS feature ---------------
+        $kv = mh_textract_extract_kv($kvBlocks, $blocks);
+
+        return [
+            'success' => true,
+            'text'    => trim($rawText),
+            'kv'      => $kv,
+            'raw'     => $data,
+        ];
+
+    } catch (Throwable $e) {
+        vision_ocr_log_error('aws_textract', 'Exception', $e->getMessage(), [
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ]);
+        return [
+            'success' => false,
+            'text'    => '',
+            'kv'      => [],
+            'error'   => 'An error occurred during AWS Textract OCR processing: ' . $e->getMessage(),
+        ];
+    }
+}
+
+/**
+ * Builds a flat key => value map from Textract KEY_VALUE_SET blocks.
+ * Keys and values are built by walking the child WORD blocks.
+ *
+ * @param array $kvBlocks  Filtered blocks of type KEY_VALUE_SET keyed by Id.
+ * @param array $allBlocks All blocks from the response (for child lookups).
+ * @return array<string,string>
+ */
+function mh_textract_extract_kv(array $kvBlocks, array $allBlocks)
+{
+    // Build a lookup of all blocks by their Id
+    $byId = [];
+    foreach ($allBlocks as $b) {
+        if (!empty($b['Id'])) {
+            $byId[$b['Id']] = $b;
+        }
+    }
+
+    /**
+     * Walks Relationships of type CHILD to collect all WORD text under a block.
+     */
+    $getText = function (array $block) use (&$byId): string {
+        $words = [];
+        foreach ($block['Relationships'] ?? [] as $rel) {
+            if (($rel['Type'] ?? '') !== 'CHILD') { continue; }
+            foreach ($rel['Ids'] ?? [] as $childId) {
+                $child = $byId[$childId] ?? null;
+                if ($child && ($child['BlockType'] ?? '') === 'WORD') {
+                    $words[] = (string) ($child['Text'] ?? '');
+                }
+                if ($child && ($child['BlockType'] ?? '') === 'SELECTION_ELEMENT') {
+                    if (($child['SelectionStatus'] ?? '') === 'SELECTED') {
+                        $words[] = 'Yes';
+                    }
+                }
+            }
+        }
+        return trim(implode(' ', $words));
+    };
+
+    $kv = [];
+
+    foreach ($kvBlocks as $block) {
+        // Only process KEY blocks
+        if (($block['EntityTypes'][0] ?? '') !== 'KEY') { continue; }
+
+        $keyText = $getText($block);
+        if ($keyText === '') { continue; }
+
+        // Find the VALUE block linked via VALUE relationship
+        $valueText = '';
+        foreach ($block['Relationships'] ?? [] as $rel) {
+            if (($rel['Type'] ?? '') !== 'VALUE') { continue; }
+            foreach ($rel['Ids'] ?? [] as $valId) {
+                $valBlock = $kvBlocks[$valId] ?? ($byId[$valId] ?? null);
+                if ($valBlock) {
+                    $valueText = $getText($valBlock);
+                }
+            }
+        }
+
+        // Normalize the key: strip trailing punctuation, lowercase
+        $normalizedKey = rtrim(trim($keyText), ':');
+        $kv[$normalizedKey] = $valueText;
+    }
+
+    return $kv;
+}
+
+/**
+ * Maps Textract key-value pairs and raw LINE text to our standard
+ * patient field structure used by vision_parse_checkup_text() and
+ * sibling parsers.
+ *
+ * The KV pairs take precedence over regex matches from the raw text,
+ * giving more reliable extraction on form-structured documents.
+ *
+ * @param array  $kv     Key-value pairs from mh_textract_extract_kv().
+ * @param string $text   Raw LINE text joined by newlines (for regex fallback).
+ * @param string $formType  'checkup' | 'maternal' | 'immunization' | 'dental'
+ * @return array  Standard parsed fields array.
+ */
+function mh_textract_map_fields(array $kv, $text, $formType = 'checkup')
+{
+    // 1. Parse via existing regex parsers as the baseline
+    switch ($formType) {
+        case 'maternal':      $fields = vision_parse_maternal_text($text);      break;
+        case 'immunization':  $fields = vision_parse_immunization_text($text);  break;
+        case 'dental':        $fields = vision_parse_dental_text($text);        break;
+        default:              $fields = vision_parse_checkup_text($text);       break;
+    }
+
+    // 2. Overlay with KV values where Textract found explicit form fields.
+    //    KV keys from Textract are compared case-insensitively.
+    $kvLower = [];
+    foreach ($kv as $k => $v) {
+        $kvLower[strtolower(trim($k))] = $v;
+    }
+
+    // Helper: looks up a list of possible KV keys and returns the first match
+    $kvGet = function (array $candidates) use ($kvLower): string {
+        foreach ($candidates as $c) {
+            $c = strtolower(trim($c));
+            if (isset($kvLower[$c]) && $kvLower[$c] !== '') {
+                return $kvLower[$c];
+            }
+        }
+        return '';
+    };
+
+    // ---- Shared fields (all form types) -----
+    if ($fields['first_name'] === '' || $fields['last_name'] === '') {
+        $rawName = $kvGet(['Patient Name', 'Name', 'Pangalan', "Patient's Name", 'Child Name', "Child's Name", 'Mother Name', "Mother's Name"]);
+        if ($rawName !== '') {
+            $nameInfo = vision_ocr_split_name($rawName);
+            if ($nameInfo['first_name'] !== '') { $fields['first_name'] = $nameInfo['first_name']; }
+            if ($nameInfo['last_name']  !== '') { $fields['last_name']  = $nameInfo['last_name'];  }
+        }
+    }
+
+    if (isset($fields['birthdate']) && $fields['birthdate'] === '') {
+        $rawDate = $kvGet(['Birthdate', 'Date of Birth', 'Birthday', 'DOB', 'Bday']);
+        if ($rawDate !== '') { $fields['birthdate'] = vision_ocr_normalize_date($rawDate); }
+    }
+
+    // ---- Checkup-specific fields -----
+    if ($formType === 'checkup') {
+        if ($fields['bp'] === '')               { $fields['bp']               = $kvGet(['BP', 'Blood Pressure', 'B.P.']); }
+        if ($fields['temp'] === '')             { $fields['temp']             = $kvGet(['Temp', 'Temperature', 'T']); }
+        if ($fields['weight'] === '')           { $fields['weight']           = $kvGet(['Weight', 'Wt']); }
+        if ($fields['height'] === '')           { $fields['height']           = $kvGet(['Height', 'Ht']); }
+        if ($fields['chief_complaints'] === '') { $fields['chief_complaints'] = $kvGet(['Chief Complaints', 'Chief Complaint', 'CC', 'Reklamo', 'Reason for Visit']); }
+        if ($fields['diagnosis'] === '')        { $fields['diagnosis']        = $kvGet(['Diagnosis', 'Dx', 'Assessment', 'Impression']); }
+        if ($fields['prescription'] === '')     { $fields['prescription']     = $kvGet(['Prescription', 'Rx', 'Medications', 'Meds']); }
+        if ($fields['notes'] === '')            { $fields['notes']            = $kvGet(['Notes', 'Remarks', 'Plan', 'Advice']); }
+    }
+
+    // ---- Maternal-specific fields -----
+    if ($formType === 'maternal') {
+        if ($fields['gravida'] === '')        { $fields['gravida']        = $kvGet(['Gravida', 'G']); }
+        if ($fields['para'] === '')           { $fields['para']           = $kvGet(['Para', 'P']); }
+        if ($fields['lmp'] === '')            { $r = $kvGet(['LMP', 'Last Menstrual Period']); if ($r !== '') { $fields['lmp'] = vision_ocr_normalize_date($r); } }
+        if ($fields['edc'] === '')            { $r = $kvGet(['EDC', 'EDD']); if ($r !== '') { $fields['edc'] = vision_ocr_normalize_date($r); } }
+        if ($fields['aog'] === '')            { $fields['aog']            = $kvGet(['AOG', 'Age of Gestation']); }
+        if ($fields['blood_pressure'] === '') { $fields['blood_pressure'] = $kvGet(['BP', 'Blood Pressure']); }
+        if ($fields['weight'] === '')         { $fields['weight']         = $kvGet(['Weight', 'Wt']); }
+        if ($fields['height'] === '')         { $fields['height']         = $kvGet(['Height', 'Ht']); }
+        if ($fields['fh_fht'] === '')         { $fields['fh_fht']         = $kvGet(['FH / FHT', 'FH', 'FHT', 'Fundal Height', 'Fetal Heart Tone']); }
+        if ($fields['notes'] === '')          { $fields['notes']          = $kvGet(['Notes', 'Remarks', 'Vitamins', 'Plan']); }
+    }
+
+    // ---- Immunization-specific fields -----
+    if ($formType === 'immunization') {
+        if ($fields['family_no'] === '')       { $fields['family_no']       = $kvGet(['Family No', 'Fam No']); }
+        if ($fields['mother_name'] === '')     { $fields['mother_name']     = $kvGet(["Mother's Name", 'Mother Name']); }
+        if ($fields['father_name'] === '')     { $fields['father_name']     = $kvGet(["Father's Name", 'Father Name']); }
+        if ($fields['contact_no'] === '')      { $fields['contact_no']      = $kvGet(['Contact No', 'Contact Number', 'Tel', 'CP']); }
+        if ($fields['birth_place'] === '')     { $fields['birth_place']     = $kvGet(['Place of Birth', 'Birth Place']); }
+        if ($fields['type_of_delivery'] === '') { $fields['type_of_delivery'] = $kvGet(['Type of Delivery', 'Delivery']); }
+        if ($fields['attending_physician'] === '') { $fields['attending_physician'] = $kvGet(['Attending Physician', 'Physician', 'Doctor']); }
+    }
+
+    return $fields;
+}
+
+/* =====================================================================
  * OCR ENGINE ROUTER
  * ===================================================================*/
 
@@ -1075,16 +1510,17 @@ function call_gemini_vision_ocr($imagePath, $apiKey = null)
  * Reads the `ocr_engine` system setting and routes the image to either:
  *   - Google Cloud Vision API  (ocr_engine = 'vision')
  *   - Google Gemini AI API     (ocr_engine = 'gemini')
+ *   - Amazon Textract          (ocr_engine = 'aws_textract')
  *
- * Always returns the same contract as call_google_vision_ocr():
- *   {success: bool, text: string, engine: string, error?: string}
+ * Always returns a standardized contract:
+ *   {success: bool, text: string, engine: string, error?: string, kv?: array}
  *
  * All four scan endpoints (checkup, maternal, immunization, dental) call
  * this function; they never reference a specific engine directly.
  *
  * @param string      $imagePath  Absolute path to the uploaded image file.
- * @param string|null $apiKey     Optional key override (uses config/vision.php defaults otherwise).
- * @return array{success:bool, text:string, engine:string, error?:string}
+ * @param string|null $apiKey     Optional key override (uses config defaults otherwise).
+ * @return array{success:bool, text:string, engine:string, error?:string, kv?:array}
  */
 function call_ocr_engine($imagePath, $apiKey = null)
 {
@@ -1095,6 +1531,8 @@ function call_ocr_engine($imagePath, $apiKey = null)
 
         if ($engine === 'gemini') {
             $result = call_gemini_vision_ocr($imagePath, $apiKey);
+        } elseif ($engine === 'aws_textract') {
+            $result = call_aws_textract_ocr($imagePath);
         } else {
             $result = call_google_vision_ocr($imagePath, $apiKey);
         }

@@ -67,13 +67,46 @@ if (!defined('GEMINI_BACKOFF_CAP_MS')) { define('GEMINI_BACKOFF_CAP_MS',  8000);
 if (!defined('GEMINI_HTTP_TIMEOUT'))   { define('GEMINI_HTTP_TIMEOUT',   60); }
 if (!defined('GEMINI_DEBUG'))          { define('GEMINI_DEBUG',           false); }
 
+/* ---- AWS Textract -------------------------------------------------- */
+if (!defined('AWS_TEXTRACT_ACCESS_KEY_ID')) {
+    $dbAwsKey = '';
+    if (function_exists('mh_get_option')) {
+        $dbAwsKey = (string) mh_get_option('aws_access_key_id', '');
+    } elseif (function_exists('mh_setting')) {
+        $dbAwsKey = (string) mh_setting('aws_access_key_id', '');
+    }
+    define('AWS_TEXTRACT_ACCESS_KEY_ID', trim($dbAwsKey));
+}
+
+if (!defined('AWS_TEXTRACT_SECRET_ACCESS_KEY')) {
+    $dbAwsSecret = '';
+    if (function_exists('mh_get_option')) {
+        $dbAwsSecret = (string) mh_get_option('aws_secret_access_key', '');
+    } elseif (function_exists('mh_setting')) {
+        $dbAwsSecret = (string) mh_setting('aws_secret_access_key', '');
+    }
+    define('AWS_TEXTRACT_SECRET_ACCESS_KEY', trim($dbAwsSecret));
+}
+
+if (!defined('AWS_TEXTRACT_REGION')) {
+    $dbAwsRegion = '';
+    if (function_exists('mh_get_option')) {
+        $dbAwsRegion = (string) mh_get_option('aws_region', '');
+    } elseif (function_exists('mh_setting')) {
+        $dbAwsRegion = (string) mh_setting('aws_region', '');
+    }
+    // Default to ap-southeast-1 (Singapore) for optimal latency in the Philippines
+    $dbAwsRegion = preg_replace('/[^a-z0-9-]/', '', strtolower(trim($dbAwsRegion)));
+    define('AWS_TEXTRACT_REGION', $dbAwsRegion !== '' ? $dbAwsRegion : 'ap-southeast-1');
+}
+
 /* ---- Active engine helper ----------------------------------------- */
 if (!function_exists('mh_ocr_active_engine')) {
     /**
-     * Returns the currently configured OCR engine: 'vision' or 'gemini'.
+     * Returns the currently configured OCR engine: 'vision', 'gemini', or 'aws_textract'.
      * Falls back to 'vision' for safety when the setting is missing or invalid.
      *
-     * @return string 'vision' | 'gemini'
+     * @return string 'vision' | 'gemini' | 'aws_textract'
      */
     function mh_ocr_active_engine()
     {
@@ -83,7 +116,7 @@ if (!function_exists('mh_ocr_active_engine')) {
         } elseif (function_exists('mh_get_option')) {
             $engine = strtolower(trim((string) mh_get_option('ocr_engine', 'vision')));
         }
-        return in_array($engine, ['vision', 'gemini'], true) ? $engine : 'vision';
+        return in_array($engine, ['vision', 'gemini', 'aws_textract'], true) ? $engine : 'vision';
     }
 }
 

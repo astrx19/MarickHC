@@ -224,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['save_ocr'])) {
         // ---- Engine selector ----------------------------------------
         $ocrEngine = trim($_POST['ocr_engine'] ?? 'vision');
-        if (!in_array($ocrEngine, ['vision', 'gemini'], true)) { $ocrEngine = 'vision'; }
+        if (!in_array($ocrEngine, ['vision', 'gemini', 'aws_textract'], true)) { $ocrEngine = 'vision'; }
 
         // ---- Google Cloud Vision key --------------------------------
         $visionKey = trim($_POST['google_vision_api_key'] ?? '');
@@ -246,6 +246,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mh_redirect('ocr', 'error', 'The Gemini API key contains a space or line break. Re-paste it as a single line.');
         }
 
+        // ---- AWS Textract credentials -------------------------------
+        $awsAccessKey = trim($_POST['aws_access_key_id'] ?? '');
+        if ($awsAccessKey === '') {
+            $awsAccessKey = (string) mh_setting('aws_access_key_id', '');
+        }
+        if ($awsAccessKey !== '' && preg_match('/\s/', $awsAccessKey)) {
+            mh_redirect('ocr', 'error', 'The AWS Access Key ID contains invalid whitespace characters.');
+        }
+
+        $awsSecretKey = trim($_POST['aws_secret_access_key'] ?? '');
+        if ($awsSecretKey === '') {
+            $awsSecretKey = (string) mh_setting('aws_secret_access_key', '');
+        }
+        if ($awsSecretKey !== '' && preg_match('/\s/', $awsSecretKey)) {
+            mh_redirect('ocr', 'error', 'The AWS Secret Access Key contains invalid whitespace characters.');
+        }
+
+        $awsRegion = preg_replace('/[^a-z0-9-]/', '', strtolower(trim($_POST['aws_region'] ?? '')));
+        if ($awsRegion === '') {
+            $awsRegion = (string) mh_setting('aws_region', 'ap-southeast-1');
+        }
+
         // ---- Gemini model -------------------------------------------
         $ocrModel = preg_replace('/[^a-zA-Z0-9._-]/', '', trim($_POST['ocr_model'] ?? ''));
         if ($ocrModel === '') { $ocrModel = (string) mh_setting('ocr_model', 'gemini-2.0-flash'); }
@@ -254,12 +276,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'ocr_engine'            => $ocrEngine,
             'google_vision_api_key' => $visionKey,
             'gemini_api_key'        => $geminiKey,
+            'aws_access_key_id'     => $awsAccessKey,
+            'aws_secret_access_key' => $awsSecretKey,
+            'aws_region'            => $awsRegion,
             'ocr_model'             => $ocrModel,
         ], $user_id);
         mh_all_settings($conn, true);
 
-        $engineLabel = $ocrEngine === 'gemini' ? 'Gemini AI' : 'Google Cloud Vision';
-        logActivity($conn, $user_id, $user_role, 'System Settings', 'OCR engine set to: ' . $engineLabel . '. API key(s) updated.');
+        $engineLabels = [
+            'gemini'       => 'Gemini AI',
+            'vision'       => 'Google Cloud Vision',
+            'aws_textract' => 'AWS Textract',
+        ];
+        $engineLabel = $engineLabels[$ocrEngine] ?? 'Google Cloud Vision';
+        logActivity($conn, $user_id, $user_role, 'System Settings', 'OCR engine set to: ' . $engineLabel . '. Credentials updated.');
 
         mh_redirect('ocr', 'success', 'Scanner (OCR) settings saved. Active engine: ' . $engineLabel . '.');
     }
@@ -467,9 +497,10 @@ $options     = mh_options($conn, $list_key, false);   // include hidden ones in 
 $system_name = mh_setting('system_name');
 
 // Quick health check for the active OCR engine, shown on the OCR tab.
-$vision_key_problem = null;
-$gemini_key_problem = null;
-$active_ocr_engine  = 'vision';
+$vision_key_problem  = null;
+$gemini_key_problem  = null;
+$aws_textract_problem = null;
+$active_ocr_engine   = 'vision';
 if ($active_tab === 'ocr') {
     require_once __DIR__ . '/../config/vision.php';
     $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
@@ -488,6 +519,15 @@ if ($active_tab === 'ocr') {
         $gemini_key_problem = 'The Gemini AI API key has not been configured yet.';
     } elseif (strpos($gk, 'AIzaSy') !== 0 && strpos($gk, 'AQ.') !== 0) {
         $gemini_key_problem = 'The saved Gemini key does not look like a valid key (should start with "AIzaSy" or "AQ.").';
+    }
+
+    // AWS Textract credentials validation
+    $awsKey = defined('AWS_TEXTRACT_ACCESS_KEY_ID') ? AWS_TEXTRACT_ACCESS_KEY_ID : '';
+    $awsSec = defined('AWS_TEXTRACT_SECRET_ACCESS_KEY') ? AWS_TEXTRACT_SECRET_ACCESS_KEY : '';
+    if (empty($awsKey) || empty($awsSec)) {
+        $aws_textract_problem = 'AWS credentials are incomplete. Please provide both Access Key ID and Secret Access Key.';
+    } elseif (strpos($awsKey, 'AKIA') !== 0 && strpos($awsKey, 'ASIA') !== 0) {
+        $aws_textract_problem = 'The AWS Access Key ID typically starts with "AKIA" (IAM user) or "ASIA" (temporary credentials).';
     }
 }
 
@@ -1074,9 +1114,22 @@ if ($active_tab === 'sms') {
 
     <?php
     // Helper: current engine label
-    $ocr_engine_label = $active_ocr_engine === 'gemini' ? 'Gemini AI API' : 'Google Cloud Vision API';
-    $ocr_engine_ok    = $active_ocr_engine === 'gemini' ? ($gemini_key_problem === null) : ($vision_key_problem === null);
-    $ocr_key_notice   = $active_ocr_engine === 'gemini' ? $gemini_key_problem : $vision_key_problem;
+    $engineLabels = [
+        'vision'       => 'Google Cloud Vision API',
+        'gemini'       => 'Gemini AI API',
+        'aws_textract' => 'Amazon Textract (AWS)',
+    ];
+    $ocr_engine_label = $engineLabels[$active_ocr_engine] ?? 'Google Cloud Vision API';
+    if ($active_ocr_engine === 'gemini') {
+        $ocr_engine_ok  = ($gemini_key_problem === null);
+        $ocr_key_notice = $gemini_key_problem;
+    } elseif ($active_ocr_engine === 'aws_textract') {
+        $ocr_engine_ok  = ($aws_textract_problem === null);
+        $ocr_key_notice = $aws_textract_problem;
+    } else {
+        $ocr_engine_ok  = ($vision_key_problem === null);
+        $ocr_key_notice = $vision_key_problem;
+    }
     ?>
 
     <div class="settings-grid">
@@ -1090,12 +1143,12 @@ if ($active_tab === 'sms') {
 
                 <?php if (!$ocr_engine_ok): ?>
                     <div class="alert alert-error" style="margin-bottom:20px;">
-                        <strong>Active engine — <?php echo htmlspecialchars($ocr_engine_label); ?> — API key notice:</strong><br>
+                        <strong>Active engine — <?php echo htmlspecialchars($ocr_engine_label); ?> — Configuration notice:</strong><br>
                         <?php echo htmlspecialchars($ocr_key_notice); ?>
                     </div>
                 <?php else: ?>
                     <div class="alert alert-success" style="margin-bottom:20px;">
-                        Active engine: <strong><?php echo htmlspecialchars($ocr_engine_label); ?></strong> — API key is configured and ready.
+                        Active engine: <strong><?php echo htmlspecialchars($ocr_engine_label); ?></strong> — Credentials are configured and ready.
                     </div>
                 <?php endif; ?>
 
@@ -1112,6 +1165,9 @@ if ($active_tab === 'sms') {
                             </option>
                             <option value="gemini" <?php echo $active_ocr_engine === 'gemini' ? 'selected' : ''; ?>>
                                 Gemini AI API
+                            </option>
+                            <option value="aws_textract" <?php echo $active_ocr_engine === 'aws_textract' ? 'selected' : ''; ?>>
+                                AWS Textract (Amazon Web Services)
                             </option>
                         </select>
                         <p class="hint">Switch at any time. The scanner modules use whichever engine is active here.</p>
@@ -1175,6 +1231,60 @@ if ($active_tab === 'sms') {
                         </div>
                     </div>
 
+                    <!-- ── AWS Textract section ──────────────────────────── -->
+                    <div id="ocrAwsSection" style="<?php echo $active_ocr_engine !== 'aws_textract' ? 'display:none;' : ''; ?>">
+                        <div class="field">
+                            <label>AWS Access Key ID</label>
+                            <div style="position:relative;">
+                                <input type="password" id="aws_access_key_input" name="aws_access_key_id" maxlength="80"
+                                       style="padding-right:70px;"
+                                       value="" autocomplete="new-password"
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(defined('AWS_TEXTRACT_ACCESS_KEY_ID') ? AWS_TEXTRACT_ACCESS_KEY_ID : '')); ?>">
+                                <button type="button" class="reveal-btn" onclick="mhToggleReveal('aws_access_key_input', this)">Show</button>
+                            </div>
+                            <p class="hint">
+                                IAM user Access Key ID (e.g. <code class="inline">AKIAIOSFODNN7EXAMPLE</code>). Leave blank to keep existing.
+                            </p>
+                        </div>
+
+                        <div class="field">
+                            <label>AWS Secret Access Key</label>
+                            <div style="position:relative;">
+                                <input type="password" id="aws_secret_key_input" name="aws_secret_access_key" maxlength="128"
+                                       style="padding-right:70px;"
+                                       value="" autocomplete="new-password"
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(defined('AWS_TEXTRACT_SECRET_ACCESS_KEY') ? AWS_TEXTRACT_SECRET_ACCESS_KEY : '')); ?>">
+                                <button type="button" class="reveal-btn" onclick="mhToggleReveal('aws_secret_key_input', this)">Show</button>
+                            </div>
+                            <p class="hint">
+                                IAM Secret Access Key. Leave blank to keep existing.
+                            </p>
+                        </div>
+
+                        <div class="field">
+                            <label>AWS Region</label>
+                            <select name="aws_region" style="max-width:320px; padding:8px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
+                                <?php
+                                $savedRegion = mh_setting('aws_region', 'ap-southeast-1');
+                                $awsRegions = [
+                                    'ap-southeast-1' => 'Asia Pacific (Singapore) [ap-southeast-1] - Recommended',
+                                    'ap-southeast-2' => 'Asia Pacific (Sydney) [ap-southeast-2]',
+                                    'ap-northeast-1' => 'Asia Pacific (Tokyo) [ap-northeast-1]',
+                                    'us-east-1'      => 'US East (N. Virginia) [us-east-1]',
+                                    'us-west-2'      => 'US West (Oregon) [us-west-2]',
+                                    'eu-west-1'      => 'Europe (Ireland) [eu-west-1]',
+                                ];
+                                foreach ($awsRegions as $rv => $rl):
+                                ?>
+                                <option value="<?php echo htmlspecialchars($rv); ?>" <?php echo $savedRegion === $rv ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($rl); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="hint">Region where Textract requests are routed. <code class="inline">ap-southeast-1</code> is closest to the Philippines.</p>
+                        </div>
+                    </div>
+
                     <button type="submit" name="save_ocr" class="btn btn-main" style="margin-top:8px;">Save OCR Settings</button>
                 </form>
 
@@ -1182,6 +1292,7 @@ if ($active_tab === 'sms') {
                 function mhOcrEngineSwitch(val) {
                     document.getElementById('ocrVisionSection').style.display = val === 'vision' ? '' : 'none';
                     document.getElementById('ocrGeminiSection').style.display = val === 'gemini' ? '' : 'none';
+                    document.getElementById('ocrAwsSection').style.display = val === 'aws_textract' ? '' : 'none';
                 }
                 function mhToggleReveal(inputId, btn) {
                     var el = document.getElementById(inputId);
@@ -1208,36 +1319,40 @@ if ($active_tab === 'sms') {
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Feature</th>
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Cloud Vision</th>
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Gemini AI</th>
+                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">AWS Textract</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Best for</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Printed &amp; typed forms, structured layouts</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten forms, mixed layouts, context-aware</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Printed &amp; typed forms</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten &amp; mixed layouts</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Structured forms &amp; key-value fields</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Speed</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Moderate (~3–8s)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
                         </tr>
                         <tr>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Free tier</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">1,000 units/month</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Generous free tier (RPM/TPM limits)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Key features</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Full-text detection</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Generative visual reasoning</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Key-value pair extraction (FORMS)</td>
                         </tr>
                         <tr>
-                            <td style="padding:7px 10px;">Key format</td>
+                            <td style="padding:7px 10px;">Auth format</td>
                             <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
-                            <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code> or <code class="inline">AQ.…</code></td>
+                            <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
+                            <td style="padding:7px 10px;">IAM Access Key &amp; Secret Key</td>
                         </tr>
                     </tbody>
                 </table>
 
-                <p style="margin-top:0;"><strong>HTTP 401 / 403</strong><br>
-                The key is invalid, deleted, or the Cloud API is not enabled for the project.
-                Re-generate at <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> (Vision)
-                or <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a> (Gemini).</p>
+                <p style="margin-top:0;"><strong>Troubleshooting:</strong><br>
+                • <strong>Google Cloud / Gemini:</strong> Ensure the API is enabled in your Google Cloud or AI Studio project.<br>
+                • <strong>AWS Textract:</strong> Ensure the IAM user has the policy <code class="inline">AmazonTextractFullAccess</code> or permission <code class="inline">textract:AnalyzeDocument</code>, and that the region matches where your account is authorized.</p>
 
                 <p><strong>HTTP 404 (Gemini only)</strong><br>
                 The configured model is retired. The system automatically falls back to alternates.

@@ -30,8 +30,12 @@ try {
         mh_ocr_json_error('No readable text could be detected on this prenatal document. Please ensure the image is clear and well-lit.');
     }
 
-    // Parse clinical and mother identity fields from the extracted text
-    $fields = vision_parse_maternal_text($rawText);
+    // Parse clinical and mother identity fields from the extracted text (enhances with Textract key-value pairs if available)
+    if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
+        $fields = mh_textract_map_fields($ocrResult['kv'], $rawText, 'maternal');
+    } else {
+        $fields = vision_parse_maternal_text($rawText);
+    }
     $fields = mh_ocr_normalize_dates($fields, ['lmp', 'edc']);
 
     // The mother's name/birthdate are used to look her up safely
