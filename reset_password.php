@@ -121,7 +121,7 @@ $loginUrl = $isStaffFlow ? 'admin/login.php' : 'patient_login.php';
 
 <?php elseif ($view === 'invalid'): ?>
     <div class="pr-alert err"><?php echo mh_pr_icon('alert'); ?><span><?php echo mh_pr_h($fatal); ?></span></div>
-    <a class="pr-btn" href="forgot_password.php?restart=1<?php echo $isStaffFlow ? '&amp;for=staff' : ''; ?>">Request a New Link or Code</a>
+    <a class="pr-btn" href="forgot_password.php?restart=1<?php echo $isStaffFlow ? '&amp;for=staff' : '&amp;for=patient'; ?>">Request a New Link or Code</a>
 
 <?php elseif ($view === 'otp'): ?>
     <form method="POST" action="reset_password.php?method=sms" autocomplete="off">
@@ -134,7 +134,7 @@ $loginUrl = $isStaffFlow ? 'admin/login.php' : 'patient_login.php';
         </div>
         <button type="submit" class="pr-btn">Verify Code</button>
     </form>
-    <div class="pr-links"><a href="forgot_password.php?restart=1">Didn't get a code? Start over</a></div>
+    <div class="pr-links"><a href="forgot_password.php?restart=1<?php echo $isStaffFlow ? '&amp;for=staff' : '&amp;for=patient'; ?>">Didn't get a code? Start over</a></div>
 
 <?php else: /* password */ ?>
     <form method="POST" action="<?php echo $mode === 'email' ? 'reset_password.php' : 'reset_password.php?method=sms'; ?>" autocomplete="off">

@@ -1,14 +1,5 @@
 <?php
-/**
- * Patient search for the department forms (Step 6): GET ?q=<name part(s)>  ->  JSON.
- *
- *   {"results":[{"id":12,"first_name":"Ana","middle_name":"M","last_name":"Cruz","birthdate":"1990-05-01","age":36,"sex":"Female"}, ...]}
- *
- * - JSON-safe auth (a missing session answers 401 JSON, never an HTML redirect that fetch() cannot read).
- * - Only staff who may open a clinical form or the masterlist can search.
- * - Active patients only, at most 8 rows, and only what the picker needs (no address / contact / email).
- * - Every word must match the first, middle or last name; LIKE wildcards typed by the user are escaped.
- */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 header('Content-Type: application/json; charset=utf-8');

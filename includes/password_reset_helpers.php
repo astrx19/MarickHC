@@ -53,41 +53,67 @@ function mh_pr_scope($value)
 }
 
 /**
- * Active (status = 1) patient or staff account by username OR email. Archived accounts cannot reset.
+ * Active staff or patient account by username OR email.
  *
- * $scope comes from the login page the visitor started on ("Forgot Password?" on the staff console
- * -> 'staff', on the patient page -> 'patient'). Usernames/emails are only unique PER TABLE, so
- * without a scope a patient with the same username would always shadow the staff member.
+ * $scope: 'staff' (from staff login) or 'patient' (from patient login).
+ *
+ * For 'staff', strictly queries the `staff` table.
+ * For 'patient', strictly queries the `patients` table.
+ *
+ * @return array{table: string, row: array, archived: bool}|null
  */
 function mh_pr_find_account(mysqli $conn, $identifier, $scope = '')
 {
     $identifier = trim((string) $identifier);
     if ($identifier === '') { return null; }
     $scope  = mh_pr_scope($scope);
-    $tables = $scope === 'staff' ? ['staff'] : ($scope === 'patient' ? ['patients'] : ['patients', 'staff']);
-    foreach ($tables as $table) {
-        $stmt = $conn->prepare("SELECT * FROM `$table` WHERE (username = ? OR email = ?) AND status = 1 LIMIT 1");
-        if (!$stmt) { continue; }
-        $stmt->bind_param('ss', $identifier, $identifier);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if ($row) { return ['table' => $table, 'row' => $row]; }
+    if ($scope === '') {
+        $scope = mh_pr_scope($_SESSION['pr_for'] ?? 'patient') ?: 'patient';
     }
-    return null;
+
+    $table = ($scope === 'staff') ? 'staff' : 'patients';
+
+    // Strictly query only the target table for the current portal
+    $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE (username = ? OR email = ?) LIMIT 1");
+    if (!$stmt) {
+        $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE email = ? LIMIT 1");
+        if (!$stmt) { return null; }
+        $stmt->bind_param('s', $identifier);
+    } else {
+        $stmt->bind_param('ss', $identifier, $identifier);
+    }
+
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+
+    if (!$row) {
+        return null;
+    }
+
+    $isArchived = isset($row['status']) && (int) $row['status'] === 0;
+
+    return [
+        'table'    => $table,
+        'row'      => $row,
+        'archived' => $isArchived,
+    ];
 }
 
 function mh_pr_get_account(mysqli $conn, $table, $id)
 {
     $table = ($table === 'staff') ? 'staff' : 'patients';
     $id = (int) $id;
-    $stmt = $conn->prepare("SELECT * FROM `$table` WHERE id = ? AND status = 1 LIMIT 1");
+    $stmt = $conn->prepare("SELECT * FROM `$table` WHERE id = ? LIMIT 1");
     if (!$stmt) { return null; }
     $stmt->bind_param('i', $id);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    return $row ?: null;
+    if (!$row) { return null; }
+    if (isset($row['status']) && (int) $row['status'] === 0) { return null; }
+    return $row;
 }
 
 /**
@@ -118,29 +144,28 @@ function mh_pr_channels(array $row)
     $smsOk = ($phone !== '') && function_exists('mh_sms_provider_problem') && mh_sms_provider_problem() === null;
 
     return [
-        'email' => (bool) $emailOk, 'sms' => (bool) $smsOk, 'phone' => $phone,
+        'email'        => (bool) $emailOk,
+        'sms'          => (bool) $smsOk,
+        'email_raw'    => $email,
+        'phone'        => $phone,
         'email_masked' => $emailOk ? mh_pr_mask_email($email) : '',
         'phone_masked' => $phone !== '' ? mh_pr_mask_mobile($phone) : '',
     ];
 }
 
 /**
- * What step 2 shows for a lookup. Real and unknown accounts produce the SAME shape:
- *  - the options offered depend only on what the SYSTEM supports (mh_pr_global_channels),
- *  - a masked address / number is always shown; when the real account has none, the stable
- *    decoy mask for that identifier is used, so the screen never reveals which case it is.
- * What can really be delivered is decided later, silently, in forgot_password_process.php.
+ * What step 2 shows for a lookup.
+ * Always displays the account's actual registered email/mobile (masked).
+ * Never uses fake/decoy addresses.
  */
-function mh_pr_step2_view($identifier, $found)
+function mh_pr_step2_view(array $accountRow)
 {
-    $g = mh_pr_global_channels();
-    $d = mh_pr_decoy($identifier);
-    $ch = $found ? mh_pr_channels($found['row']) : null;
+    $ch = mh_pr_channels($accountRow);
     return [
-        'email_ok'     => $g['email'],
-        'sms_ok'       => $g['sms'],
-        'email_masked' => ($ch && $ch['email_masked'] !== '') ? $ch['email_masked'] : $d['email_masked'],
-        'phone_masked' => ($ch && $ch['phone_masked'] !== '') ? $ch['phone_masked'] : $d['phone_masked'],
+        'email_ok'     => $ch['email'],
+        'sms_ok'       => $ch['sms'],
+        'email_masked' => $ch['email_masked'] !== '' ? $ch['email_masked'] : 'None registered',
+        'phone_masked' => $ch['phone_masked'] !== '' ? $ch['phone_masked'] : 'None registered',
     ];
 }
 
@@ -321,13 +346,39 @@ function mh_pr_complete(mysqli $conn, array $resetRow, $newPlain)
 
     // session_token = NULL kicks out any session that was open with the old password.
     // Staff also finish first-time setup by resetting (same behaviour as the old flow).
-    $sql = ($table === 'staff')
-        ? "UPDATE staff SET password = ?, is_first_login = 0, session_token = NULL, session_started_at = NULL WHERE id = ? AND status = 1"
-        : "UPDATE patients SET password = ?, session_token = NULL, session_started_at = NULL WHERE id = ? AND status = 1";
+    // Dynamically check existing columns so updates work regardless of applied migrations.
+    $hasCols = [];
+    $colRes = $conn->query("SHOW COLUMNS FROM `$table`");
+    if ($colRes) {
+        while ($c = $colRes->fetch_assoc()) { $hasCols[$c['Field']] = true; }
+    }
+
+    $sets = ['password = ?'];
+    $types = 's';
+    $params = [$hash];
+
+    if ($table === 'staff' && isset($hasCols['is_first_login'])) {
+        $sets[] = 'is_first_login = 0';
+    }
+    if (isset($hasCols['session_token'])) {
+        $sets[] = 'session_token = NULL';
+    }
+    if (isset($hasCols['session_started_at'])) {
+        $sets[] = 'session_started_at = NULL';
+    }
+
+    $where = 'id = ?';
+    $types .= 'i';
+    $params[] = $userId;
+    if (isset($hasCols['status'])) {
+        $where .= ' AND (status = 1 OR status IS NULL)';
+    }
+
+    $sql = "UPDATE `$table` SET " . implode(', ', $sets) . " WHERE $where";
     $upd = $conn->prepare($sql);
     if (!$upd) { $conn->rollback(); return false; }
-    $upd->bind_param('si', $hash, $userId);
-    $ok = $upd->execute() && $upd->affected_rows === 1;
+    $upd->bind_param($types, ...$params);
+    $ok = $upd->execute();
     $upd->close();
 
     if ($ok) {
