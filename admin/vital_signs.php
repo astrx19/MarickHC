@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/ui_helpers.php';   // mh_clean_temperature / mh_clean_vitals are used by the save handler below
 require_once __DIR__ . '/../config/database.php';
 
 // BHW intake page: vital signs only. Doctors / midwives / dental / admin can use it too (see
@@ -64,18 +65,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_vitals'])) {
         } elseif ($bp === '' && $temp === '' && $pulse === '' && $rr === '' && $spo2 === '' && $weight === '' && $height === '') {
             $error_msg = 'Enter at least one vital sign.';
         } else {
-            $ins = $conn->prepare("INSERT INTO vital_signs (patient_id, recorded_by, bp, temp, pulse, resp_rate, spo2, weight, height, notes)
-                                   VALUES (?,?,?,?,?,?,?,?,?,?)");
-            $ins->bind_param('iissssssss', $patient_id, $user_id, $bp, $temp, $pulse, $rr, $spo2, $weight, $height, $notes);
-            if ($ins->execute()) {
-                logActivity($conn, $user_id, $role, 'Vital Signs Recorded', "Recorded vital signs for Patient ID #$patient_id.");
-                $_SESSION['vs_success'] = 'Vital signs saved.';
+            try {
+                $ins = $conn->prepare("INSERT INTO vital_signs (patient_id, recorded_by, bp, temp, pulse, resp_rate, spo2, weight, height, notes)
+                                       VALUES (?,?,?,?,?,?,?,?,?,?)");
+                if (!$ins) { throw new RuntimeException('prepare failed: ' . $conn->error); }
+                $ins->bind_param('iissssssss', $patient_id, $user_id, $bp, $temp, $pulse, $rr, $spo2, $weight, $height, $notes);
+                if (!$ins->execute()) { throw new RuntimeException('execute failed: ' . $ins->error); }
                 $ins->close();
+                try { logActivity($conn, $user_id, $role, 'Vital Signs Recorded', "Recorded vital signs for Patient ID #$patient_id."); }
+                catch (Throwable $e) { error_log('[MarickHealth] vitals saved but the activity log failed: ' . $e->getMessage()); }
+                $_SESSION['vs_success'] = 'Vital signs saved.';
                 header('Location: vital_signs.php');   // PRG: refresh does not resubmit
                 exit();
+            } catch (Throwable $e) {
+                error_log('[MarickHealth] vital signs save FAILED (staff #' . (int) $user_id . ', patient #' . (int) $patient_id . '): ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+                $error_msg = 'Could not save the record, so nothing was changed. Please try again. If it keeps happening, tell the system administrator.';
             }
-            $error_msg = 'Could not save the record. Please try again.';
-            $ins->close();
         }
     }
 }

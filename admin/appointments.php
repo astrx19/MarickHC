@@ -334,7 +334,7 @@ $stmt_fetch->close();
                                 ?>
                                 <tr>
                                     <td>
-                                        <?php if (!empty($row['queue_number'])): ?><span class="queue-no"><?php echo $h(mh_queue_label($row['department'], $row['queue_number'])); ?></span><?php endif; ?><strong style="color: var(--heading-color, #1e293b); font-size: 1.05rem;"><?php echo htmlspecialchars($row['last_name'] . ", " . $row['first_name']); ?></strong><br>
+                                        <?php if (!empty($row['queue_number'])): ?><span class="queue-no"><?php echo mh_h(mh_queue_label($row['department'], $row['queue_number'])); ?></span><?php endif; ?><strong style="color: var(--heading-color, #1e293b); font-size: 1.05rem;"><?php echo htmlspecialchars($row['last_name'] . ", " . $row['first_name']); ?></strong><br>
                                         <span style="font-size: 0.85rem; color: var(--text-muted, #64748b);"><?php echo htmlspecialchars($row['contact_number']); ?></span>
                                     </td>
                                     <td style="color: var(--text-main, #334155); font-weight: bold;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:7px; background:<?php echo mh_department_color($row['department']); ?>;"></span><?php echo htmlspecialchars($row['department']); ?></td>

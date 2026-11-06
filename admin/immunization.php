@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/ui_helpers.php';   // mh_clean_temperature / mh_clean_vitals are used by the save handler below
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/patient_name_helper.php';
@@ -123,75 +124,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_child_immunizatio
              penta_1_opv_1_date, penta_2_opv_2_date, pcv_1_date, pcv_2_date, pcv_3_date, others_immunization, mr_date, mmr_date, next_visit_date) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        if ($stmt) {
-            $stmt->bind_param("isisssssssssssssissisisssssssssssss", 
-                $patient_id, $patient_name, $user_id, $family_no, $others_header, $newborn_screening_date, $tt_of_mother_date, 
-                $birth_time, $birth_weight, $birth_height, $birth_place, $type_of_delivery, $place_of_delivery, 
-                $type_of_breastfeeding, $mother_name, $mother_bday, $mother_age, $father_name, $father_bday, $father_age, 
-                $attending_physician, $no_of_children, $contact_no, $bcg_date, $hep_b_24hrs_date, $penta_opv_3_date, 
-                $penta_1_opv_1_date, $penta_2_opv_2_date, $pcv_1_date, $pcv_2_date, $pcv_3_date, $others_immunization, $mr_date, $mmr_date, $next_visit_date
-            );
+        try {
+            if ($stmt) {
+                $stmt->bind_param("isisssssssssssssissisisssssssssssss", 
+                    $patient_id, $patient_name, $user_id, $family_no, $others_header, $newborn_screening_date, $tt_of_mother_date, 
+                    $birth_time, $birth_weight, $birth_height, $birth_place, $type_of_delivery, $place_of_delivery, 
+                    $type_of_breastfeeding, $mother_name, $mother_bday, $mother_age, $father_name, $father_bday, $father_age, 
+                    $attending_physician, $no_of_children, $contact_no, $bcg_date, $hep_b_24hrs_date, $penta_opv_3_date, 
+                    $penta_1_opv_1_date, $penta_2_opv_2_date, $pcv_1_date, $pcv_2_date, $pcv_3_date, $others_immunization, $mr_date, $mmr_date, $next_visit_date
+                );
 
-            if ($stmt->execute()) {
-                $child_record_id = $conn->insert_id;
+                if ($stmt->execute()) {
+                    $child_record_id = $conn->insert_id;
 
-                if (isset($_POST['consultation_date']) && is_array($_POST['consultation_date'])) {
-                    $consult_stmt = $conn->prepare("INSERT INTO child_consultation_logs 
-                        (child_record_id, consultation_date, weight, height, temp, chief_complaints, remarks) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    if (isset($_POST['consultation_date']) && is_array($_POST['consultation_date'])) {
+                        $consult_stmt = $conn->prepare("INSERT INTO child_consultation_logs 
+                            (child_record_id, consultation_date, weight, height, temp, chief_complaints, remarks) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)");
 
-                    if ($consult_stmt) {
-                        foreach ($_POST['consultation_date'] as $idx => $c_date_val) {
-                            $c_date = null_if_empty($c_date_val ?? '');
-                            if ($c_date !== NULL) {
-                                $c_wt   = null_if_empty($clean_wts[$idx] ?? '');
-                                $c_ht   = null_if_empty($clean_hts[$idx] ?? '');
-                                $c_temp = null_if_empty($clean_temps[$idx] ?? '');
-                                $c_cc   = null_if_empty($_POST['consultation_cc'][$idx] ?? '');
-                                $c_rem  = null_if_empty($_POST['consultation_remarks'][$idx] ?? '');
+                        if ($consult_stmt) {
+                            foreach ($_POST['consultation_date'] as $idx => $c_date_val) {
+                                $c_date = null_if_empty($c_date_val ?? '');
+                                if ($c_date !== NULL) {
+                                    $c_wt   = null_if_empty($clean_wts[$idx] ?? '');
+                                    $c_ht   = null_if_empty($clean_hts[$idx] ?? '');
+                                    $c_temp = null_if_empty($clean_temps[$idx] ?? '');
+                                    $c_cc   = null_if_empty($_POST['consultation_cc'][$idx] ?? '');
+                                    $c_rem  = null_if_empty($_POST['consultation_remarks'][$idx] ?? '');
 
-                                $consult_stmt->bind_param("issssss", $child_record_id, $c_date, $c_wt, $c_ht, $c_temp, $c_cc, $c_rem);
-                                $consult_stmt->execute();
+                                    $consult_stmt->bind_param("issssss", $child_record_id, $c_date, $c_wt, $c_ht, $c_temp, $c_cc, $c_rem);
+                                    $consult_stmt->execute();
+                                }
+                            }
+                            $consult_stmt->close();
+                        }
+                    }
+
+                    $success_msg = "Child Immunization Record saved successfully!";
+                    try {   // the record is saved; a failing follow-up step must not hide that
+                        if ($child_created_id !== null) { $success_msg .= " The child was added to the Patient Masterlist."; }
+                        if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
+                            && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
+                            $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
+                            if (function_exists('logActivity')) {
+                                logActivity($conn, $user_id, $user_role, "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the immunization record.");
                             }
                         }
-                        $consult_stmt->close();
-                    }
-                }
+                        if (function_exists('logActivity')) {
+                            logActivity($conn, $user_id, $user_role, "Added Child Immunization Record", "Logged record for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));
+                        }
 
-                $success_msg = "Child Immunization Record saved successfully!";
-                if ($child_created_id !== null) { $success_msg .= " The child was added to the Patient Masterlist."; }
-                if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
-                    && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
-                    $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
-                    if (function_exists('logActivity')) {
-                        logActivity($conn, $user_id, $user_role, "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the immunization record.");
+                        if ($next_visit_date !== null && $patient_id === null) {
+                            $success_msg .= " (No SMS reminder queued: the typed name did not match exactly one registered patient.)";
+                        } elseif ($next_visit_date !== null) {
+                            $sms = mh_schedule_followup_sms($conn, $patient_id, $next_visit_date, 'Immunization', $child_record_id);
+                            if ($sms['queued'] > 0) {
+                                $success_msg .= " " . $sms['queued'] . " SMS reminder(s) queued for the patient's follow-up.";
+                            } elseif ($sms['skipped_reason']) {
+                                $success_msg .= " (No SMS reminder queued: " . $sms['skipped_reason'] . ")";
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log('[MarickHealth] immunization record saved (#' . (int) $child_record_id . ') but a follow-up step failed: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+                        $success_msg .= ' (The record was saved, but a follow-up step - queue update or SMS reminder - could not be completed.)';
+                    }
+                } else {
+                    error_log('immunization save failed: ' . $stmt->error);
+                    $error_msg = "The record could not be saved. Please check the form and try again.";
+                    if ($child_created_id !== null) {   // do not leave a half-created patient behind
+                        $rb = $conn->prepare("DELETE FROM patients WHERE id = ?");
+                        $rb->bind_param('i', $child_created_id); $rb->execute(); $rb->close();
                     }
                 }
-                if (function_exists('logActivity')) {
-                    logActivity($conn, $user_id, $user_role, "Added Child Immunization Record", "Logged record for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));
-                }
-
-                if ($next_visit_date !== null && $patient_id === null) {
-                    $success_msg .= " (No SMS reminder queued: the typed name did not match exactly one registered patient.)";
-                } elseif ($next_visit_date !== null) {
-                    $sms = mh_schedule_followup_sms($conn, $patient_id, $next_visit_date, 'Immunization', $child_record_id);
-                    if ($sms['queued'] > 0) {
-                        $success_msg .= " " . $sms['queued'] . " SMS reminder(s) queued for the patient's follow-up.";
-                    } elseif ($sms['skipped_reason']) {
-                        $success_msg .= " (No SMS reminder queued: " . $sms['skipped_reason'] . ")";
-                    }
-                }
+                $stmt->close();
             } else {
-                error_log('immunization save failed: ' . $stmt->error);
-                $error_msg = "The record could not be saved. Please check the form and try again.";
-                if ($child_created_id !== null) {   // do not leave a half-created patient behind
-                    $rb = $conn->prepare("DELETE FROM patients WHERE id = ?");
-                    $rb->bind_param('i', $child_created_id); $rb->execute(); $rb->close();
-                }
+                $error_msg = $registration_error !== null ? $registration_error : "Database prepare error: " . $conn->error;
             }
-            $stmt->close();
-        } else {
-            $error_msg = $registration_error !== null ? $registration_error : "Database prepare error: " . $conn->error;
+        } catch (Throwable $e) {
+            error_log('[MarickHealth] immunization save FAILED (staff #' . (int) $user_id . '): ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+            $error_msg = 'The record could not be saved, so nothing was changed. Please try again. If it keeps happening, tell the system administrator.';
+            if (!empty($child_created_id)) {   // do not leave a half-created patient behind
+                $rb = @$conn->prepare("DELETE FROM patients WHERE id = ?");
+                if ($rb) { $rb->bind_param('i', $child_created_id); $rb->execute(); $rb->close(); }
+            }
         }
     }
 }

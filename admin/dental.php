@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/ui_helpers.php';   // mh_clean_temperature / mh_clean_vitals are used by the save handler below
 require_once __DIR__ . '/../config/database.php';
 
 $system_name = $system_name ?? mh_setting('system_name');

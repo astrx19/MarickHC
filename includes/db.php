@@ -65,6 +65,9 @@ if (!function_exists('mh_pdo')) {
             PDO::ATTR_STRINGIFY_FETCHES  => false,
             PDO::ATTR_TIMEOUT            => 5,
         ];
+        if (!empty($GLOBALS['mh_db_utc_offset']) && defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
+            $opts[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET time_zone = '" . $GLOBALS['mh_db_utc_offset'] . "'";   // same clock as the mysqli connection
+        }
         $errors = [];
         foreach ($dsns as $label => $dsn) {
             try {

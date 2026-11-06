@@ -1,4 +1,6 @@
 <?php
+// No blank white pages: unexpected errors become a clear message + reference code, with the detail in the server error log.
+require_once __DIR__ . '/../includes/error_guard.php';
 /**
  * Marick Health - database bootstrap. Works unchanged on XAMPP (macOS) and Hostinger (Linux).
  *
@@ -49,6 +51,15 @@ if ($conn->connect_errno) {
     die('Service temporarily unavailable.');
 }
 $conn->set_charset('utf8mb4');
+
+// ONE clock for the whole system: Philippine Standard Time (UTC+8, no daylight saving). Without this the web server
+// and MySQL both ran on UTC, so "today", queue numbers and log times were 8 hours behind: between midnight and
+// 8 AM Manila time the queue showed YESTERDAY. PHP and the MySQL session now agree (override with the MH_TIMEZONE env var).
+$__tz = getenv('MH_TIMEZONE') ?: 'Asia/Manila';
+if (!@date_default_timezone_set($__tz)) { $__tz = 'Asia/Manila'; date_default_timezone_set($__tz); }
+$GLOBALS['mh_db_utc_offset'] = (new DateTime('now', new DateTimeZone($__tz)))->format('P');   // e.g. +08:00 (format() output only)
+@$conn->query("SET time_zone = '" . $GLOBALS['mh_db_utc_offset'] . "'");
+unset($__tz);
 
 if (!function_exists('logActivity')) {
     function logActivity($conn, $user_id, $user_role, $action, $details = "") {

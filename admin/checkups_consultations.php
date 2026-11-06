@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/ui_helpers.php';   // mh_clean_temperature / mh_clean_vitals are used by the save handler below
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php'; 
 require_once __DIR__ . '/../includes/patient_name_helper.php';
@@ -66,35 +67,46 @@ if(isset($_POST['add_consultation'])) {
     $next_visit_raw = trim($_POST['next_visit_date'] ?? '');
     $next_visit = preg_match('/^\d{4}-\d{2}-\d{2}$/', $next_visit_raw) ? $next_visit_raw : null;
 
-    $stmt = $conn->prepare("INSERT INTO consultations (patient_id, patient_name, doctor_id, visit_date, weight, height, temp, bp, chief_complaints, diagnosis, prescription, notes, next_visit_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param('isissssssssss', $patient_id, $patient_name, $user_id, $visit_date, $weight, $height, $temp, $bp,
-        $complaints, $diagnosis, $prescription, $notes, $next_visit);
-
-    if($stmt->execute()) {
-        $record_id = $conn->insert_id;
+    // Everything that touches the database is inside try/catch: a failure is written to the server error log with the real
+    // reason, and the staff member sees a clear message instead of a blank page. Nothing is half-saved (one INSERT).
+    try {
+        $stmt = $conn->prepare("INSERT INTO consultations (patient_id, patient_name, doctor_id, visit_date, weight, height, temp, bp, chief_complaints, diagnosis, prescription, notes, next_visit_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        if (!$stmt) { throw new RuntimeException('prepare failed: ' . $conn->error); }
+        $stmt->bind_param('isissssssssss', $patient_id, $patient_name, $user_id, $visit_date, $weight, $height, $temp, $bp,
+            $complaints, $diagnosis, $prescription, $notes, $next_visit);
+        if (!$stmt->execute()) { throw new RuntimeException('execute failed: ' . $stmt->error); }
+        $record_id = (int) $conn->insert_id;
+        $stmt->close();
         $_SESSION['success_msg'] = "Consultation record saved successfully!";
-        if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
-            && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
-            $_SESSION['success_msg'] .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
-            logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the consultation.");
-        }
-        logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Added Consultation", "Logged general checkup for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));
 
-        if ($next_visit_raw !== '' && $patient_id === null) {
-            $_SESSION['success_msg'] .= " (No SMS reminder queued: the typed name did not match exactly one registered patient.)";
-        } elseif ($next_visit_raw !== '') {
-            $sms = mh_schedule_followup_sms($conn, $patient_id, $next_visit_raw, 'Check-up', $record_id);
-            if ($sms['queued'] > 0) {
-                $_SESSION['success_msg'] .= " " . $sms['queued'] . " SMS reminder(s) queued for the patient's follow-up.";
-            } elseif ($sms['skipped_reason']) {
-                $_SESSION['success_msg'] .= " (No SMS reminder queued: " . $sms['skipped_reason'] . ")";
+        // The record is SAVED at this point. A problem in a follow-up step (queue, SMS, log) must not hide that.
+        try {
+            if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
+                && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
+                $_SESSION['success_msg'] .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
+                logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the consultation.");
             }
+            logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Added Consultation", "Logged general checkup for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));
+
+            if ($next_visit_raw !== '' && $patient_id === null) {
+                $_SESSION['success_msg'] .= " (No SMS reminder queued: the typed name did not match exactly one registered patient.)";
+            } elseif ($next_visit_raw !== '') {
+                $sms = mh_schedule_followup_sms($conn, $patient_id, $next_visit_raw, 'Check-up', $record_id);
+                if ($sms['queued'] > 0) {
+                    $_SESSION['success_msg'] .= " " . $sms['queued'] . " SMS reminder(s) queued for the patient's follow-up.";
+                } elseif ($sms['skipped_reason']) {
+                    $_SESSION['success_msg'] .= " (No SMS reminder queued: " . $sms['skipped_reason'] . ")";
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[MarickHealth] consultation saved (#' . $record_id . ') but a follow-up step failed: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+            $_SESSION['success_msg'] .= ' (The record was saved, but a follow-up step - queue update or SMS reminder - could not be completed.)';
         }
-    } else {
-        $_SESSION['error_msg'] = "Error saving record: " . $stmt->error;
+    } catch (Throwable $e) {
+        error_log('[MarickHealth] consultation save FAILED (staff #' . (int) $user_id . ', patient ' . var_export($patient_id, true) . '): ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+        $_SESSION['error_msg'] = 'The consultation record could not be saved, so nothing was changed. Please try again. If it keeps happening, tell the system administrator.';
     }
-    $stmt->close();
     header("Location: checkups_consultations.php");
     exit();
 }

@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/ui_helpers.php';   // mh_clean_temperature / mh_clean_vitals are used by the save handler below
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/patient_name_helper.php';
@@ -69,37 +70,44 @@ if(isset($_POST['add_prenatal'])) {
         $next_visit_raw = trim($_POST['next_visit_date'] ?? '');
         $next_visit = $date('next_visit_date');
 
-        $stmt = $conn->prepare("INSERT INTO maternal_records
-            (patient_id, patient_name, midwife_id, visit_date, gravida, para, lmp, edc, aog, blood_pressure, weight, height, bmi, fh_fht, tt1_date, tt2_date, tt3_date, tt4_date, tt5_date, notes, next_visit_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param('isissssssssssssssssss',
-            $patient_id, $patient_name, $user_id, $visit_date, $gravida, $para, $lmp, $edc, $aog, $bp, $weight, $height, $bmi, $fh_fht,
-            $tt1, $tt2, $tt3, $tt4, $tt5, $notes, $next_visit);
-
-        if($stmt->execute()) {
-            $record_id = $conn->insert_id;
+        try {
+            $stmt = $conn->prepare("INSERT INTO maternal_records
+                (patient_id, patient_name, midwife_id, visit_date, gravida, para, lmp, edc, aog, blood_pressure, weight, height, bmi, fh_fht, tt1_date, tt2_date, tt3_date, tt4_date, tt5_date, notes, next_visit_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            if (!$stmt) { throw new RuntimeException('prepare failed: ' . $conn->error); }
+            $stmt->bind_param('isissssssssssssssssss',
+                $patient_id, $patient_name, $user_id, $visit_date, $gravida, $para, $lmp, $edc, $aog, $bp, $weight, $height, $bmi, $fh_fht,
+                $tt1, $tt2, $tt3, $tt4, $tt5, $notes, $next_visit);
+            if (!$stmt->execute()) { throw new RuntimeException('execute failed: ' . $stmt->error); }
+            $record_id = (int) $conn->insert_id;
+            $stmt->close();
             $success_msg = "Prenatal record saved successfully!";
-            if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
-                && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
-                $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
-                logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the prenatal record.");
-            }
-            logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Added Prenatal Record", "Logged maternal checkup for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));
-
-            if ($next_visit_raw !== '' && $patient_id === null) {
-                $success_msg .= " (No SMS reminder queued: the typed name did not match exactly one registered patient.)";
-            } elseif ($next_visit_raw !== '') {
-                $sms = mh_schedule_followup_sms($conn, $patient_id, $next_visit_raw, 'Prenatal Care', $record_id);
-                if ($sms['queued'] > 0) {
-                    $success_msg .= " " . $sms['queued'] . " SMS reminder(s) queued for the patient's follow-up.";
-                } elseif ($sms['skipped_reason']) {
-                    $success_msg .= " (No SMS reminder queued: " . $sms['skipped_reason'] . ")";
+            try {   // the record is saved; a failing follow-up step must not hide that
+                if ($queue_ctx_post && $patient_id !== null && (int) $patient_id === (int) $queue_ctx_post['patient_id']
+                    && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) {
+                    $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
+                    logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Patient Queueing Update", "Completed queue item #" . (int) $queue_ctx_post['id'] . " after saving the prenatal record.");
                 }
+                logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Added Prenatal Record", "Logged maternal checkup for " . $patient_name . ($patient_id ? " (Patient ID #$patient_id)." : " (not linked to a registered patient)."));
+
+                if ($next_visit_raw !== '' && $patient_id === null) {
+                    $success_msg .= " (No SMS reminder queued: the typed name did not match exactly one registered patient.)";
+                } elseif ($next_visit_raw !== '') {
+                    $sms = mh_schedule_followup_sms($conn, $patient_id, $next_visit_raw, 'Prenatal Care', $record_id);
+                    if ($sms['queued'] > 0) {
+                        $success_msg .= " " . $sms['queued'] . " SMS reminder(s) queued for the patient's follow-up.";
+                    } elseif ($sms['skipped_reason']) {
+                        $success_msg .= " (No SMS reminder queued: " . $sms['skipped_reason'] . ")";
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('[MarickHealth] prenatal record saved (#' . $record_id . ') but a follow-up step failed: ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+                $success_msg .= ' (The record was saved, but a follow-up step - queue update or SMS reminder - could not be completed.)';
             }
-        } else {
-            $error_msg = "Error saving record: " . $stmt->error;
+        } catch (Throwable $e) {
+            error_log('[MarickHealth] prenatal save FAILED (staff #' . (int) $user_id . ', patient ' . var_export($patient_id, true) . '): ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+            $error_msg = 'The prenatal record could not be saved, so nothing was changed. Please try again. If it keeps happening, tell the system administrator.';
         }
-        $stmt->close();
     }
 }
 

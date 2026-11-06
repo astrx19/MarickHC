@@ -7,6 +7,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/queue_helper.php';   // mh_queue_label()
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/settings_helper.php';
 

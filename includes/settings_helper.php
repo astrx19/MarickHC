@@ -1,4 +1,7 @@
 <?php
+// Shared small helpers (mh_h, mh_js, mh_clean_temperature, mh_clean_vitals...). Loaded here so they exist BEFORE any page
+// handles a form post - they used to load only inside <head> (modal_assets.php), which is after the save code runs.
+require_once __DIR__ . '/ui_helpers.php';
 // Definitions are wrapped in a constant-keyed if-block ON PURPOSE: PHP registers top-level functions at
 // compile time, so require_once cannot stop a redeclare when one file is reached by two paths that differ
 // only in letter case (/MARICK-HEALTH-SYSTEM-v2/ vs /marick-health-system-v2/ on macOS/Windows).

@@ -1,54 +1,71 @@
 <?php
-// Constant-keyed so it is safe to include from several pages.
-if (!defined('MH_ERROR_GUARD')) {
-define('MH_ERROR_GUARD', true);
 /**
- * =====================================================================
- * ERROR GUARD - turns "blank white page" into a useful message + a log line.
+ * Error safety net - no more blank white pages.
  *
- *  - Always logs the full error (Hostinger: hPanel > Websites > Advanced > Error logs,
- *    or the error_log file next to the script).
- *  - On localhost, or when a page defines MH_FORCE_DEBUG first (see admin/debug_walkin.php),
- *    it also shows the real error on screen.
- *  - On the live site visitors only see a friendly message + a short reference code that you can
- *    search for in the error log.
- *
- * Limit (PHP itself, not this file): a PARSE error in the page you are opening can never be caught by
- * code inside that same page, because the page never starts running. For those, use admin/debug_walkin.php
- * or read the error log.
- * ================================================================== */
-$__host  = $_SERVER['HTTP_HOST'] ?? '';
-$__local = (PHP_SAPI === 'cli') || strpos($__host, 'localhost') !== false || strpos($__host, '127.0.0.1') !== false || strpos($__host, '.local') !== false;
-define('MH_SHOW_ERRORS', $__local || defined('MH_FORCE_DEBUG'));
+ * Loaded by config/database.php, so it protects every page. When something fails that nobody anticipated (an undefined
+ * function, a missing column, a crashed query ...) the visitor sees a clear "something went wrong" screen with a short
+ * reference code, and the full technical detail goes to the server error log under that same code. Health Head / Admin
+ * accounts also see the technical line on screen, to speed up fixing. Nothing sensitive is ever shown to anyone else.
+ * AJAX / API requests get the same information as JSON instead of HTML.
+ */
+if (!function_exists('mh_error_ref')) {
 
-error_reporting(E_ALL);
-ini_set('display_errors', MH_SHOW_ERRORS ? '1' : '0');
-ini_set('log_errors', '1');
-
-function mh_error_guard_fail($detail)
-{
-    $ref = strtoupper(bin2hex(random_bytes(3)));
-    error_log("[MH-$ref] $detail");
-    while (ob_get_level() > 0) { @ob_end_clean(); }          // drop half-rendered HTML
-    if (!headers_sent()) { http_response_code(500); header('Content-Type: text/html; charset=UTF-8'); }
-    echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Something went wrong</title></head>'
-       . '<body style="font-family:Arial,sans-serif;max-width:640px;margin:12vh auto;padding:0 20px;color:#334155">'
-       . '<h2 style="color:#b91c1c">This page could not be loaded</h2>'
-       . '<p>Something went wrong on our side. Please go back and try again. If it keeps happening, tell the system administrator this reference code: <b>' . $ref . '</b>.</p>';
-    if (MH_SHOW_ERRORS) {
-        echo '<pre style="background:#fef2f2;border:1px solid #fecaca;padding:12px;border-radius:8px;white-space:pre-wrap">' . htmlspecialchars($detail) . '</pre>';
+    function mh_error_ref()
+    {
+        static $ref = null;
+        if ($ref === null) { $ref = strtoupper(bin2hex(random_bytes(3))); }
+        return $ref;
     }
-    echo '</body></html>';
-}
 
-set_exception_handler(function ($e) {
-    mh_error_guard_fail(get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString());
-});
-
-register_shutdown_function(function () {
-    $e = error_get_last();
-    if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR], true)) {
-        mh_error_guard_fail('Fatal error: ' . $e['message'] . ' in ' . $e['file'] . ':' . $e['line']);
+    function mh_error_wants_json()
+    {
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $script = $_SERVER['SCRIPT_NAME'] ?? '';
+        return stripos($accept, 'application/json') !== false
+            || ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== ''
+            || strpos($script, '/api/') !== false || strpos($script, '/ocr/') !== false;
     }
-});
+
+    function mh_error_render($type, $message, $file, $line)
+    {
+        static $done = false;
+        if ($done) { return; }
+        $done = true;
+        try {
+            $ref = mh_error_ref();
+            error_log('[MarickHealth] [' . $ref . '] ' . $type . ': ' . $message . ' in ' . $file . ':' . $line . ' (' . ($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . ($_SERVER['REQUEST_URI'] ?? '') . ')');
+            if (!headers_sent()) { http_response_code(500); }
+
+            $role = $_SESSION['role'] ?? '';
+            $admin = $role !== '' && function_exists('mh_is_admin_tier') && mh_is_admin_tier($role);
+            $detail = $admin ? $type . ': ' . $message . ' (' . basename($file) . ':' . $line . ')' : '';
+
+            if (mh_error_wants_json()) {
+                if (!headers_sent()) { header('Content-Type: application/json; charset=utf-8'); }
+                echo json_encode(['error' => 'Something went wrong on the server. Nothing was changed. Reference ' . $ref . '.', 'reference' => $ref]);
+                return;
+            }
+            $e = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
+            echo '<div style="position:fixed;inset:0;z-index:2147483647;background:#f1f5f9;display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,sans-serif;">'
+               . '<div style="max-width:520px;background:#fff;border:1px solid #cbd5e1;border-top:5px solid #dc2626;border-radius:14px;padding:26px 28px;box-shadow:0 20px 50px rgba(15,23,42,.18);color:#1e293b;line-height:1.5;">'
+               . '<h2 style="margin:0 0 8px;font-size:1.25rem;">Something went wrong</h2>'
+               . '<p style="margin:0 0 10px;">The page could not finish. <strong>Nothing was lost or changed by this error.</strong> Please go back and try again.</p>'
+               . '<p style="margin:0 0 14px;color:#475569;font-size:.9rem;">If it keeps happening, tell the system administrator this reference: <strong>' . $e($ref) . '</strong></p>'
+               . ($detail !== '' ? '<details style="margin:0 0 14px;font-size:.82rem;color:#475569;"><summary>Technical detail (administrators only)</summary><code style="display:block;margin-top:6px;word-break:break-word;">' . $e($detail) . '</code></details>' : '')
+               . '<button type="button" onclick="history.length>1?history.back():location.href=\'dashboard.php\'" style="padding:9px 20px;border:0;border-radius:999px;background:#4ca1af;color:#fff;font-weight:700;cursor:pointer;">Go back</button>'
+               . '</div></div>';
+        } catch (Throwable $inner) {
+            // the safety net itself must never fail loudly
+        }
+    }
+
+    set_exception_handler(function ($ex) {
+        mh_error_render('Uncaught ' . get_class($ex), $ex->getMessage(), $ex->getFile(), $ex->getLine());
+    });
+    register_shutdown_function(function () {
+        $err = error_get_last();
+        if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR], true)) {
+            mh_error_render('Fatal error', $err['message'], $err['file'], $err['line']);
+        }
+    });
 }
