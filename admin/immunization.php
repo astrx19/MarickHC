@@ -608,7 +608,7 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
 
             const imageFile = fileInput.files[0];
             statusDiv.style.color = '#0284c7';
-            statusDiv.innerText = 'Scanning document via Gemini AI... Please wait...';
+            statusDiv.innerText = 'Scanning document via Google Cloud Vision OCR... Please wait...';
 
             const formData = new FormData();
             formData.append('ocr_file', imageFile);

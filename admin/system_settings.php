@@ -220,27 +220,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    /* ---------------- 4. OCR MODEL + GEMINI API KEY ---------------- */
+    /* ---------------- 4. OCR ENGINE + API KEYS ---------------------- */
     if (isset($_POST['save_ocr'])) {
-        $model = trim($_POST['ocr_model'] ?? '');
-        if ($model === '' || !preg_match('/^[a-zA-Z0-9._-]{3,60}$/', $model)) {
-            mh_redirect('ocr', 'error', 'That model name contains characters Google would not accept.');
+        // ---- Engine selector ----------------------------------------
+        $ocrEngine = trim($_POST['ocr_engine'] ?? 'vision');
+        if (!in_array($ocrEngine, ['vision', 'gemini'], true)) { $ocrEngine = 'vision'; }
+
+        // ---- Google Cloud Vision key --------------------------------
+        $visionKey = trim($_POST['google_vision_api_key'] ?? '');
+        if ($visionKey === '') {
+            // Keep the currently-saved key (never echoed back to the form)
+            $visionKey = (string) (mh_setting('google_vision_api_key', '') ?: mh_setting('vision_api_key', ''));
+        }
+        if ($visionKey !== '' && preg_match('/\s/', $visionKey)) {
+            mh_redirect('ocr', 'error', 'The Cloud Vision API key contains a space or line break. Re-paste it as a single line.');
         }
 
+        // ---- Gemini AI key ------------------------------------------
         $geminiKey = trim($_POST['gemini_api_key'] ?? '');
-        if ($geminiKey === '') { $geminiKey = (string) mh_setting('gemini_api_key', ''); }   // blank = keep the saved secret (never echoed back into the page)
+        if ($geminiKey === '') {
+            // Keep the currently-saved key
+            $geminiKey = (string) mh_setting('gemini_api_key', '');
+        }
         if ($geminiKey !== '' && preg_match('/\s/', $geminiKey)) {
             mh_redirect('ocr', 'error', 'The Gemini API key contains a space or line break. Re-paste it as a single line.');
         }
 
+        // ---- Gemini model -------------------------------------------
+        $ocrModel = preg_replace('/[^a-zA-Z0-9._-]/', '', trim($_POST['ocr_model'] ?? ''));
+        if ($ocrModel === '') { $ocrModel = (string) mh_setting('ocr_model', 'gemini-2.0-flash'); }
+
         mh_set_settings($conn, [
-            'ocr_model'       => $model,
-            'gemini_api_key'  => $geminiKey,
+            'ocr_engine'            => $ocrEngine,
+            'google_vision_api_key' => $visionKey,
+            'gemini_api_key'        => $geminiKey,
+            'ocr_model'             => $ocrModel,
         ], $user_id);
         mh_all_settings($conn, true);
-        logActivity($conn, $user_id, $user_role, 'System Settings', 'Set the OCR model to ' . $model . ' and updated the Gemini API key.');
 
-        mh_redirect('ocr', 'success', 'Scanners will now use "' . $model . '".');
+        $engineLabel = $ocrEngine === 'gemini' ? 'Gemini AI' : 'Google Cloud Vision';
+        logActivity($conn, $user_id, $user_role, 'System Settings', 'OCR engine set to: ' . $engineLabel . '. API key(s) updated.');
+
+        mh_redirect('ocr', 'success', 'Scanner (OCR) settings saved. Active engine: ' . $engineLabel . '.');
     }
 
     /* ---------------- 5. SMS PROVIDER + SEMAPHORE + ANDROID GATEWAY -- */
@@ -445,19 +466,28 @@ $groups      = mh_theme_field_groups();
 $options     = mh_options($conn, $list_key, false);   // include hidden ones in the admin view
 $system_name = mh_setting('system_name');
 
-// Quick health check for the Gemini config, shown on the OCR tab.
+// Quick health check for the active OCR engine, shown on the OCR tab.
+$vision_key_problem = null;
 $gemini_key_problem = null;
-$gemini_available   = null;
+$active_ocr_engine  = 'vision';
 if ($active_tab === 'ocr') {
-    if (is_readable(__DIR__ . '/../config/gemini.php')) {  // DB-backed shim (no key stored in the file)
-        require_once __DIR__ . '/../config/gemini.php';
-        require_once __DIR__ . '/../includes/ocr/GeminiOcrClient.php';
-        $gemini_key_problem = gemini_api_key_problem();
-        if ($gemini_key_problem === null && isset($_GET['probe'])) {
-            $gemini_available = gemini_ocr_list_models();
-        }
-    } else {
-        $gemini_key_problem = 'The OCR configuration loader is missing from this install. Re-deploy config/gemini.php (it contains no secrets), then enter the API key here.';
+    require_once __DIR__ . '/../config/vision.php';
+    $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
+
+    // Vision key validation
+    $vk = defined('GOOGLE_VISION_API_KEY') ? GOOGLE_VISION_API_KEY : '';
+    if (empty($vk)) {
+        $vision_key_problem = 'The Google Cloud Vision API key is not configured yet.';
+    } elseif (strpos($vk, 'AIzaSy') !== 0) {
+        $vision_key_problem = 'The saved key does not appear to be a valid Google Cloud Vision key (typically starts with "AIzaSy").';
+    }
+
+    // Gemini key validation
+    $gk = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
+    if (empty($gk)) {
+        $gemini_key_problem = 'The Gemini AI API key has not been configured yet.';
+    } elseif (strpos($gk, 'AIzaSy') !== 0 && strpos($gk, 'AQ.') !== 0) {
+        $gemini_key_problem = 'The saved Gemini key does not look like a valid key (should start with "AIzaSy" or "AQ.").';
     }
 }
 
@@ -1042,81 +1072,117 @@ if ($active_tab === 'sms') {
 
 <?php elseif ($active_tab === 'ocr'): ?>
 
+    <?php
+    // Helper: current engine label
+    $ocr_engine_label = $active_ocr_engine === 'gemini' ? 'Gemini AI API' : 'Google Cloud Vision API';
+    $ocr_engine_ok    = $active_ocr_engine === 'gemini' ? ($gemini_key_problem === null) : ($vision_key_problem === null);
+    $ocr_key_notice   = $active_ocr_engine === 'gemini' ? $gemini_key_problem : $vision_key_problem;
+    ?>
+
     <div class="settings-grid">
 
         <div class="card">
             <header>
-                <h3>Gemini Scanner Configuration</h3>
-                <p>Used by the Immunization, Check-up and Maternal Care scan buttons.</p>
+                <h3>Document Scanner (OCR) Configuration</h3>
+                <p>Select which AI engine processes scanned forms for Immunization, Check-up, Maternal Care, and Dental modules.</p>
             </header>
             <div class="body">
 
-                <?php if ($gemini_key_problem !== null): ?>
+                <?php if (!$ocr_engine_ok): ?>
                     <div class="alert alert-error" style="margin-bottom:20px;">
-                        <strong>API key problem:</strong><br><?php echo htmlspecialchars($gemini_key_problem); ?>
+                        <strong>Active engine — <?php echo htmlspecialchars($ocr_engine_label); ?> — API key notice:</strong><br>
+                        <?php echo htmlspecialchars($ocr_key_notice); ?>
                     </div>
                 <?php else: ?>
                     <div class="alert alert-success" style="margin-bottom:20px;">
-                        The saved API key has the correct format.
+                        Active engine: <strong><?php echo htmlspecialchars($ocr_engine_label); ?></strong> — API key is configured and ready.
                     </div>
                 <?php endif; ?>
 
-                <form method="POST">
+                <form method="POST" id="ocrSettingsForm">
                     <?php echo mh_csrf_field(); ?>
-                    <div class="field">
-                        <label>Gemini OCR API Key</label>
-                        <div style="position:relative;">
-                            <input type="password" id="gemini_api_key_input" name="gemini_api_key" maxlength="80"
-                                   style="padding-right:70px;"
-                                   value="" autocomplete="new-password" placeholder="<?php echo htmlspecialchars(mh_mask_secret(mh_setting('gemini_api_key', ''))); ?>">
-                            <button type="button" class="reveal-btn" onclick="mhToggleReveal('gemini_api_key_input', this)">Show</button>
-                        </div>
-                        <p class="hint">
-                            From <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>
-                            (Get API key). Starts with <code class="inline">AIzaSy</code> or <code class="inline">AQ.</code>.
-                            Stored only in the database (system_settings); it is never written to a file.
-                        </p>
-                    </div>
-                    <div class="field">
-                        <label>OCR Model</label>
-                        <select name="ocr_model">
-                            <?php
-                            $models  = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash-001'];
-                            $current = mh_setting('ocr_model', 'gemini-2.0-flash');
-                            if (!in_array($current, $models, true)) { array_unshift($models, $current); }
-                            foreach ($models as $m) {
-                                echo '<option value="' . htmlspecialchars($m) . '"'
-                                   . ($m === $current ? ' selected' : '') . '>' . htmlspecialchars($m) . '</option>';
-                            }
-                            ?>
+
+                    <!-- ── Engine selector ──────────────────────────────── -->
+                    <div class="field" style="margin-bottom:22px;">
+                        <label for="ocr_engine_select" style="font-weight:600;">Active OCR Engine</label>
+                        <select id="ocr_engine_select" name="ocr_engine" onchange="mhOcrEngineSwitch(this.value)"
+                                style="max-width:340px; padding:8px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
+                            <option value="vision" <?php echo $active_ocr_engine === 'vision' ? 'selected' : ''; ?>>
+                                Google Cloud Vision API (recommended)
+                            </option>
+                            <option value="gemini" <?php echo $active_ocr_engine === 'gemini' ? 'selected' : ''; ?>>
+                                Gemini AI API
+                            </option>
                         </select>
-                        <p class="hint">
-                            <strong>gemini-1.5-flash has been retired</strong> and now answers with HTTP 404 &mdash;
-                            that is the usual cause of "scan failed" here. Stay on
-                            <code class="inline">gemini-2.0-flash</code> unless Google announces otherwise.
-                        </p>
+                        <p class="hint">Switch at any time. The scanner modules use whichever engine is active here.</p>
                     </div>
-                    <button type="submit" name="save_ocr" class="btn btn-main">Save OCR Settings</button>
-                    <a href="?tab=ocr&amp;probe=1" class="btn btn-soft" style="text-decoration:none; display:inline-block;">Test Connection</a>
+
+                    <!-- ── Google Cloud Vision section ───────────────────── -->
+                    <div id="ocrVisionSection" style="<?php echo $active_ocr_engine !== 'vision' ? 'display:none;' : ''; ?>">
+                        <div class="field">
+                            <label>Google Cloud Vision API Key</label>
+                            <div style="position:relative;">
+                                <input type="password" id="vision_api_key_input" name="google_vision_api_key" maxlength="80"
+                                       style="padding-right:70px;"
+                                       value="" autocomplete="new-password"
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(defined('GOOGLE_VISION_API_KEY') ? GOOGLE_VISION_API_KEY : '')); ?>">
+                                <button type="button" class="reveal-btn" onclick="mhToggleReveal('vision_api_key_input', this)">Show</button>
+                            </div>
+                            <p class="hint">
+                                Google Cloud Vision API key (starts with <code class="inline">AIzaSy</code>).
+                                Leave blank to keep the existing key. Default configured in
+                                <code class="inline">config/vision.php</code>.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- ── Gemini AI section ─────────────────────────────── -->
+                    <div id="ocrGeminiSection" style="<?php echo $active_ocr_engine !== 'gemini' ? 'display:none;' : ''; ?>">
+                        <div class="field">
+                            <label>Gemini AI API Key</label>
+                            <div style="position:relative;">
+                                <input type="password" id="gemini_api_key_input" name="gemini_api_key" maxlength="80"
+                                       style="padding-right:70px;"
+                                       value="" autocomplete="new-password"
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '')); ?>">
+                                <button type="button" class="reveal-btn" onclick="mhToggleReveal('gemini_api_key_input', this)">Show</button>
+                            </div>
+                            <p class="hint">
+                                Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.
+                                Starts with <code class="inline">AIzaSy</code>. Leave blank to keep the existing key.
+                            </p>
+                        </div>
+
+                        <div class="field">
+                            <label>Gemini Model</label>
+                            <select name="ocr_model" style="max-width:280px; padding:8px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
+                                <?php
+                                $savedModel = mh_setting('ocr_model', 'gemini-2.0-flash');
+                                $geminiModels = [
+                                    'gemini-2.0-flash'      => 'Gemini 2.0 Flash (default)',
+                                    'gemini-2.5-flash'      => 'Gemini 2.5 Flash',
+                                    'gemini-flash-latest'   => 'Gemini Flash Latest',
+                                    'gemini-2.0-flash-001'  => 'Gemini 2.0 Flash 001',
+                                ];
+                                foreach ($geminiModels as $mv => $ml):
+                                ?>
+                                <option value="<?php echo htmlspecialchars($mv); ?>" <?php echo $savedModel === $mv ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($ml); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="hint">Primary model. The system automatically falls back to alternates if the primary returns 404.</p>
+                        </div>
+                    </div>
+
+                    <button type="submit" name="save_ocr" class="btn btn-main" style="margin-top:8px;">Save OCR Settings</button>
                 </form>
 
-                <?php if ($gemini_available !== null): ?>
-                    <hr class="soft-hr">
-                    <?php if ($gemini_available['success']): ?>
-                        <div class="alert alert-success">
-                            Connection OK. This key can use <?php echo count($gemini_available['models']); ?> model(s).
-                        </div>
-                        <div class="model-list">
-                            <?php foreach ($gemini_available['models'] as $m): ?>
-                                <div><?php echo htmlspecialchars($m); ?></div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <div class="alert alert-error"><?php echo htmlspecialchars($gemini_available['error']); ?></div>
-                    <?php endif; ?>
-                <?php endif; ?>
-
                 <script>
+                function mhOcrEngineSwitch(val) {
+                    document.getElementById('ocrVisionSection').style.display = val === 'vision' ? '' : 'none';
+                    document.getElementById('ocrGeminiSection').style.display = val === 'gemini' ? '' : 'none';
+                }
                 function mhToggleReveal(inputId, btn) {
                     var el = document.getElementById(inputId);
                     if (!el) { return; }
@@ -1134,25 +1200,54 @@ if ($active_tab === 'sms') {
         </div>
 
         <div class="card">
-            <header><h3>Troubleshooting Guide</h3></header>
+            <header><h3>Engine Comparison &amp; Troubleshooting</h3></header>
             <div class="body prose">
-                <p style="margin-top:0;"><strong>HTTP 404 &ndash; model not found</strong><br>
-                The model string is retired or not enabled for your key. Press <em>Test Connection</em> above
-                and pick a model that actually appears in the list.</p>
+                <table style="width:100%; border-collapse:collapse; font-size:0.88rem; margin-bottom:16px;">
+                    <thead>
+                        <tr style="background:var(--page-bg,#f1f5f9);">
+                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Feature</th>
+                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Cloud Vision</th>
+                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Gemini AI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Best for</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Printed &amp; typed forms, structured layouts</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten forms, mixed layouts, context-aware</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Speed</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Moderate (~3–8s)</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Free tier</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">1,000 units/month</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Generous free tier (RPM/TPM limits)</td>
+                        </tr>
+                        <tr>
+                            <td style="padding:7px 10px;">Key format</td>
+                            <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
+                            <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code> or <code class="inline">AQ.…</code></td>
+                        </tr>
+                    </tbody>
+                </table>
 
-                <p><strong>HTTP 401 / 403</strong><br>
-                The key is wrong, deleted, restricted to other websites, or the Generative Language API is not
-                enabled for the Cloud project. Keys always start with <code class="inline">AIzaSy</code>;
-                anything starting with <code class="inline">AQ.</code> or <code class="inline">ya29.</code> is an
-                OAuth token and will never work here.</p>
+                <p style="margin-top:0;"><strong>HTTP 401 / 403</strong><br>
+                The key is invalid, deleted, or the Cloud API is not enabled for the project.
+                Re-generate at <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> (Vision)
+                or <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a> (Gemini).</p>
 
-                <p><strong>HTTP 503 &ndash; high demand</strong><br>
-                Transient. Each scanner already retries with exponential backoff
-                (roughly 0.7s, 1.4s, 2.8s, 5.6s) and honours Google's <code class="inline">Retry-After</code>
-                header before giving up, then falls through to a backup model.</p>
+                <p><strong>HTTP 404 (Gemini only)</strong><br>
+                The configured model is retired. The system automatically falls back to alternates.
+                Switch to a newer model in the dropdown above.</p>
 
-                <p style="margin-bottom:0;"><strong>HTTP 429</strong><br>
-                Free-tier rate limit. Wait about a minute, or enable billing on the Google Cloud project.</p>
+                <p><strong>HTTP 429 &ndash; rate limit</strong><br>
+                Free-tier cap reached. Wait ~1 minute, or enable billing on the project.</p>
+
+                <p style="margin-bottom:0;"><strong>HTTP 503 &ndash; overloaded</strong><br>
+                Transient. The scanner retries with exponential backoff automatically before giving up.</p>
             </div>
         </div>
 

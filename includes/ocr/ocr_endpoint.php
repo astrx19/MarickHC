@@ -74,47 +74,38 @@ if (!function_exists('mh_ocr_preflight')) {
 
 if (!function_exists('mh_ocr_begin')) {
     /**
-     * Retry budget, Gemini client + config, API-key check, POST check and the uploaded file.
+     * Vision client + config, POST check and the uploaded file.
      * Call AFTER config/database.php, settings_helper.php and mh_require_ocr_access_json().
      *
-     * @param array $o field (upload field name), attempts, base_ms, cap_ms, timeout
+     * @param array $o field (upload field name), module
      * @return array the upload ['success'=>true,'path'=>...,'mime_type'=>...]
      */
     function mh_ocr_begin(array $o)
     {
         global $mh_ocr_module;
         $mh_ocr_module = (string) ($o['module'] ?? '');
-        // Defined BEFORE config/gemini.php, so these per-endpoint values win over its defaults.
-        if (!defined('GEMINI_MAX_ATTEMPTS'))    { define('GEMINI_MAX_ATTEMPTS',    (int) ($o['attempts'] ?? 3)); }
-        if (!defined('GEMINI_BACKOFF_BASE_MS')) { define('GEMINI_BACKOFF_BASE_MS', (int) ($o['base_ms'] ?? 700)); }
-        if (!defined('GEMINI_BACKOFF_CAP_MS'))  { define('GEMINI_BACKOFF_CAP_MS',  (int) ($o['cap_ms'] ?? 6000)); }
-        if (!defined('GEMINI_HTTP_TIMEOUT'))    { define('GEMINI_HTTP_TIMEOUT',    (int) ($o['timeout'] ?? 60)); }
 
-        require_once __DIR__ . '/GeminiOcrClient.php';
-
-        $cfg = __DIR__ . '/../../config/gemini.php';
-        if (!file_exists($cfg)) {
-            mh_ocr_json_error(
-                'The OCR configuration loader is missing on the server, so the scanner cannot read its API key. '
-                . 'Copy it from the project template and paste a key from Google AI Studio.',
-                500
-            );
-        }
-        require_once $cfg;
-
-        // Fail fast on a missing / malformed key instead of a 404 from Google seconds later.
-        if (function_exists('gemini_api_key_problem')) {
-            $problem = gemini_api_key_problem();
-            if ($problem !== null) {
-                mh_ocr_json_error($problem, 500);
-            }
-        }
+        require_once __DIR__ . '/../vision_ocr_helper.php';
+        require_once __DIR__ . '/../../config/vision.php';
 
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
             mh_ocr_json_error('Invalid request method.');
         }
 
-        $upload = gemini_ocr_get_uploaded_file($o['field']);
+        $upload = vision_ocr_get_uploaded_file($o['field']);
+        if (empty($upload['success'])) {
+            // Also try fallback field names
+            foreach (['document', 'ocr_image', 'ocr_file'] as $alt) {
+                if ($alt !== $o['field']) {
+                    $u = vision_ocr_get_uploaded_file($alt);
+                    if (!empty($u['success'])) {
+                        $upload = $u;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (empty($upload['success'])) {
             mh_ocr_json_error($upload['error'] ?? 'The file could not be uploaded.');
         }
@@ -151,14 +142,16 @@ if (!function_exists('mh_ocr_extract')) {
 }
 
 if (!function_exists('mh_ocr_normalize_dates')) {
-    /** Rewrite each listed date field as yyyy-mm-dd for <input type="date">; unparseable ones are dropped (manual entry beats a wrong date). */
+    /** Rewrite each listed date field as yyyy-mm-dd for <input type="date">; unparseable ones are dropped. */
     function mh_ocr_normalize_dates(array $fields, array $keys)
     {
         foreach ($keys as $key) {
             if (empty($fields[$key])) {
                 continue;
             }
-            $normalized = gemini_ocr_normalize_date($fields[$key]);
+            $normalized = function_exists('vision_ocr_normalize_date')
+                ? vision_ocr_normalize_date($fields[$key])
+                : (function_exists('gemini_ocr_normalize_date') ? gemini_ocr_normalize_date($fields[$key]) : '');
             if ($normalized !== '') {
                 $fields[$key] = $normalized;
             } else {
@@ -181,7 +174,9 @@ if (!function_exists('mh_ocr_take_identity')) {
         unset($fields['first_name'], $fields['last_name']);
 
         if (!empty($fields['birthdate'])) {
-            $bday = gemini_ocr_normalize_date($fields['birthdate']);
+            $bday = function_exists('vision_ocr_normalize_date')
+                ? vision_ocr_normalize_date($fields['birthdate'])
+                : (function_exists('gemini_ocr_normalize_date') ? gemini_ocr_normalize_date($fields['birthdate']) : '');
             if ($bday !== '') {
                 $identity['birthdate'] = $bday;
             }
@@ -192,24 +187,35 @@ if (!function_exists('mh_ocr_take_identity')) {
 }
 
 if (!function_exists('mh_ocr_match')) {
-    /** Existing-patient lookup (prepared statement inside gemini_ocr_match_patient). Returns the matched_patient payload or null. */
+    /** Existing-patient lookup safely wrapped in try-catch. Returns the matched_patient payload or null. */
     function mh_ocr_match(array $identity)
     {
         global $conn;
-        if ($identity['first_name'] === '' || $identity['last_name'] === '' || !($conn instanceof mysqli)) {
+        if (empty($identity['first_name']) || empty($identity['last_name']) || !($conn instanceof mysqli)) {
             return null;
         }
-        $m = gemini_ocr_match_patient($conn, $identity['first_name'], $identity['last_name'], $identity['birthdate']);
-        if (!$m) {
+        try {
+            $m = function_exists('vision_ocr_match_patient')
+                ? vision_ocr_match_patient($conn, $identity['first_name'], $identity['last_name'], $identity['birthdate'] ?? '')
+                : (function_exists('gemini_ocr_match_patient') ? gemini_ocr_match_patient($conn, $identity['first_name'], $identity['last_name'], $identity['birthdate'] ?? '') : null);
+            if (!$m) {
+                return null;
+            }
+            return [
+                'id'          => (int) $m['id'],
+                'full_name'   => $m['full_name'],
+                'first_name'  => $m['first_name'],
+                'middle_name' => $m['middle_name'] ?? '',
+                'last_name'   => $m['last_name'],
+                'birthdate'   => $m['birthdate'],
+            ];
+        } catch (Throwable $e) {
+            if (function_exists('vision_ocr_log_error')) {
+                vision_ocr_log_error('matcher', 'Exception', 'mh_ocr_match error: ' . $e->getMessage());
+            } else {
+                @error_log('[MarickHealth][OCR] mh_ocr_match error: ' . $e->getMessage());
+            }
             return null;
         }
-        return [
-            'id'          => (int) $m['id'],
-            'full_name'   => $m['full_name'],
-            'first_name'  => $m['first_name'],
-            'middle_name' => $m['middle_name'] ?? '',
-            'last_name'   => $m['last_name'],
-            'birthdate'   => $m['birthdate'],
-        ];
     }
 }

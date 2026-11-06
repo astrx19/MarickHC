@@ -129,8 +129,10 @@ function mh_setting_defaults()
         'sms_provider'          => 'semaphore', // 'semaphore' | 'android_gateway'
         'android_gateway_url'   => '',
         'android_gateway_key'   => '',
-        // ---- Gemini OCR API key (DB-backed override of config/gemini.php) --
-        'gemini_api_key'        => '',
+        // ---- OCR engine selection + API keys --------------------------
+        'ocr_engine'            => 'vision',   // 'vision' (Google Cloud Vision) | 'gemini' (Gemini AI)
+        'google_vision_api_key' => '',          // DB-backed override of config/vision.php hardcoded key
+        'gemini_api_key'        => '',          // DB-backed override of config/gemini.php
         // ---- Browser-triggered cron key (empty = browser trigger disabled, CLI only) --
         'cron_run_key'          => '',
         // ---- Jurisdiction (Address Jurisdiction masterlist rule) -----------------
