@@ -1,7 +1,7 @@
 <?php
 /**
  * =====================================================================
- * MASTER SYSTEM SETTINGS
+ * MASTER SYSTEM SETTINGSS
  * =====================================================================
  * One screen to configure, with no code editing:
  *   1. Branding    - clinic name, header text, hero copy, logo, background
