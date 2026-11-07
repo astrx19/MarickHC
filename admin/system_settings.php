@@ -1575,8 +1575,8 @@ if ($active_tab === 'sms') {
                         <?php echo mh_csrf_field(); ?>
                         <div class="field">
                             <label>Phone Number</label>
-                            <input type="text" name="test_phone_number" placeholder="09171234567" required>
-                            <p class="hint">Accepts 09XXXXXXXXX, +639XXXXXXXXX or 639XXXXXXXXX. Sent via the active provider above (<?php echo $active_provider === 'android_gateway' ? 'Android SMS Gateway' : 'Semaphore'; ?>).</p>
+                            <input type="text" name="test_phone_number" placeholder="09XXXXXXXXX" pattern="^09[0-9]{9}$" maxlength="11" title="11-digit mobile number starting with 09" required>
+                            <p class="hint">Accepts standard 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX). Sent via the active provider above (<?php echo $active_provider === 'android_gateway' ? 'Android SMS Gateway' : 'Semaphore'; ?>).</p>
                         </div>
                         <button type="submit" name="send_test_sms" class="btn btn-main btn-block">Send Test SMS Now</button>
                     </form>

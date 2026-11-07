@@ -129,6 +129,7 @@ if ($mh_post_ok && isset($_POST['add_staff'])) {
     $suffix  = trim($_POST['suffix'] ?? '');
     $bdate   = $_POST['birthdate'] ?? '';
     $contact = trim($_POST['contact_number'] ?? '');
+    $contact = mh_normalize_ph_mobile($contact);
     $email   = trim($_POST['email'] ?? '');
     $role    = (string) ($_POST['role'] ?? '');
 
@@ -137,7 +138,11 @@ if ($mh_post_ok && isset($_POST['add_staff'])) {
     list($role_ok, $role_why) = mh_delegation_check_role($role);          // may the actor hand out THIS role?
     list($caps_ok, $caps_why) = mh_delegation_check_caps($caps, []);       // ...and each extra function?
 
-    if (!array_key_exists($role, $assignable_roles)) {
+    if ($contact === '') {
+        $error_msg = "Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email)) {
+        $error_msg = "Please enter a valid email address ending strictly with .com (e.g. staff@marick.com).";
+    } elseif (!array_key_exists($role, $assignable_roles)) {
         $error_msg = "You are not allowed to create an account with that role.";
     } elseif (!$role_ok) {
         mh_staff_privilege_denied($role_why, "Tried to create a '$role' account beyond their own permissions.");
@@ -196,6 +201,7 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
     $suffix   = trim($_POST['suffix'] ?? '');
     $bdate    = $_POST['birthdate'] ?? '';
     $contact  = trim($_POST['contact_number'] ?? '');
+    $contact  = mh_normalize_ph_mobile($contact);
     $email    = trim($_POST['email'] ?? '');
     $posted_role = (string) ($_POST['role'] ?? '');
     $username = trim($_POST['username'] ?? '');
@@ -212,7 +218,11 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
     $current_caps = [];
     if ($target) { foreach ($cap_cols_ready as $c) { $current_caps[$c] = ($target[$c] === null) ? null : (int) $target[$c]; } }
 
-    if (!$target) {
+    if ($contact === '') {
+        $error_msg = "Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email)) {
+        $error_msg = "Please enter a valid email address ending strictly with .com (e.g. staff@marick.com).";
+    } elseif (!$target) {
         $error_msg = "That staff account no longer exists.";
     } elseif (mh_is_admin_tier($target['role']) && !$viewer_is_super && !$is_self) {
         $error_msg = "Only a Health Head can modify Admin or Health Head accounts.";
@@ -659,12 +669,12 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
                                 
                                 <div class="form-group">
                                     <label>Contact No. <span style="color:red;">*</span></label>
-                                    <input type="tel" name="contact_number" required value="+63" maxlength="13" pattern="^\+63[0-9]{10}$" placeholder="+639123456789" oninput="this.value = this.value.replace(/[^0-9+]/g, ''); if(this.value.length < 3) this.value = '+63';">
+                                    <input type="tel" name="contact_number" required maxlength="11" pattern="^09[0-9]{9}$" placeholder="09XXXXXXXXX" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11);">
                                 </div>
 
                                 <div class="form-group full-width">
                                     <label>Email Address <span style="color:red;">*</span></label>
-                                    <input type="email" name="email" required placeholder="staff@marick.com">
+                                    <input type="email" name="email" required pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com (e.g. staff@marick.com)" placeholder="staff@marick.com">
                                 </div>
                                 <p style="grid-column: 1 / -1; margin: -6px 0 0; font-size: 0.82rem; color: var(--text-muted, #64748b);">
                                     A login username and temporary password are generated automatically once you click Create Account below.
@@ -734,12 +744,12 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
                     
                     <div class="form-group">
                         <label>Contact No. <span style="color:red;">*</span></label>
-                        <input type="tel" name="contact_number" id="edit_contact" required value="+63" maxlength="13" pattern="^\+63[0-9]{10}$" oninput="this.value = this.value.replace(/[^0-9+]/g, ''); if(this.value.length < 3) this.value = '+63';" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="tel" name="contact_number" id="edit_contact" required maxlength="11" pattern="^09[0-9]{9}$" placeholder="09XXXXXXXXX" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11);" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
 
                     <div class="form-group full-width">
                         <label>Email Address <span style="color:red;">*</span></label>
-                        <input type="email" name="email" id="edit_email" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="email" name="email" id="edit_email" required pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com (e.g. staff@marick.com)" placeholder="staff@marick.com" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
 
                     <div class="form-group full-width">
@@ -895,12 +905,13 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
             document.querySelectorAll('#edit_cap_box input[data-cap]').forEach(cb => { if (d.self) cb.disabled = true; });
             document.getElementById('edit_cap_box').classList.toggle('is-locked', !!d.self || document.getElementById('edit_cap_box').classList.contains('is-locked'));
 
-            let safeContact = d.contact;
-            if (safeContact && safeContact.startsWith('0')) {
-                safeContact = '+63' + safeContact.substring(1);
-            } else if (!safeContact || !safeContact.startsWith('+63')) {
-                safeContact = '+63' + (safeContact || '');
+            let safeContact = d.contact || '';
+            if (safeContact.startsWith('+63')) {
+                safeContact = '0' + safeContact.substring(3);
+            } else if (safeContact.startsWith('63')) {
+                safeContact = '0' + safeContact.substring(2);
             }
+            safeContact = safeContact.replace(/[^0-9]/g, '').slice(0, 11);
             document.getElementById('edit_contact').value = safeContact;
 
             document.getElementById('editStaffModal').classList.add('active');

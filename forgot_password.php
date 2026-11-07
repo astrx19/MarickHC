@@ -90,7 +90,7 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
         <div class="pr-field">
             <label for="identifier"><?php echo $scope === 'staff' ? 'Staff Username or Email Address' : 'Patient Username or Email Address'; ?></label>
             <input type="text" id="identifier" name="identifier" required maxlength="100" autofocus
-                   placeholder="<?php echo $scope === 'staff' ? 'e.g. staff_username or staff@marick.gov.ph' : 'e.g. juandelacruz or your@email.com'; ?>">
+                   placeholder="<?php echo $scope === 'staff' ? 'e.g. staff_username or staff@marick.com' : 'e.g. juandelacruz or your@email.com'; ?>">
         </div>
         <button type="submit" class="pr-btn">Continue</button>
     </form>

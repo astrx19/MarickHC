@@ -124,6 +124,7 @@ function mh_pr_valid_email($email)
 {
     $email = trim((string) $email);
     if ($email === '' || strlen($email) > 100 || preg_match('/[\r\n,;<>\s]/', $email)) { return false; }
+    if (!preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email)) { return false; }
     return (bool) filter_var($email, FILTER_VALIDATE_EMAIL) && !preg_match('/\.local$/i', $email);
 }
 

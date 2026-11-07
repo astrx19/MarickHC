@@ -44,13 +44,17 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return $rows;
     }
 
-    /** "0912 345 6789", "+63 912..." or "09123456789" -> "+639123456789"; null when it is not a PH mobile number. */
+    /** "0912 345 6789", "+63 912..." or "09123456789" -> "09123456789"; null when it is not a PH mobile number. */
     function mh_pc_normalize_mobile($raw)
     {
-        $d = preg_replace('/[^0-9+]/', '', (string) $raw);
-        if (preg_match('/^\+63(9[0-9]{9})$/', $d, $m)) { return '+63' . $m[1]; }
-        if (preg_match('/^63(9[0-9]{9})$/', $d, $m))   { return '+63' . $m[1]; }
-        if (preg_match('/^0(9[0-9]{9})$/', $d, $m))    { return '+63' . $m[1]; }
+        if (function_exists('mh_normalize_ph_mobile')) {
+            $n = mh_normalize_ph_mobile($raw);
+            return $n !== '' ? $n : null;
+        }
+        $d = preg_replace('/[^0-9]/', '', (string) $raw);
+        if (strlen($d) === 12 && substr($d, 0, 2) === '63' && substr($d, 2, 1) === '9') { return '0' . substr($d, 2); }
+        if (strlen($d) === 10 && substr($d, 0, 1) === '9') { return '0' . $d; }
+        if (strlen($d) === 11 && substr($d, 0, 2) === '09') { return $d; }
         return null;
     }
 
@@ -65,7 +69,7 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
 
         if ($name === '' || mb_strlen($name) > 100)            { return 'Enter the contact person\'s name (up to 100 characters).'; }
         if (mb_strlen($relationship) > 50)                      { return 'The relationship is too long (50 characters at most).'; }
-        if ($mobile === null)                                   { return 'Enter a valid mobile number, e.g. 09123456789 or +639123456789.'; }
+        if ($mobile === null)                                   { return 'Enter an 11-digit mobile number starting with 09 (e.g. 09XXXXXXXXX).'; }
 
         $cnt = $conn->prepare("SELECT COUNT(*) AS n FROM patient_contacts WHERE patient_id = ?");
         $cnt->bind_param('i', $patientId);

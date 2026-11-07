@@ -161,7 +161,7 @@ function mh_mailer_status()
 function mh_send_email_test($to)
 {
     $to = trim((string) $to);
-    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) { return ['success' => false, 'error' => 'Enter a valid email address.', 'method' => '', 'transcript' => []]; }
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $to)) { return ['success' => false, 'error' => 'Enter a valid email address ending strictly with .com.', 'method' => '', 'transcript' => []]; }
     $html = '<p>This is a test message from <strong>' . htmlspecialchars((string) MAIL_FROM_NAME) . '</strong>. If you can read it, password-reset emails will arrive too.</p>';
     $text = 'This is a test message from ' . MAIL_FROM_NAME . '. If you can read it, password-reset emails will arrive too.';
     $subject = 'Test email - ' . MAIL_FROM_NAME;
@@ -186,8 +186,8 @@ function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
     $to = trim((string) $to);
     // One recipient, no CR/LF/commas (header injection), sane length. Checked BEFORE PHPMailer sees it,
     // so a bad address can never turn into an exception message or a stray SMTP error.
-    if ($to === '' || strlen($to) > 254 || preg_match('/[\r\n,;<>\s]/', $to) || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        return ['success' => false, 'error' => 'Not a valid email address.'];
+    if ($to === '' || strlen($to) > 254 || preg_match('/[\r\n,;<>\s]/', $to) || !filter_var($to, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $to)) {
+        return ['success' => false, 'error' => 'Not a valid email address (must end strictly with .com).'];
     }
     if (!defined('MAIL_FROM_ADDRESS')) {
         return ['success' => false, 'error' => 'config/mail.php was not loaded (MAIL_FROM_ADDRESS is undefined).'];

@@ -56,35 +56,42 @@ if(isset($_POST['update_profile']) && mh_is_admin_tier()){
     $mname   = trim((string) ($_POST['middle_name'] ?? ''));
     $suffix  = trim((string) ($_POST['suffix'] ?? ''));
     $bdate   = (string) ($_POST['birthdate'] ?? '');
-    $contact = trim((string) ($_POST['contact_number'] ?? ''));
-    $email   = trim((string) ($_POST['email'] ?? ''));
+    $contact_raw = trim((string) ($_POST['contact_number'] ?? ''));
+    $contact = function_exists('mh_normalize_ph_mobile') ? mh_normalize_ph_mobile($contact_raw) : $contact_raw;
+    $email   = strtolower(trim((string) ($_POST['email'] ?? '')));
     
-    $st = $conn->prepare("SELECT id FROM staff WHERE email = ? AND id <> ?");
-    $st->bind_param('si', $email, $user_id);
-    $st->execute();
-    $email_taken = $st->get_result()->num_rows > 0;
-    $st->close();
-    if($email_taken){
-        $error_msg = "That email address is already in use by another account.";
+    if ($contact === '') {
+        $error_msg = "Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email)) {
+        $error_msg = "Please enter a valid email address ending strictly with .com (e.g. user@example.com).";
     } else {
-        $st = $conn->prepare("UPDATE staff SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?,
-                              birthdate = ?, contact_number = ?, email = ? WHERE id = ?");
-        $st->bind_param('sssssssi', $fname, $lname, $mname, $suffix, $bdate, $contact, $email, $user_id);
-        $ok = $st->execute();
+        $st = $conn->prepare("SELECT id FROM staff WHERE email = ? AND id <> ?");
+        $st->bind_param('si', $email, $user_id);
+        $st->execute();
+        $email_taken = $st->get_result()->num_rows > 0;
         $st->close();
-        
-        if($ok){
-            $success_msg = "Personal details updated successfully!";
-            logActivity($conn, $user_id, $_SESSION['role'], "Profile Update", "Updated personal account details.");
-            
-            $st = $conn->prepare("SELECT * FROM staff WHERE id = ?");
-            $st->bind_param('i', $user_id);
-            $st->execute();
-            $staff_data = $st->get_result()->fetch_assoc();
-            $st->close();
-            $staff_name = $staff_data['first_name'] . ' ' . $staff_data['last_name'];
+        if($email_taken){
+            $error_msg = "That email address is already in use by another account.";
         } else {
-            $error_msg = "Error updating profile. Please try again.";
+            $st = $conn->prepare("UPDATE staff SET first_name = ?, last_name = ?, middle_name = ?, suffix = ?,
+                                  birthdate = ?, contact_number = ?, email = ? WHERE id = ?");
+            $st->bind_param('sssssssi', $fname, $lname, $mname, $suffix, $bdate, $contact, $email, $user_id);
+            $ok = $st->execute();
+            $st->close();
+            
+            if($ok){
+                $success_msg = "Personal details updated successfully!";
+                logActivity($conn, $user_id, $_SESSION['role'], "Profile Update", "Updated personal account details.");
+                
+                $st = $conn->prepare("SELECT * FROM staff WHERE id = ?");
+                $st->bind_param('i', $user_id);
+                $st->execute();
+                $staff_data = $st->get_result()->fetch_assoc();
+                $st->close();
+                $staff_name = $staff_data['first_name'] . ' ' . $staff_data['last_name'];
+            } else {
+                $error_msg = "Error updating profile. Please try again.";
+            }
         }
     }
 }
@@ -310,12 +317,20 @@ if (isset($_POST['change_password'])) {
                     
                     <div class="form-group">
                         <label>Contact No. *</label>
-                        <input type="tel" name="contact_number" value="<?php echo htmlspecialchars($staff_data['contact_number'] ?? '+63'); ?>" required maxlength="13" pattern="^\+63[0-9]{10}$" oninput="this.value = this.value.replace(/[^0-9+]/g, ''); if(this.value.length < 3) this.value = '+63';" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <?php
+                            $cur_contact = $staff_data['contact_number'] ?? '';
+                            if (strpos($cur_contact, '+63') === 0) {
+                                $cur_contact = '0' . substr($cur_contact, 3);
+                            } elseif (strpos($cur_contact, '63') === 0) {
+                                $cur_contact = '0' . substr($cur_contact, 2);
+                            }
+                        ?>
+                        <input type="tel" name="contact_number" value="<?php echo htmlspecialchars($cur_contact); ?>" required maxlength="11" pattern="^09[0-9]{9}$" placeholder="09XXXXXXXXX" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11);" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
 
                     <div class="form-group" style="grid-column: 1 / -1; margin-bottom: 20px;">
                         <label>Email Address *</label>
-                        <input type="email" name="email" value="<?php echo htmlspecialchars($staff_data['email']); ?>" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="email" name="email" value="<?php echo htmlspecialchars($staff_data['email']); ?>" required pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com (e.g. user@example.com)" placeholder="user@example.com" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
                 </div>
                 

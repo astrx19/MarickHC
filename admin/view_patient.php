@@ -215,7 +215,7 @@ $HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show
                                 <input type="text" name="relationship" maxlength="50" list="relOptions" placeholder="e.g., Daughter / Mother / Guardian">
                                 <datalist id="relOptions"><option value="Parent"><option value="Son / Daughter"><option value="Spouse"><option value="Sibling"><option value="Guardian"><option value="Relative"><option value="Neighbor"></datalist></div>
                             <div class="form-group" style="margin:0;"><label>Mobile number</label>
-                                <input type="tel" name="contact_number" required maxlength="16" inputmode="tel" placeholder="09123456789 or +639123456789"></div>
+                                <input type="tel" name="contact_number" required maxlength="11" pattern="^09[0-9]{9}$" inputmode="numeric" placeholder="09XXXXXXXXX" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11)"></div>
                             <button type="submit" name="add_contact" class="btn-submit btn-sm">Add contact</button>
                         </form>
                         <?php endif; ?>

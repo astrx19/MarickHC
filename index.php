@@ -138,7 +138,7 @@ $marick_streets = mh_streets($conn);
                             </div>
                         </div>
 
-                        <div class="form-group"><label>Contact Number <span style="color:red;">*</span></label><input type="tel" id="mobile" name="contact_number" required value="+63" maxlength="13" inputmode="tel" placeholder="+639123456789" oninput="this.value = this.value.replace(/[^0-9+]/g, '')"></div>
+                        <div class="form-group"><label>Contact Number <span style="color:red;">*</span></label><input type="tel" id="mobile" name="contact_number" required maxlength="11" pattern="^09[0-9]{9}$" inputmode="numeric" placeholder="09XXXXXXXXX" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11)"></div>
 
                         <div class="form-group"><label>PhilHealth No. (Optional)</label><input type="text" id="philhealth" name="philhealth_no" inputmode="numeric" maxlength="12" data-mh-digits="12" autocomplete="off" placeholder="12 digits, numbers only"></div>
                         <div class="form-group" style="grid-column: 1 / -1; border-top: 1px dashed #cbd5e1; padding-top: 10px;"><label>Family No. (Optional)</label><input type="text" name="family_no" placeholder="If known"></div>
@@ -148,7 +148,7 @@ $marick_streets = mh_streets($conn);
 
                 <div id="step2" style="display: none;">
                     <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                        <div class="form-group" style="grid-column: 1 / -1;"><label>Email Address <span style="color:red;">*</span></label><input type="email" name="email" required placeholder="For verification & password recovery"></div>
+                        <div class="form-group" style="grid-column: 1 / -1;"><label>Email Address <span style="color:red;">*</span></label><input type="email" name="email" required pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com (e.g. user@example.com)" placeholder="user@example.com"></div>
                         <div class="form-group" style="grid-column: 1 / -1;"><label>Username <span style="color:red;">*</span></label><input type="text" name="username" id="regUsername" required minlength="4" maxlength="50" pattern="[A-Za-z0-9._-]{4,50}" title="4-50 characters: letters, numbers, dots, underscores or hyphens" placeholder="Used to log in - no spaces" autocomplete="username"></div>
                         <div class="form-group"><label>Create Password <span style="color:red;">*</span></label><input type="password" id="regPwd" name="password" required placeholder="Min 8 characters"></div>
                         <div class="form-group"><label>Confirm Password <span style="color:red;">*</span></label><input type="password" id="regConfirmPwd" name="confirm_password" required placeholder="Type again"></div>

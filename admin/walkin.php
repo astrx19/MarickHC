@@ -114,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_walkin'])) {
             } elseif (!in_array($sex, ['Male', 'Female'], true)) {
                 $error_msg = "Please select the patient's sex.";
             } elseif ($contact_norm === '') {
-                $error_msg = "Please enter a valid Philippine mobile number (e.g. 09171234567 or +639171234567).";
+                $error_msg = "Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).";
             }
 
             $address = '';
@@ -135,16 +135,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_walkin'])) {
 
             // Email is OPTIONAL. Only its FORMAT is checked here; whether it is already used is
             // decided (together with the name/birthdate/mobile checks) inside the transaction below.
+            // Strict email validation: must end strictly with .com
             $real_email = strtolower(trim($_POST['email'] ?? ''));
-            if ($error_msg === '' && $real_email !== '' && (!filter_var($real_email, FILTER_VALIDATE_EMAIL) || strlen($real_email) > 100)) {
-                $error_msg = "Please enter a valid email address, or leave it blank.";
+            if ($error_msg === '' && $real_email !== '' && (!filter_var($real_email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $real_email) || strlen($real_email) > 100)) {
+                $error_msg = "Please enter a valid email address ending strictly with .com, or leave it blank.";
             }
             if ($error_msg === '') {
                 // No email given: placeholder so the NOT NULL UNIQUE column is satisfied (never mailed).
                 $email = ($real_email !== '') ? $real_email
                        : preg_replace('/[^a-z0-9]/', '', strtolower($fname)) . '.' . preg_replace('/[^a-z0-9]/', '', strtolower($lname))
                          . '.' . bin2hex(random_bytes(4)) . '@walkin.local';
-                $contact = '+63' . substr($contact_norm, 1);   // stored the same way as existing records (+639XXXXXXXXX)
+                $contact = $contact_norm;   // stored as standard 09XXXXXXXXX format
                 $new_patient = compact('fname', 'mname', 'lname', 'bdate', 'sex', 'contact', 'contact_norm', 'address_type', 'address', 'email', 'real_email');
             }
         }
@@ -320,11 +321,11 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
                             </select>
                         </div>
                         
-                        <div class="form-group" style="grid-column: 1 / -1;"><label>Contact Number <span style="color:red;">*</span></label><input type="tel" name="contact_number" id="req_contact" value="+63" maxlength="13" oninput="this.value = this.value.replace(/[^0-9+]/g, '')" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
+                        <div class="form-group" style="grid-column: 1 / -1;"><label>Contact Number <span style="color:red;">*</span></label><input type="tel" name="contact_number" id="req_contact" placeholder="09XXXXXXXXX" maxlength="11" pattern="^09[0-9]{9}$" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11)" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;"></div>
                         
                         <div class="form-group" style="grid-column: 1 / -1;">
                             <label>Email Address <span style="color:#94a3b8; font-weight:normal;">(Optional - for Patient Portal access)</span></label>
-                            <input type="email" name="email" id="req_email" placeholder="patient@email.com" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                            <input type="email" name="email" id="req_email" placeholder="patient@email.com" pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
                         </div>
 
                         <?php if ($dup && $dup['level'] === 'confirm'): ?>

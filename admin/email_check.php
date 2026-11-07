@@ -80,7 +80,7 @@ input[type=email]{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;wi
 <form method="POST" class="box">
     <?php echo mh_csrf_field(); ?>
     <label for="to"><strong>Send to</strong> (your own address, e.g. your Gmail):</label><br>
-    <input type="email" id="to" name="to" required value="<?php echo $h($sent_to); ?>" placeholder="you@gmail.com">
+    <input type="email" id="to" name="to" required pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com (e.g. you@gmail.com)" value="<?php echo $h($sent_to); ?>" placeholder="you@gmail.com">
     <button type="submit" name="send_test" value="1">Send test email</button>
 </form>
 

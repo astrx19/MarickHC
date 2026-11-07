@@ -288,7 +288,8 @@ if (isset($_POST['register_patient'])) {
     if ($philhealth_clean !== '' && !preg_match('/^[0-9]{12}$/', $philhealth_clean)) {
         claim_go('index.php?reg_status=error_philhealth');
     }
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    // Strict email validation: must end strictly with .com
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email)) {
         claim_go('index.php?reg_status=error_email');
     }
     if ($username === '' || !preg_match('/^[A-Za-z0-9._-]{4,50}$/', $username) || !mh_username_available($conn, $username)) {
@@ -346,7 +347,11 @@ if (isset($_POST['register_patient'])) {
     }
 
     // ---- Brand-new patient: plain registration ---------------------------------------
-    $contact  = trim($_POST['contact_number'] ?? '');
+    $contact_raw = trim($_POST['contact_number'] ?? '');
+    $contact = mh_normalize_ph_mobile($contact_raw);
+    if ($contact === '') {
+        claim_go('index.php?reg_status=error_phone');
+    }
     $sex      = trim($_POST['sex'] ?? '');
     $philhealth = $philhealth_clean;   // validated above: '' or exactly 12 digits
     $family   = trim($_POST['family_no'] ?? '');

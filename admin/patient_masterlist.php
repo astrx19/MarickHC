@@ -44,21 +44,28 @@ if(isset($_POST['update_patient'])) {
     $first_name = trim((string) ($_POST['first_name'] ?? ''));
     $last_name  = trim((string) ($_POST['last_name'] ?? ''));
     $dob        = (string) ($_POST['birthdate'] ?? ($_POST['date_of_birth'] ?? ''));
-    $contact    = trim((string) ($_POST['contact_number'] ?? ''));
-    $email      = trim((string) ($_POST['email'] ?? ''));
+    $contact_raw = trim((string) ($_POST['contact_number'] ?? ''));
+    $contact    = function_exists('mh_normalize_ph_mobile') ? mh_normalize_ph_mobile($contact_raw) : $contact_raw;
+    $email      = strtolower(trim((string) ($_POST['email'] ?? '')));
     $address    = trim((string) ($_POST['address'] ?? ''));
 
-    $stmt = $conn->prepare("UPDATE patients SET first_name = ?, last_name = ?, birthdate = ?,
-                                   contact_number = ?, email = ?, address = ? WHERE id = ?");
-    $stmt->bind_param('ssssssi', $first_name, $last_name, $dob, $contact, $email, $address, $edit_id);
-    $ok = $stmt->execute();
-    $stmt->close();
-
-    if($ok) {
-        $success_msg = "Patient information updated successfully!";
-        logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Updated Patient", "Edited details for Patient ID $edit_id.");
+    if ($contact === '') {
+        $error_msg = "Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).";
+    } elseif ($email !== '' && (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email))) {
+        $error_msg = "Please enter a valid email address ending strictly with .com (e.g. user@example.com).";
     } else {
-        $error_msg = "Error updating patient: " . $conn->error;
+        $stmt = $conn->prepare("UPDATE patients SET first_name = ?, last_name = ?, birthdate = ?,
+                                       contact_number = ?, email = ?, address = ? WHERE id = ?");
+        $stmt->bind_param('ssssssi', $first_name, $last_name, $dob, $contact, $email, $address, $edit_id);
+        $ok = $stmt->execute();
+        $stmt->close();
+
+        if($ok) {
+            $success_msg = "Patient information updated successfully!";
+            logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Updated Patient", "Edited details for Patient ID $edit_id.");
+        } else {
+            $error_msg = "Error updating patient: " . $conn->error;
+        }
     }
 }
 
@@ -255,15 +262,16 @@ $patients_result = $conn->query($query);
                     </div>
                     <div class="form-group">
                         <label>Contact Number</label>
-                        <input type="tel" name="contact_number" id="edit_contact" required maxlength="13" pattern="^\+63[0-9]{10}$" 
-                               title="Must start with +63 followed by exactly 10 digits" 
-                               oninput="if(!this.value.startsWith('+63')){ this.value='+63'; } this.value = '+63' + this.value.substring(3).replace(/[^0-9]/g, '');">
+                        <input type="tel" name="contact_number" id="edit_contact" required maxlength="11" pattern="^09[0-9]{9}$" 
+                               placeholder="09XXXXXXXXX"
+                               title="Must be an 11-digit mobile number starting with 09" 
+                               oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11);">
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>Email Address</label>
-                    <input type="email" name="email" id="edit_email">
+                    <input type="email" name="email" id="edit_email" pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com (e.g. user@example.com)" placeholder="user@example.com">
                 </div>
 
                 <div class="form-group">
@@ -305,7 +313,13 @@ $patients_result = $conn->query($query);
             document.getElementById('edit_fname').value = button.getAttribute('data-fname');
             document.getElementById('edit_lname').value = button.getAttribute('data-lname');
             document.getElementById('edit_bdate').value = button.getAttribute('data-bdate');
-            document.getElementById('edit_contact').value = button.getAttribute('data-contact');
+            var rawContact = button.getAttribute('data-contact') || '';
+            if (rawContact.startsWith('+63')) {
+                rawContact = '0' + rawContact.substring(3);
+            } else if (rawContact.startsWith('63')) {
+                rawContact = '0' + rawContact.substring(2);
+            }
+            document.getElementById('edit_contact').value = rawContact.replace(/[^0-9]/g, '').slice(0, 11);
             document.getElementById('edit_email').value = button.getAttribute('data-email');
             document.getElementById('edit_address').value = button.getAttribute('data-address');
             

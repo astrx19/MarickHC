@@ -67,7 +67,7 @@ function mhRegStep1Errors() {
     if (!b.value) { need(b, 'Birthdate', 'is required.'); }
     else { var bp = window.mhBirthdateProblem ? window.mhBirthdateProblem(b.value) : ''; if (bp) { need(b, 'Birthdate', bp); } }
     if (!document.querySelector('#regForm input[name="sex"]:checked')) { need(sex, 'Biological Sex', 'please choose Male or Female.'); }
-    if (!/^\+63[0-9]{10}$/.test(m.value.trim())) { need(m, 'Contact Number', 'must be +63 followed by 10 digits (e.g. +639123456789).'); }
+    if (!/^09[0-9]{9}$/.test(m.value.trim())) { need(m, 'Contact Number', 'must be an 11-digit mobile number starting with 09 (e.g. 09XXXXXXXXX).'); }
     if (ph && ph.value !== '' && !/^[0-9]{12}$/.test(ph.value)) { need(ph, 'PhilHealth No.', 'must be exactly 12 digits (numbers only), or leave it blank.'); }
     return errs;
 }
@@ -80,7 +80,7 @@ function mhRegStep2Errors() {
 
     var email = form.querySelector('input[name="email"]'), user = $('regUsername'), pw = $('regPwd'), cf = $('regConfirmPwd');
     var type = $('regAddressType');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.value.trim())) { need(email, 'Email Address', 'enter a valid email, e.g. name@example.com.'); }
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i.test(email.value.trim())) { need(email, 'Email Address', 'must be a valid email ending strictly with .com (e.g. name@example.com).'); }
     if (!/^[A-Za-z0-9._-]{4,50}$/.test(user.value.trim())) { need(user, 'Username', 'use 4-50 letters, numbers, dots, underscores or hyphens.'); }
     if (pw.value.length < 8) { need(pw, 'Create Password', 'must be at least 8 characters.'); }
     else if (pw.value.length > 72) { need(pw, 'Create Password', 'must be 72 characters or fewer.'); }
@@ -154,7 +154,7 @@ async function closeRegisterModal() {
     if (form) {
         Array.prototype.forEach.call(form.querySelectorAll('input:not([type=hidden]):not([type=radio]):not([type=checkbox]), select'), function (el) {
             var v = String(el.value || '').trim();
-            if (v !== '' && v !== '+63' && !(el.tagName === 'SELECT' && el.selectedIndex === 0)) { dirty = true; }
+            if (v !== '' && !(el.tagName === 'SELECT' && el.selectedIndex === 0)) { dirty = true; }
         });
         if (form.querySelector('input[type=radio]:checked')) { dirty = true; }
     }

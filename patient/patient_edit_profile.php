@@ -13,17 +13,21 @@ $patient_id = (int)$_SESSION['patient_id'];
 $success_msg = ''; $error_msg = '';
 
 if (isset($_POST['update_profile'])) {
-    $contact      = trim($_POST['contact_number'] ?? '');
+    $contact_raw  = trim($_POST['contact_number'] ?? '');
+    $contact      = function_exists('mh_normalize_ph_mobile') ? mh_normalize_ph_mobile($contact_raw) : $contact_raw;
     $address_type = $_POST['address_type'] ?? mh_home_address_type();
 
-    if (!mh_masterlist_has($conn, 'address_types', $address_type)) { $address_type = mh_home_address_type(); }
-    if (mh_is_marick_resident($address_type)) {
-        $house  = trim($_POST['house_number'] ?? '');
-        $street = trim($_POST['marick_street'] ?? '');
-        $address = mh_build_resident_address($house, $street);   // suffix comes from System Settings
+    if ($contact === '') {
+        $error_msg = 'Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).';
     } else {
-        $address = trim($_POST['outsider_address'] ?? '');
-    }
+        if (!mh_masterlist_has($conn, 'address_types', $address_type)) { $address_type = mh_home_address_type(); }
+        if (mh_is_marick_resident($address_type)) {
+            $house  = trim($_POST['house_number'] ?? '');
+            $street = trim($_POST['marick_street'] ?? '');
+            $address = mh_build_resident_address($house, $street);   // suffix comes from System Settings
+        } else {
+            $address = trim($_POST['outsider_address'] ?? '');
+        }
 
     // ---- Password section FIRST: if it is wrong, nothing at all is changed ----
     $current_password = (string) ($_POST['current_password'] ?? '');
@@ -68,6 +72,7 @@ if (isset($_POST['update_profile'])) {
         }
     }
 }
+}
 
 $patient = mh_pp_patient($conn, $patient_id);
 if (!$patient) {
@@ -110,7 +115,15 @@ mh_pp_layout_start([
             <form method="POST">
                 <div class="form-group">
                     <label>Contact Number <span class="required">*</span></label>
-                    <input type="tel" name="contact_number" value="<?php echo mh_pp_e($patient['contact_number'] ?? '+63'); ?>" required maxlength="13" oninput="this.value = this.value.replace(/[^0-9+]/g, '')">
+                    <?php
+                        $p_contact = $patient['contact_number'] ?? '';
+                        if (strpos($p_contact, '+63') === 0) {
+                            $p_contact = '0' . substr($p_contact, 3);
+                        } elseif (strpos($p_contact, '63') === 0) {
+                            $p_contact = '0' . substr($p_contact, 2);
+                        }
+                    ?>
+                    <input type="tel" name="contact_number" value="<?php echo mh_pp_e($p_contact); ?>" required maxlength="11" pattern="^09[0-9]{9}$" placeholder="09XXXXXXXXX" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11)">
                 </div>
 
                 <div class="form-group">
