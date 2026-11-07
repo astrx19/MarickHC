@@ -224,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['save_ocr'])) {
         // ---- Engine selector ----------------------------------------
         $ocrEngine = trim($_POST['ocr_engine'] ?? 'vision');
-        if (!in_array($ocrEngine, ['vision', 'gemini', 'aws_textract'], true)) { $ocrEngine = 'vision'; }
+        if (!in_array($ocrEngine, ['vision', 'gemini', 'aws_textract', 'groq_ocr'], true)) { $ocrEngine = 'vision'; }
 
         // ---- Google Cloud Vision key --------------------------------
         $visionKey = trim($_POST['google_vision_api_key'] ?? '');
@@ -244,6 +244,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($geminiKey !== '' && preg_match('/\s/', $geminiKey)) {
             mh_redirect('ocr', 'error', 'The Gemini API key contains a space or line break. Re-paste it as a single line.');
+        }
+
+        // ---- Groq API key -------------------------------------------
+        $groqKey = trim($_POST['groq_api_key'] ?? '');
+        if ($groqKey === '') {
+            // Keep the currently-saved key (never echoed back to the form)
+            $groqKey = (string) mh_setting('groq_api_key', '');
+        }
+        if ($groqKey !== '' && preg_match('/\s/', $groqKey)) {
+            mh_redirect('ocr', 'error', 'The Groq API key contains a space or line break. Re-paste it as a single line.');
         }
 
         // ---- AWS Textract credentials -------------------------------
@@ -276,6 +286,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'ocr_engine'            => $ocrEngine,
             'google_vision_api_key' => $visionKey,
             'gemini_api_key'        => $geminiKey,
+            'groq_api_key'          => $groqKey,
             'aws_access_key_id'     => $awsAccessKey,
             'aws_secret_access_key' => $awsSecretKey,
             'aws_region'            => $awsRegion,
@@ -287,6 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'gemini'       => 'Gemini AI',
             'vision'       => 'Google Cloud Vision',
             'aws_textract' => 'AWS Textract',
+            'groq_ocr'     => 'Groq OCR',
         ];
         $engineLabel = $engineLabels[$ocrEngine] ?? 'Google Cloud Vision';
         logActivity($conn, $user_id, $user_role, 'System Settings', 'OCR engine set to: ' . $engineLabel . '. Credentials updated.');
@@ -500,6 +512,7 @@ $system_name = mh_setting('system_name');
 $vision_key_problem  = null;
 $gemini_key_problem  = null;
 $aws_textract_problem = null;
+$groq_key_problem    = null;
 $active_ocr_engine   = 'vision';
 if ($active_tab === 'ocr') {
     require_once __DIR__ . '/../config/vision.php';
@@ -519,6 +532,14 @@ if ($active_tab === 'ocr') {
         $gemini_key_problem = 'The Gemini AI API key has not been configured yet.';
     } elseif (strpos($gk, 'AIzaSy') !== 0 && strpos($gk, 'AQ.') !== 0) {
         $gemini_key_problem = 'The saved Gemini key does not look like a valid key (should start with "AIzaSy" or "AQ.").';
+    }
+
+    // Groq key validation (read live from system_settings - same source the scanner uses)
+    $grk = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : (string) mh_setting('groq_api_key', '');
+    if ($grk === '') {
+        $groq_key_problem = 'The Groq API key has not been configured yet.';
+    } elseif (strpos($grk, 'gsk_') !== 0) {
+        $groq_key_problem = 'The saved Groq key does not look valid (should start with "gsk_").';
     }
 
     // AWS Textract credentials validation
@@ -1118,11 +1139,15 @@ if ($active_tab === 'sms') {
         'vision'       => 'Google Cloud Vision API',
         'gemini'       => 'Gemini AI API',
         'aws_textract' => 'Amazon Textract (AWS)',
+        'groq_ocr'     => 'Groq OCR (qwen/qwen3.8-27b)',
     ];
     $ocr_engine_label = $engineLabels[$active_ocr_engine] ?? 'Google Cloud Vision API';
     if ($active_ocr_engine === 'gemini') {
         $ocr_engine_ok  = ($gemini_key_problem === null);
         $ocr_key_notice = $gemini_key_problem;
+    } elseif ($active_ocr_engine === 'groq_ocr') {
+        $ocr_engine_ok  = ($groq_key_problem === null);
+        $ocr_key_notice = $groq_key_problem;
     } elseif ($active_ocr_engine === 'aws_textract') {
         $ocr_engine_ok  = ($aws_textract_problem === null);
         $ocr_key_notice = $aws_textract_problem;
@@ -1168,6 +1193,9 @@ if ($active_tab === 'sms') {
                             </option>
                             <option value="aws_textract" <?php echo $active_ocr_engine === 'aws_textract' ? 'selected' : ''; ?>>
                                 AWS Textract (Amazon Web Services)
+                            </option>
+                            <option value="groq_ocr" <?php echo $active_ocr_engine === 'groq_ocr' ? 'selected' : ''; ?>>
+                                Groq OCR (Qwen vision AI)
                             </option>
                         </select>
                         <p class="hint">Switch at any time. The scanner modules use whichever engine is active here.</p>
@@ -1228,6 +1256,25 @@ if ($active_tab === 'sms') {
                                 <?php endforeach; ?>
                             </select>
                             <p class="hint">Primary model. The system automatically falls back to alternates if the primary returns 404.</p>
+                        </div>
+                    </div>
+
+                    <!-- ── Groq OCR section ──────────────────────────────── -->
+                    <div id="ocrGroqSection" style="<?php echo $active_ocr_engine !== 'groq_ocr' ? 'display:none;' : ''; ?>">
+                        <div class="field">
+                            <label>Groq API Key</label>
+                            <div style="position:relative;">
+                                <input type="password" id="groq_api_key_input" name="groq_api_key" maxlength="120"
+                                       style="padding-right:70px;"
+                                       value="" autocomplete="new-password"
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : (string) mh_setting('groq_api_key', ''))); ?>">
+                                <button type="button" class="reveal-btn" onclick="mhToggleReveal('groq_api_key_input', this)">Show</button>
+                            </div>
+                            <p class="hint">
+                                Get a key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>.
+                                Starts with <code class="inline">gsk_</code>. Leave blank to keep the existing key.
+                                Uses the vision model <code class="inline">qwen/qwen3.8-27b</code>; the key is read live on every scan.
+                            </p>
                         </div>
                     </div>
 
@@ -1292,6 +1339,7 @@ if ($active_tab === 'sms') {
                 function mhOcrEngineSwitch(val) {
                     document.getElementById('ocrVisionSection').style.display = val === 'vision' ? '' : 'none';
                     document.getElementById('ocrGeminiSection').style.display = val === 'gemini' ? '' : 'none';
+                    document.getElementById('ocrGroqSection').style.display = val === 'groq_ocr' ? '' : 'none';
                     document.getElementById('ocrAwsSection').style.display = val === 'aws_textract' ? '' : 'none';
                 }
                 function mhToggleReveal(inputId, btn) {
@@ -1320,6 +1368,7 @@ if ($active_tab === 'sms') {
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Cloud Vision</th>
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Gemini AI</th>
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">AWS Textract</th>
+                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Groq OCR</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1328,30 +1377,35 @@ if ($active_tab === 'sms') {
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Printed &amp; typed forms</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten &amp; mixed layouts</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Structured forms &amp; key-value fields</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten forms, returns fields as JSON</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Speed</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Moderate (~3–8s)</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~2–5s)</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Key features</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Full-text detection</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Generative visual reasoning</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Key-value pair extraction (FORMS)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Vision LLM, JSON-mode field extraction</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px;">Auth format</td>
                             <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
                             <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
                             <td style="padding:7px 10px;">IAM Access Key &amp; Secret Key</td>
+                            <td style="padding:7px 10px;"><code class="inline">gsk_…</code></td>
                         </tr>
                     </tbody>
                 </table>
 
                 <p style="margin-top:0;"><strong>Troubleshooting:</strong><br>
                 • <strong>Google Cloud / Gemini:</strong> Ensure the API is enabled in your Google Cloud or AI Studio project.<br>
+                • <strong>Groq:</strong> Photos must be JPG, PNG or WebP and under ~3 MB (PDFs are not supported). A 401 means the key is wrong; a 429 means the rate limit was hit.<br>
                 • <strong>AWS Textract:</strong> Ensure the IAM user has the policy <code class="inline">AmazonTextractFullAccess</code> or permission <code class="inline">textract:AnalyzeDocument</code>, and that the region matches where your account is authorized.</p>
 
                 <p><strong>HTTP 404 (Gemini only)</strong><br>

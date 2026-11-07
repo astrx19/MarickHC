@@ -402,7 +402,7 @@ $consultations = !$can_view_history ? false : $conn->query("
                 statusText.style.color = "#10b981";
                 statusText.innerText = "Success! Form populated. Feel free to review or edit fields.";
 
-                const fieldsToMap = ['weight', 'height', 'temp', 'bp', 'chief_complaints', 'diagnosis', 'prescription', 'notes'];
+                const fieldsToMap = ['visit_date', 'weight', 'height', 'temp', 'bp', 'chief_complaints', 'diagnosis', 'prescription', 'notes'];
 
                 fieldsToMap.forEach(field => {
                     let element = document.querySelector(`[name="${field}"]`);

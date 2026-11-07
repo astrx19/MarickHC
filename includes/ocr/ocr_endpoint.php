@@ -167,11 +167,12 @@ if (!function_exists('mh_ocr_take_identity')) {
     function mh_ocr_take_identity(array &$fields)
     {
         $identity = [
-            'first_name' => $fields['first_name'] ?? '',
-            'last_name'  => $fields['last_name'] ?? '',
-            'birthdate'  => '',
+            'first_name'  => $fields['first_name'] ?? '',
+            'middle_name' => $fields['middle_name'] ?? '',
+            'last_name'   => $fields['last_name'] ?? '',
+            'birthdate'   => '',
         ];
-        unset($fields['first_name'], $fields['last_name']);
+        unset($fields['first_name'], $fields['middle_name'], $fields['last_name']);
 
         if (!empty($fields['birthdate'])) {
             $bday = function_exists('vision_ocr_normalize_date')

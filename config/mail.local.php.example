@@ -1,0 +1,20 @@
+<?php
+/**
+ * Copy to config/mail.local.php and fill in. This file holds a real password:
+ * never commit it, never upload it anywhere public (config/.htaccess already blocks web access).
+ *
+ * Hostinger: hPanel > Emails > create a mailbox (e.g. no-reply@yourdomain.com), then use that
+ * FULL address + its password below. Hostinger only delivers mail whose From address is a mailbox
+ * on your own domain, so from_address should equal smtp_user.
+ */
+return [
+    'smtp_host'    => 'smtp.hostinger.com',
+    'smtp_port'    => 465,          // 465 + 'ssl'  (or 587 + 'tls')
+    'smtp_secure'  => 'ssl',
+    'smtp_user'    => 'no-reply@yourdomain.com',
+    'smtp_pass'    => '',
+    'from_address' => 'no-reply@yourdomain.com',
+    'from_name'    => 'Marick Health Center',
+    // Optional: any long random string (e.g. output of bin2hex(random_bytes(32))).
+    'pepper'       => '',
+];

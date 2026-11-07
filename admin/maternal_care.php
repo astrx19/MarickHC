@@ -409,6 +409,7 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
                 if (data.success) {
                     statusDiv.html('<span style="color: #16a34a; display:inline-flex; align-items:center; gap:6px;">' + MH_ICON_CHECK_CIRCLE + ' Document scanned successfully! Fields auto-filled.</span>');
                     
+                    if (data.fields.visit_date) $('input[name="visit_date"]').val(data.fields.visit_date);
                     if (data.fields.gravida) $('input[name="gravida"]').val(data.fields.gravida);
                     if (data.fields.para) $('input[name="para"]').val(data.fields.para);
                     if (data.fields.lmp) $('input[name="lmp"]').val(data.fields.lmp);

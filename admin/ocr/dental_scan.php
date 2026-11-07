@@ -59,14 +59,11 @@ try {
     }
 
     $catalog = mh_dental_ocr_catalog();
-    $parsed  = vision_parse_dental_text($rawText, $catalog);
-
-    // If Textract extracted structured key-value pairs, overlay patient identity if missing
+    // Engines that return key-value pairs (Groq, Textract) refine the regex parse of the raw text
     if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
-        $enhanced = mh_textract_map_fields($ocrResult['kv'], $rawText, 'dental');
-        if (is_array($enhanced) && !empty($enhanced['fields'])) {
-            $parsed['fields'] = array_merge($parsed['fields'], $enhanced['fields']);
-        }
+        $parsed = mh_textract_map_fields($ocrResult['kv'], $rawText, 'dental', $catalog);
+    } else {
+        $parsed = vision_parse_dental_text($rawText, $catalog);
     }
 
     $pt          = $parsed['page_type'];
