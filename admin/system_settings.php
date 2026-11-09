@@ -183,8 +183,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_depts_handle_post($conn, $user_id, $user_role);
     }
 
-    /* ---------------- 2c. DISEASE TRACKING (conditions Disease Statistics watches) */
-    if (isset($_POST['add_condition']) || isset($_POST['edit_condition']) || isset($_POST['delete_condition'])) {
+    /* ---------------- 2c. DISEASE TRACKING & AI SURVEILLANCE */
+    if (isset($_POST['add_condition']) || isset($_POST['edit_condition']) || isset($_POST['delete_condition'])
+        || isset($_POST['save_disease_surveillance_settings']) || isset($_POST['save_disease_stopwords'])
+        || isset($_POST['add_synonym_rule']) || isset($_POST['edit_synonym_rule']) || isset($_POST['delete_synonym_rule'])) {
         mh_disease_tab_post($conn, $user_id, $user_role);
     }
 
@@ -774,7 +776,7 @@ if ($active_tab === 'sms') {
             <a href="?tab=appearance"  class="<?php echo $active_tab === 'appearance' ? 'active' : ''; ?>">Appearance &amp; Colours</a>
             <a href="?tab=masterlists" class="<?php echo $active_tab === 'masterlists' ? 'active' : ''; ?>">Dropdown Masterlists</a>
             <a href="?tab=departments" class="<?php echo $active_tab === 'departments' ? 'active' : ''; ?>">Departments</a>
-            <a href="?tab=disease"     class="<?php echo $active_tab === 'disease' ? 'active' : ''; ?>">Disease Tracking</a>
+            <a href="?tab=disease"     class="<?php echo $active_tab === 'disease' ? 'active' : ''; ?>">Disease &amp; AI Surveillance</a>
             <a href="?tab=ocr"         class="<?php echo $active_tab === 'ocr' ? 'active' : ''; ?>">Scanner (OCR)</a>
             <a href="?tab=sms"         class="<?php echo $active_tab === 'sms' ? 'active' : ''; ?>">SMS Reminders</a>
             <a href="?tab=modules"     class="<?php echo $active_tab === 'modules' ? 'active' : ''; ?>">Module Access</a>

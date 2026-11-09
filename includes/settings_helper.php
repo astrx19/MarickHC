@@ -147,6 +147,12 @@ function mh_setting_defaults()
         'operating_days'        => 'Monday,Tuesday,Wednesday,Thursday,Friday',
         'opening_time'          => '08:00',
         'closing_time'          => '17:00',
+        // ---- Disease Statistics & AI Surveillance Configuration -----------------
+        'disease_auto_normalize_save'   => '0',
+        'disease_rising_threshold_pct'  => '25',
+        'disease_spike_threshold_pct'   => '100',
+        'disease_notify_health_head'    => '1',
+        'disease_stop_words'            => 'test, testing, qwe, asd, zxc, broken hearted, no condom included, none, n/a, na, nil, null, wala, walang sakit, walang reklamo, checkup, pacheck, normal, healthy, sample, dummy, ok, okay',
     ] + mh_theme_defaults() + mh_module_defaults();
 }
 

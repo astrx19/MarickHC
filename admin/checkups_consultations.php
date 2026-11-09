@@ -62,6 +62,18 @@ if(isset($_POST['add_consultation'])) {
     $weight = ($vc['values']['weight'] === '' ? null : $vc['values']['weight']); $height = ($vc['values']['height'] === '' ? null : $vc['values']['height']); $temp = ($temp_check['value'] === '' ? null : $temp_check['value']); $bp = ($vc['values']['bp'] === '' ? null : $vc['values']['bp']);
     $complaints   = trim($_POST['chief_complaints'] ?? '');
     $diagnosis    = trim($_POST['diagnosis'] ?? '');
+
+    // AI / Clinical Standardization on save (System Settings -> Disease & AI Surveillance)
+    if ($diagnosis !== '' && function_exists('mh_setting') && mh_setting('disease_auto_normalize_save') === '1') {
+        require_once __DIR__ . '/../includes/disease_stats.php';
+        $std = mh_disease_standardize_diagnosis($diagnosis, $conn);
+        if (!empty($std['name']) && !empty($std['is_standard'])) {
+            if (stripos($diagnosis, $std['name']) === false) {
+                $diagnosis = $std['name'] . ' (' . $diagnosis . ')';
+            }
+        }
+    }
+
     $prescription = trim($_POST['prescription'] ?? '');
     $notes        = trim($_POST['notes'] ?? '');
     $next_visit_raw = trim($_POST['next_visit_date'] ?? '');
