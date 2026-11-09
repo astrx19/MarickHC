@@ -470,9 +470,13 @@ if (!function_exists('mh_pp_center_info')) {
     function mh_pp_center_info(): array
     {
         global $health_center_hours, $health_center_hotline;
+        require_once __DIR__ . '/queue_helper.php';
+
+        $daysStr  = function_exists('mh_operating_days_summary') ? mh_operating_days_summary() : 'Monday – Friday';
+        $hoursStr = function_exists('mh_operating_hours_summary') ? mh_operating_hours_summary() : '8:00 AM – 5:00 PM';
 
         $hours = [
-            ['days' => 'Monday – Friday', 'time' => '8:00 AM – 5:00 PM'],
+            ['days' => $daysStr, 'time' => $hoursStr],
         ];
         if (!empty($health_center_hours) && is_string($health_center_hours)) {
             $hours = [['days' => 'Open', 'time' => $health_center_hours]];

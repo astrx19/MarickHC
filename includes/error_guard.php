@@ -40,9 +40,24 @@ if (!function_exists('mh_error_ref')) {
             $admin = $role !== '' && function_exists('mh_is_admin_tier') && mh_is_admin_tier($role);
             $detail = $admin ? $type . ': ' . $message . ' (' . basename($file) . ':' . $line . ')' : '';
 
+            // Also log to activity_logs (System Logs) if database connection is available
+            try {
+                $conn = $GLOBALS['conn'] ?? null;
+                if ($conn instanceof mysqli && function_exists('logActivity')) {
+                    $userId   = (int) ($_SESSION['user_id'] ?? 0);
+                    $userRole = (string) ($_SESSION['role'] ?? 'system');
+                    @logActivity($conn, $userId, $userRole, 'System Error', "[$ref] $type: $message in " . basename($file) . ":$line");
+                }
+            } catch (Throwable $dbErr) {}
+
             if (mh_error_wants_json()) {
                 if (!headers_sent()) { header('Content-Type: application/json; charset=utf-8'); }
-                echo json_encode(['error' => 'Something went wrong on the server. Nothing was changed. Reference ' . $ref . '.', 'reference' => $ref]);
+                $payload = ['error' => 'Something went wrong on the server. Nothing was changed. Reference ' . $ref . '.', 'reference' => $ref];
+                if ($admin && $detail !== '') {
+                    $payload['detail'] = $detail;
+                    $payload['error'] .= ' [' . $detail . ']';
+                }
+                echo json_encode($payload);
                 return;
             }
             $e = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };

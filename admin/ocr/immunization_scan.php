@@ -5,12 +5,13 @@
  * Success -> {success:true, fields:{...}, raw_text, engine, extracted_fields, extracted_identity, matched_patient};
  * Failure -> {success:false, error: "..."}
  */
-require_once __DIR__ . '/../../includes/vision_ocr_helper.php';
 require_once __DIR__ . '/../../includes/ocr/ocr_endpoint.php';
 mh_ocr_preflight('error');
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/settings_helper.php';
+require_once __DIR__ . '/../../config/vision.php';
+require_once __DIR__ . '/../../includes/vision_ocr_helper.php';
 mh_require_ocr_access_json('immunization');
 
 try {

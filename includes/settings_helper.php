@@ -143,6 +143,10 @@ function mh_setting_defaults()
         'home_address_type'     => 'Marick',          // the Location Type that means "resident" (street + house no.)
         'outside_address_type'  => 'Outside Marick',  // default label for non-residents (free-text address)
         'home_address_suffix'   => 'Marick Subdivision, Cainta, Rizal',   // appended to resident addresses: "12 Aida St., <suffix>"
+        // ---- Clinic Operating Schedule (Operating Days & Hours) -----------------
+        'operating_days'        => 'Monday,Tuesday,Wednesday,Thursday,Friday',
+        'opening_time'          => '08:00',
+        'closing_time'          => '17:00',
     ] + mh_theme_defaults() + mh_module_defaults();
 }
 

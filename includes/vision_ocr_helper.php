@@ -82,7 +82,18 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
 {
     try {
         if (empty($apiKey)) {
-            $apiKey = defined('GOOGLE_VISION_API_KEY') ? GOOGLE_VISION_API_KEY : 'AIzaSyB_3kCP-DpMQqM07x99uhJgiNDFyxHQukI';
+            $apiKey = function_exists('mh_ocr_live_setting')
+                ? mh_ocr_live_setting('google_vision_api_key', '')
+                : (defined('GOOGLE_VISION_API_KEY') ? GOOGLE_VISION_API_KEY : '');
+            if ($apiKey === '' && function_exists('mh_ocr_live_setting')) {
+                $apiKey = mh_ocr_live_setting('vision_api_key', '');
+            }
+            if ($apiKey === '' && defined('GOOGLE_VISION_API_KEY')) {
+                $apiKey = GOOGLE_VISION_API_KEY;
+            }
+            if ($apiKey === '') {
+                $apiKey = 'AIzaSyB_3kCP-DpMQqM07x99uhJgiNDFyxHQukI';
+            }
         }
 
         if (trim((string) $apiKey) === '') {
@@ -1480,7 +1491,12 @@ function call_gemini_vision_ocr($imagePath, $apiKey = null)
         require_once __DIR__ . '/ocr/GeminiOcrClient.php';
 
         if (empty($apiKey)) {
-            $apiKey = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
+            $apiKey = function_exists('mh_ocr_live_setting')
+                ? mh_ocr_live_setting('gemini_api_key', '')
+                : (defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '');
+            if ($apiKey === '' && defined('GEMINI_API_KEY')) {
+                $apiKey = GEMINI_API_KEY;
+            }
         }
 
         if (trim((string) $apiKey) === '') {

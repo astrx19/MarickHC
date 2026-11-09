@@ -72,6 +72,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     /* ---------------- 1. BRANDING & CONTENT ---------------------- */
     if (isset($_POST['save_branding'])) {
 
+        // Operating Days: checkboxes array -> comma-separated string
+        $postedDays = $_POST['operating_days'] ?? [];
+        if (!is_array($postedDays)) {
+            $postedDays = [];
+        }
+        $validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        $cleanDays = array_values(array_intersect($validDays, $postedDays));
+        if (empty($cleanDays)) {
+            $cleanDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+        }
+        $operatingDaysStr = implode(',', $cleanDays);
+
+        // Operating Times: HH:MM format
+        $openTime  = trim($_POST['opening_time'] ?? '08:00');
+        $closeTime = trim($_POST['closing_time'] ?? '17:00');
+        if (!preg_match('/^\d{2}:\d{2}$/', $openTime))  { $openTime = '08:00'; }
+        if (!preg_match('/^\d{2}:\d{2}$/', $closeTime)) { $closeTime = '17:00'; }
+
         $pairs = [
             'system_name'           => trim($_POST['system_name'] ?? ''),
             'header_title'          => trim($_POST['header_title'] ?? ''),
@@ -84,6 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'home_address_type'     => mb_substr(trim($_POST['home_address_type'] ?? ''), 0, 60),
             'outside_address_type'  => mb_substr(trim($_POST['outside_address_type'] ?? ''), 0, 60),
             'home_address_suffix'   => mb_substr(trim($_POST['home_address_suffix'] ?? ''), 0, 150),
+            // Clinic Operating Schedule
+            'operating_days'        => $operatingDaysStr,
+            'opening_time'          => $openTime,
+            'closing_time'          => $closeTime,
         ];
 
         if ($pairs['home_address_type'] === '' || $pairs['outside_address_type'] === '') {
@@ -825,6 +847,59 @@ if ($active_tab === 'sms') {
                                       placeholder="e.g. Clinic closed tomorrow due to storm..."
                                       class="announce-input"><?php echo htmlspecialchars($settings['global_announcement']); ?></textarea>
                             <p class="hint">Leave blank to hide. Any text here shows as a red alert on the patient portal.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <header>
+                        <h3>Clinic Operating Schedule</h3>
+                        <p>Configure which days and hours the clinic is open. Walk-in queue registration and public hours reflect these settings dynamically.</p>
+                    </header>
+                    <div class="body">
+                        <?php
+                        $rawDays = $settings['operating_days'] ?? 'Monday,Tuesday,Wednesday,Thursday,Friday';
+                        $activeDays = array_map('trim', explode(',', $rawDays));
+                        $allDays = [
+                            'Monday'    => 'Mon',
+                            'Tuesday'   => 'Tue',
+                            'Wednesday' => 'Wed',
+                            'Thursday'  => 'Thu',
+                            'Friday'    => 'Fri',
+                            'Saturday'  => 'Sat',
+                            'Sunday'    => 'Sun',
+                        ];
+                        $curOpenTime  = htmlspecialchars($settings['opening_time'] ?? '08:00');
+                        $curCloseTime = htmlspecialchars($settings['closing_time'] ?? '17:00');
+                        ?>
+                        <div class="field">
+                            <label style="font-weight:600; display:block; margin-bottom:8px;">Operating Days</label>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px; margin-bottom:12px;">
+                                <?php foreach ($allDays as $fullDay => $shortDay): ?>
+                                    <label style="display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--bg-hover, #f8fafc); border:1px solid var(--border,#e2e8f0); border-radius:6px; cursor:pointer; font-size:0.9rem;">
+                                        <input type="checkbox" name="operating_days[]" value="<?php echo htmlspecialchars($fullDay); ?>"
+                                            <?php echo in_array($fullDay, $activeDays, true) ? 'checked' : ''; ?>
+                                            style="accent-color:var(--primary,#4ca1af); width:16px; height:16px;">
+                                        <span><?php echo htmlspecialchars($fullDay); ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                            <p class="hint">Check the days the clinic accepts patients and operates walk-in intake.</p>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                            <div class="field" style="margin-bottom:0;">
+                                <label style="font-weight:600;">Opening Time</label>
+                                <input type="time" name="opening_time" required value="<?php echo $curOpenTime; ?>"
+                                       style="width:100%; padding:9px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
+                                <p class="hint">e.g. 08:00 AM</p>
+                            </div>
+                            <div class="field" style="margin-bottom:0;">
+                                <label style="font-weight:600;">Closing Time</label>
+                                <input type="time" name="closing_time" required value="<?php echo $curCloseTime; ?>"
+                                       style="width:100%; padding:9px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
+                                <p class="hint">e.g. 05:00 PM (17:00)</p>
+                            </div>
                         </div>
                     </div>
                 </div>

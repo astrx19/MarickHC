@@ -5,12 +5,13 @@
  * Success -> clinical fields as FLAT top-level keys + extracted_fields, extracted_identity, matched_patient, raw_text, engine;
  * Failure -> {error: "..."}
  */
-require_once __DIR__ . '/../../includes/vision_ocr_helper.php';
 require_once __DIR__ . '/../../includes/ocr/ocr_endpoint.php';
 mh_ocr_preflight('bare');
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/settings_helper.php';
+require_once __DIR__ . '/../../config/vision.php';
+require_once __DIR__ . '/../../includes/vision_ocr_helper.php';
 mh_require_ocr_access_json('checkups');
 
 try {

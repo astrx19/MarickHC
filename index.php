@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/icons.php';
 // Branding ($system_name, $hero_title, ...) and dropdowns come live from System Settings > Dropdown Masterlists.
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/settings_helper.php';
+require_once __DIR__ . '/includes/queue_helper.php';
 $marick_streets = mh_streets($conn);
 
 ?>
@@ -51,7 +52,7 @@ $marick_streets = mh_streets($conn);
 
     <section class="info-section">
         <div class="info-card"><span class="info-icon"><?php echo mh_icon('map-pin'); ?></span><h3>Our Location</h3><p>Barangay Sto. Domingo,<br>Marick Subdivision,<br>Cainta, Rizal</p></div>
-        <div class="info-card"><span class="info-icon"><?php echo mh_icon('clock'); ?></span><h3>Clinic Hours</h3><p><strong>Monday - Friday:</strong><br>8:00 AM - 5:00 PM<br><br><strong>Weekends & Holidays:</strong><br>Closed</p></div>
+        <div class="info-card"><span class="info-icon"><?php echo mh_icon('clock'); ?></span><h3>Clinic Hours</h3><p><strong><?php echo htmlspecialchars(mh_operating_days_summary()); ?>:</strong><br><?php echo htmlspecialchars(mh_operating_hours_summary()); ?><br><br><strong>Holidays & Off-Days:</strong><br>Closed</p></div>
         <div class="info-card"><span class="info-icon"><?php echo mh_icon('activity'); ?></span><h3>Our Services</h3><p>• General Consultations<br>• Maternal & Prenatal Care<br>• Child Immunization<br>• Dental Services</p></div>
     </section>
 
@@ -98,7 +99,7 @@ $marick_streets = mh_streets($conn);
             <div style="margin-top: 20px;">
                 <div style="margin-bottom: 20px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 15px;">
                     <h4 style="color: #0369a1; margin: 0 0 5px 0; font-size: 1.05rem; display:flex; align-items:center; gap:6px;"><?php echo mh_icon('clock'); ?> What are your operating hours?</h4>
-                    <p style="color: #475569; margin: 0; font-size: 0.95rem; line-height: 1.5;">We are open Monday to Friday, from 8:00 AM to 5:00 PM. We are closed on weekends and regular holidays.</p>
+                    <p style="color: #475569; margin: 0; font-size: 0.95rem; line-height: 1.5;">We are open <?php echo htmlspecialchars(mh_operating_days_summary()); ?>, from <?php echo htmlspecialchars(mh_operating_hours_summary()); ?>. We are closed on non-operating days and declared holidays.</p>
                 </div>
                 <div style="margin-bottom: 20px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 15px;">
                     <h4 style="color: #0369a1; margin: 0 0 5px 0; font-size: 1.05rem; display:flex; align-items:center; gap:6px;"><?php echo mh_icon('users'); ?> Do you accept walk-in patients?</h4>

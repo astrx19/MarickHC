@@ -35,20 +35,89 @@ function mh_ensure_queue_schema(mysqli $conn)
 }
 
 /**
+ * Returns an array of operating days configured in system settings.
+ * Defaults to Monday - Friday if not set.
+ *
+ * @return array List of days e.g. ['Monday', 'Tuesday', ...]
+ */
+function mh_operating_days()
+{
+    $daysRaw = '';
+    if (function_exists('mh_setting')) {
+        $daysRaw = (string) mh_setting('operating_days', 'Monday,Tuesday,Wednesday,Thursday,Friday');
+    }
+    if ($daysRaw === '') {
+        $daysRaw = 'Monday,Tuesday,Wednesday,Thursday,Friday';
+    }
+    // Handle JSON or comma-separated format
+    if (strpos($daysRaw, '[') === 0) {
+        $decoded = json_decode($daysRaw, true);
+        if (is_array($decoded)) {
+            return array_map('trim', $decoded);
+        }
+    }
+    $parts = explode(',', $daysRaw);
+    return array_values(array_filter(array_map('trim', $parts)));
+}
+
+/**
+ * Returns a human-friendly string of operating days, e.g. "Monday – Friday" or "Monday, Wednesday, Friday".
+ */
+function mh_operating_days_summary()
+{
+    $days = mh_operating_days();
+    if (empty($days)) {
+        return 'No operating days scheduled';
+    }
+    $weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    if ($days === $weekdays) {
+        return 'Monday – Friday';
+    }
+    $allWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    if (count($days) === 7) {
+        return 'Every day (Monday – Sunday)';
+    }
+    return implode(', ', $days);
+}
+
+/**
+ * Returns formatted operating hours, e.g. "8:00 AM – 5:00 PM".
+ */
+function mh_operating_hours_summary()
+{
+    $openTime  = '08:00';
+    $closeTime = '17:00';
+    if (function_exists('mh_setting')) {
+        $openTime  = (string) mh_setting('opening_time', '08:00');
+        $closeTime = (string) mh_setting('closing_time', '17:00');
+    }
+    $openFormatted  = date('g:i A', strtotime("2000-01-01 $openTime"));
+    $closeFormatted = date('g:i A', strtotime("2000-01-01 $closeTime"));
+    return "$openFormatted – $closeFormatted";
+}
+
+/**
  * Is the clinic closed TODAY? Returns a user-facing reason, or null when it is open.
  *
- * Closed = a holiday declared on the dashboard calendar (table `holidays`) OR a weekend
- * (the clinic is open Monday-Friday). "Today" is the DATABASE's CURDATE() - the same clock the
- * queue numbers and the "today only" list use, so they can never disagree.
+ * Checks:
+ *   1. Declared holidays (calendar table `holidays`)
+ *   2. Operating days configured in system_settings (`operating_days`)
+ *   3. Operating hours configured in system_settings (`opening_time` - `closing_time`) when testing current time
+ *
  * If the check itself fails the clinic is treated as OPEN (a database hiccup must never block patient care).
  *
+ * @param mysqli $conn
  * @param string|null $date 'Y-m-d' to test another day (defaults to today)
+ * @param bool $checkTime Whether to also check current time against opening/closing hours (default true)
+ * @return string|null Reason when closed, or null when open
  */
-function mh_clinic_closed_reason(mysqli $conn, $date = null)
+function mh_clinic_closed_reason(mysqli $conn, $date = null, $checkTime = true)
 {
     $date = ($date !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date)) ? $date : null;
     $d    = $date === null ? 'CURDATE()' : '?';
     $st   = $conn->prepare("SELECT DAYOFWEEK($d) AS dow,
+                                   DAYNAME($d) AS dayname,
+                                   TIME(NOW()) AS server_time,
                                    (SELECT description FROM holidays WHERE holiday_date = $d LIMIT 1) AS holiday");
     if (!$st) { return null; }
     if ($date !== null) { $st->bind_param('ss', $date, $date); }
@@ -57,12 +126,42 @@ function mh_clinic_closed_reason(mysqli $conn, $date = null)
     $st->close();
     if (!$row) { return null; }
 
+    // 1. Holiday check
     if ($row['holiday'] !== null) {
         return 'The clinic is closed today (' . trim((string) $row['holiday']) . '). Patients cannot be added to the queue on a declared holiday.';
     }
-    if ((int) $row['dow'] === 1 || (int) $row['dow'] === 7) {   // MySQL: 1 = Sunday, 7 = Saturday
-        return 'The clinic is closed on weekends (open Monday to Friday). Patients cannot be added to the queue today.';
+
+    $daysSummary = mh_operating_days_summary();
+    $hoursSummary = mh_operating_hours_summary();
+
+    // 2. Operating days check
+    $dayName = trim((string) ($row['dayname'] ?? ''));
+    $operatingDays = mh_operating_days();
+    $isOperatingDay = in_array($dayName, $operatingDays, true);
+
+    if (!$isOperatingDay) {
+        return 'The clinic is closed today (' . $dayName . '). Operating schedule is ' . $daysSummary . ' (' . $hoursSummary . ').';
     }
+
+    // 3. Operating hours check (only if evaluating today)
+    if ($checkTime && $date === null) {
+        $serverTime = trim((string) ($row['server_time'] ?? date('H:i:s')));
+        $openTime   = '08:00:00';
+        $closeTime  = '17:00:00';
+        if (function_exists('mh_setting')) {
+            $ot = (string) mh_setting('opening_time', '08:00');
+            $ct = (string) mh_setting('closing_time', '17:00');
+            if (preg_match('/^\d{2}:\d{2}$/', $ot)) { $openTime = $ot . ':00'; }
+            if (preg_match('/^\d{2}:\d{2}$/', $ct)) { $closeTime = $ct . ':00'; }
+        }
+
+        if ($serverTime < $openTime || $serverTime >= $closeTime) {
+            $openFmt  = date('g:i A', strtotime("2000-01-01 $openTime"));
+            $closeFmt = date('g:i A', strtotime("2000-01-01 $closeTime"));
+            return 'The clinic is currently outside its operating hours (' . $openFmt . ' – ' . $closeFmt . '). Walk-in registration is closed.';
+        }
+    }
+
     return null;
 }
 
