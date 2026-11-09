@@ -758,11 +758,18 @@ if ($active_tab === 'sms') {
 
     <div class="dashboard-container">
 
-        <div style="margin-bottom: 20px;">
-            <h1 class="page-title">Master System Settings</h1>
-            <p class="page-sub">
-                Branding, colours and every dropdown in the system - no code editing required.
-            </p>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom: 20px;">
+            <div>
+                <h1 class="page-title">Master System Settings</h1>
+                <p class="page-sub">
+                    Branding, colours and every dropdown in the system - no code editing required.
+                </p>
+            </div>
+            <div>
+                <a href="db_seeder.php" class="btn btn-soft" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; text-decoration:none; padding:8px 14px; border-radius:8px; border:1px solid var(--border-color,#cbd5e1); background:var(--bg-hover,#f1f5f9); color:var(--text-main,#334155);" title="Open test data generator and module seeder">
+                    <span style="display:inline-flex; width:16px; height:16px;"><?php echo mh_icon('database'); ?></span> Database Seeder
+                </a>
+            </div>
         </div>
 
         <?php if ($flash): ?>

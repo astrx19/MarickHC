@@ -241,6 +241,10 @@ $nav_show_archives  = mh_has_permission('view_system_archives');
         <!-- Pinned (not inside the scrolling nav) so a Health Head never has
              to scroll the menu to find System Settings. Page itself is also
              guarded server-side by require_health_head(). -->
+        <a href="db_seeder.php" title="Database Seeder" class="footer-link <?php echo ($current_page == 'db_seeder.php') ? 'active' : ''; ?>">
+            <span class="nav-icon"><?php echo mh_icon('database'); ?></span>
+            <span class="nav-text">Database Seeder</span>
+        </a>
         <a href="system_settings.php" title="System Settings" class="footer-link <?php echo ($current_page == 'system_settings.php') ? 'active' : ''; ?>">
             <span class="nav-icon"><?php echo mh_icon('settings'); ?></span>
             <span class="nav-text">System Settings</span>
