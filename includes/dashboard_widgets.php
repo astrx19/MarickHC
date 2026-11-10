@@ -82,26 +82,16 @@ if (!function_exists('mh_dashboard_catalog')) {
     function mh_dashboard_catalog()
     {
         return [
-            'walkin_queue' => [
-                'title'         => "Today's Walk-In Queue",
-                'icon'          => 'inbox',
+            'active_queue' => [
+                'title'         => "Today's Active Queue",
+                'icon'          => 'users',
                 'color'         => '#0ea5e9',
-                'module_page'   => 'walkin.php',
-                'module'        => 'walkin',
-                'module_label'  => 'Walk-In Registration',
-                'roles'         => ['admin', 'doctor', 'midwife', 'dental'],
-                'size'          => 'small',
-                'render'        => 'mh_widget_walkin_queue',
-            ],
-            'appointments_today' => [
-                'title'         => "Today's Scheduled Consultations",
-                'icon'          => 'calendar',
-                'color'         => '#3b82f6',
                 'module_page'   => 'appointments.php',
+                'module'        => 'walkin',   // kept from the old walk-in widget so custom roles with that Module Access still get it
                 'module_label'  => 'Patient Queue',
-                'roles'         => ['admin', 'doctor', 'bhw', 'midwife', 'dental'],
+                'roles'         => ['admin', 'doctor', 'bhw', 'midwife', 'dental'],   // union of the two widgets it replaces
                 'size'          => 'medium',
-                'render'        => 'mh_widget_appointments_today',
+                'render'        => 'mh_widget_active_queue',
             ],
             'department_queues' => [
                 'title'         => "Departments - Waiting Today",
@@ -247,80 +237,110 @@ if (!function_exists('mh_column_exists')) {
 }
 
 /* =====================================================================
- * 1. WALK-IN QUEUE
+ * 1. TODAY'S ACTIVE QUEUE  (walk-ins + scheduled consultations, one list)
+ *
+ * Walk-ins and scheduled visits live in the SAME `appointments` table. A walk-in is the row that
+ * mh_enqueue_patient() (includes/queue_helper.php) writes with reason = 'Walk-In Queue Registration';
+ * everything else is a scheduled consultation. The filter, department visibility and ordering below
+ * deliberately mirror admin/appointments.php so this widget can never disagree with the Patient Queue page.
  * ================================================================== */
-if (!function_exists('mh_widget_walkin_queue')) {
-    function mh_widget_walkin_queue(mysqli $conn, array $ctx)
-    {
-        $today = $ctx['today'];
-
-        $q = mh_wq_all($conn, 
-            "SELECT status, COUNT(*) AS total FROM appointments
-             WHERE appointment_date = ? AND reason = 'Walk-In Queue Registration'
-             GROUP BY status",
-            [$today]
-        );
-        $counts = ['Waiting' => 0, 'Approved' => 0, 'Completed' => 0, 'Pending' => 0];
-        $total  = 0;
-        foreach ($q as $row) {
-            $counts[$row['status']] = (int) $row['total'];
-            $total += (int) $row['total'];
-        }
-        $waiting = $counts['Waiting'] + $counts['Approved'] + $counts['Pending'];
-        ?>
-        <div class="widget-stat">
-            <div class="widget-stat-number" style="color:#0ea5e9;"><?php echo number_format($total); ?></div>
-            <div class="widget-stat-label">Walked In Today</div>
-        </div>
-        <div class="widget-chip-row">
-            <span class="widget-chip chip-blue"><?php echo $waiting; ?> Waiting</span>
-            <span class="widget-chip chip-green"><?php echo $counts['Completed']; ?> Completed</span>
-        </div>
-        <?php
-    }
+if (!defined('MH_WALKIN_REASON')) {
+    define('MH_WALKIN_REASON', 'Walk-In Queue Registration');
 }
-
-/* =====================================================================
- * 2. TODAY'S APPOINTMENTS / CALENDAR AGENDA
- * ================================================================== */
-if (!function_exists('mh_widget_appointments_today')) {
-    function mh_widget_appointments_today(mysqli $conn, array $ctx)
+if (!function_exists('mh_widget_active_queue')) {
+    function mh_widget_active_queue(mysqli $conn, array $ctx)
     {
-        $today = $ctx['today'];
+        require_once __DIR__ . '/settings_helper.php';   // mh_all_settings(), mh_clinic_departments(), mh_options()
+        require_once __DIR__ . '/queue_helper.php';      // mh_queue_label() -> "GC-001"
 
-        $pending_count = (int) mh_wq_value($conn, "SELECT COUNT(*) FROM appointments WHERE status = 'Pending'");
+        $today    = $ctx['today'];
+        $limit    = 8;                                                    // rows shown; the rest is "+N more"
+        $statuses = ['Pending', 'Rescheduled', 'Waiting', 'Approved'];    // same set the Patient Queue page lists
 
-        $rows = mh_wq_all($conn, "
-            SELECT p.first_name, p.last_name, a.department, a.status
-            FROM appointments a
-            JOIN patients p ON a.patient_id = p.id
-            WHERE a.appointment_date = ? AND a.status IN ('Waiting', 'Approved', 'Pending', 'Rescheduled', 'Completed')
-            ORDER BY a.id ASC LIMIT 6
-        ", [$today]);
+        // --- Departments this staff member may see (same rule as the Patient Queue page) ---
+        mh_all_settings($conn);   // load Module Access before evaluating it
+        $cands = mh_clinic_departments($conn);
+        foreach (mh_wq_all($conn, "SELECT DISTINCT department FROM appointments WHERE appointment_date = ?", [$today]) as $r) {
+            $cands[] = $r['department'];
+        }
+        $hidden = [];
+        foreach (mh_options($conn, 'clinic_departments', false) as $opt) {
+            if (!(int) $opt['is_active']) { $hidden[] = $opt['option_value']; }
+        }
+        $visible = mh_departments_visible_to(
+            strtolower($_SESSION['role'] ?? ''),
+            array_values(array_diff(array_unique($cands), $hidden))
+        );   // null = every department
+
+        $where  = "a.appointment_date = ? AND a.status IN (" . implode(',', array_fill(0, count($statuses), '?')) . ")";
+        $params = array_merge([$today], $statuses);
+        if ($visible !== null) {
+            if ($visible) {
+                $where .= " AND a.department IN (" . implode(',', array_fill(0, count($visible), '?')) . ")";
+                foreach ($visible as $v) { $params[] = (string) $v; }
+            } else {
+                $where .= " AND 1 = 0";
+            }
+        }
+
+        // --- Totals for the chips (walk-in vs scheduled) ---
+        $walkin_total = 0; $sched_total = 0;
+        foreach (mh_wq_all($conn,
+            "SELECT (a.reason = ?) AS is_walkin, COUNT(*) AS c
+               FROM appointments a
+              WHERE $where
+              GROUP BY is_walkin",
+            array_merge([MH_WALKIN_REASON], $params)
+        ) as $r) {
+            if ((int) $r['is_walkin'] === 1) { $walkin_total = (int) $r['c']; } else { $sched_total += (int) $r['c']; }
+        }
+        $total = $walkin_total + $sched_total;
+
+        // --- The list itself, in the same order as the Patient Queue page ---
+        $rows = $total === 0 ? [] : mh_wq_all($conn,
+            "SELECT a.id, a.department, a.status, a.queue_number,
+                    (a.reason = ?) AS is_walkin,
+                    p.first_name, p.last_name
+               FROM appointments a
+               JOIN patients p ON a.patient_id = p.id
+              WHERE $where
+              ORDER BY CASE a.status WHEN 'Pending' THEN 1 WHEN 'Rescheduled' THEN 2 ELSE 3 END ASC,
+                       COALESCE(a.queue_number, 9999) ASC,
+                       a.id ASC
+              LIMIT " . (int) $limit,
+            array_merge([MH_WALKIN_REASON], $params)
+        );
         ?>
         <div class="widget-chip-row" style="margin-bottom: 12px;">
-            <span class="widget-chip chip-amber"><?php echo $pending_count; ?> Pending Requests</span>
+            <span class="widget-chip chip-blue"><?php echo $total; ?> In Queue</span>
+            <span class="queue-tag queue-tag-walkin"><?php echo $walkin_total; ?> Walk-in</span>
+            <span class="queue-tag queue-tag-sched"><?php echo $sched_total; ?> Scheduled</span>
         </div>
         <table class="data-table widget-table">
-            <thead><tr><th>#</th><th>Patient</th><th>Department</th></tr></thead>
+            <thead><tr><th>Queue #</th><th>Patient</th><th>Department</th><th>Type</th></tr></thead>
             <tbody>
                 <?php if ($rows): ?>
-                    <?php $queue_pos = 0; foreach ($rows as $row): $queue_pos++; ?>
+                    <?php foreach ($rows as $row): $walkin = ((int) $row['is_walkin'] === 1); ?>
                         <tr>
-                            <td style="white-space: nowrap; font-weight: bold; color: #3b82f6;">
-                                <?php echo $queue_pos; ?>
+                            <td style="white-space: nowrap; font-weight: bold; color: #0ea5e9;">
+                                <?php echo $row['queue_number'] ? htmlspecialchars(mh_queue_label($row['department'], $row['queue_number']), ENT_QUOTES, 'UTF-8') : '&mdash;'; ?>
                             </td>
                             <td style="font-weight: bold; color: var(--heading-color, #0f172a);">
-                                <?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?>
+                                <?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name'], ENT_QUOTES, 'UTF-8'); ?>
                             </td>
-                            <td style="color: var(--text-muted); font-size: 0.85rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:<?php echo mh_department_color($row['department']); ?>;"></span><?php echo htmlspecialchars($row['department']); ?></td>
+                            <td style="color: var(--text-muted); font-size: 0.85rem;"><span style="display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:<?php echo mh_department_color($row['department']); ?>;"></span><?php echo htmlspecialchars($row['department'], ENT_QUOTES, 'UTF-8'); ?></td>
+                            <td><span class="queue-tag <?php echo $walkin ? 'queue-tag-walkin' : 'queue-tag-sched'; ?>"><?php echo $walkin ? 'Walk-in' : 'Scheduled'; ?></span></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr><td colspan="3" class="widget-empty">No consultations scheduled for today.</td></tr>
+                    <tr><td colspan="4" class="widget-empty">No patients in the queue right now.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
+        <div class="queue-widget-footer">
+            <span class="widget-list-meta"><?php echo $total > $limit ? '+' . ($total - $limit) . ' more waiting' : ''; ?></span>
+            <a class="queue-widget-viewall" href="appointments.php">View Full Queue <?php echo mh_icon('arrow-right'); ?></a>
+        </div>
         <?php
     }
 }

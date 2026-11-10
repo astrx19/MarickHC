@@ -67,6 +67,9 @@
                     swapped++;
                 }
             });
+            if (swapped) {
+                document.dispatchEvent(new CustomEvent('mh:live-applied'));
+            }
             pending = false;
             hidePill();
             lastAll = Date.now();

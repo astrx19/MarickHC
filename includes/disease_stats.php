@@ -9,6 +9,7 @@
  */
 
 const MH_DISEASE_WEEKS = 12;
+require_once __DIR__ . '/ai_helper.php';
 
 function mh_disease_ensure_tables(mysqli $conn)
 {
@@ -723,41 +724,9 @@ function mh_disease_overview(mysqli $conn, string $from, string $to)
  */
 function mh_disease_get_ai_config(): array
 {
-    $groqKey = '';
-    if (function_exists('mh_ocr_live_setting')) {
-        $groqKey = trim((string) mh_ocr_live_setting('groq_api_key', ''));
+    if (function_exists('mh_get_ai_config')) {
+        return mh_get_ai_config();
     }
-    if ($groqKey === '' && function_exists('mh_setting')) {
-        $groqKey = trim((string) mh_setting('groq_api_key', ''));
-    }
-
-    $geminiKey = '';
-    if (function_exists('mh_ocr_live_setting')) {
-        $geminiKey = trim((string) mh_ocr_live_setting('gemini_api_key', ''));
-    }
-    if ($geminiKey === '' && function_exists('mh_setting')) {
-        $geminiKey = trim((string) mh_setting('gemini_api_key', ''));
-    }
-    if ($geminiKey === '' && defined('GEMINI_API_KEY')) {
-        $geminiKey = trim((string) GEMINI_API_KEY);
-    }
-
-    if ($groqKey !== '') {
-        return [
-            'provider' => 'groq',
-            'api_key'  => $groqKey,
-            'model'    => 'llama-3.3-70b-versatile',
-        ];
-    }
-
-    if ($geminiKey !== '') {
-        return [
-            'provider' => 'gemini',
-            'api_key'  => $geminiKey,
-            'model'    => 'gemini-2.0-flash',
-        ];
-    }
-
     return [
         'provider' => 'none',
         'api_key'  => '',
@@ -765,92 +734,21 @@ function mh_disease_get_ai_config(): array
     ];
 }
 
-/**
- * Safe cURL caller for Groq or Gemini AI completions.
- *
- * @param string $prompt
- * @param array $config Output of mh_disease_get_ai_config()
- * @param int $timeout Max seconds (default 8)
- * @return string|null
- */
 function mh_disease_ai_call(string $prompt, array $config, int $timeout = 8): ?string
 {
-    if (empty($config['api_key']) || empty($config['provider']) || !function_exists('curl_init')) {
-        return null;
-    }
-
-    try {
-        if ($config['provider'] === 'groq') {
-            $ch = curl_init('https://api.groq.com/openai/v1/chat/completions');
-            if (!$ch) { return null; }
-            $payload = json_encode([
-                'model'       => $config['model'] ?: 'llama-3.3-70b-versatile',
-                'messages'    => [
-                    ['role' => 'system', 'content' => 'You are an epidemiologist and health analytics AI for Barangay Sto. Domingo Marick Health Center in Cainta, Rizal, Philippines.'],
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-                'temperature' => 0.2,
-                'max_tokens'  => 300,
-            ]);
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => $payload,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPHEADER     => [
-                    'Authorization: Bearer ' . $config['api_key'],
-                    'Content-Type: application/json',
-                ],
-                CURLOPT_TIMEOUT        => $timeout,
-                CURLOPT_CONNECTTIMEOUT => 4,
-                CURLOPT_SSL_VERIFYPEER => true,
-            ]);
-            $resp = curl_exec($ch);
-            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($resp && $code === 200) {
-                $data = json_decode((string) $resp, true);
-                $content = trim((string) ($data['choices'][0]['message']['content'] ?? ''));
-                if ($content !== '') { return $content; }
-            }
-        } elseif ($config['provider'] === 'gemini') {
-            $url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-                 . urlencode($config['model'] ?: 'gemini-2.0-flash')
-                 . ':generateContent?key=' . urlencode($config['api_key']);
-            $ch = curl_init($url);
-            if (!$ch) { return null; }
-            $payload = json_encode([
-                'contents' => [
-                    ['parts' => [['text' => $prompt]]],
-                ],
-                'generationConfig' => [
-                    'temperature'     => 0.2,
-                    'maxOutputTokens' => 300,
-                ],
-            ]);
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => $payload,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-                CURLOPT_TIMEOUT        => $timeout,
-                CURLOPT_CONNECTTIMEOUT => 4,
-                CURLOPT_SSL_VERIFYPEER => true,
-            ]);
-            $resp = curl_exec($ch);
-            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($resp && $code === 200) {
-                $data = json_decode((string) $resp, true);
-                $content = trim((string) ($data['candidates'][0]['content']['parts'][0]['text'] ?? ''));
-                if ($content !== '') { return $content; }
-            }
+    if (function_exists('callAiService')) {
+        $res = callAiService($prompt, null, [
+            'timeout'    => $timeout,
+            'system'     => 'You are an epidemiologist and health analytics AI for Barangay Sto. Domingo Marick Health Center in Cainta, Rizal, Philippines.',
+            'max_tokens' => 300,
+            'provider'   => $config['provider'] ?? null,
+            'api_key'    => $config['api_key'] ?? null,
+            'model'      => $config['model'] ?? null,
+        ]);
+        if (!empty($res['success']) && !empty($res['content'])) {
+            return trim((string) $res['content']);
         }
-    } catch (Throwable $e) {
-        @error_log('[MarickHealth][DiseaseAI] Call failed: ' . $e->getMessage());
     }
-
     return null;
 }
 
@@ -996,7 +894,7 @@ function mh_disease_ai_summary(mysqli $conn, array $stats, array $ov, bool $forc
         if ($aiResp !== null && mb_strlen($aiResp) > 30) {
             $summary = trim(preg_replace('/^#+\s*/m', '', $aiResp));
             $engineKey = $aiCfg['provider'];
-            $engineLabel = $aiCfg['provider'] === 'groq' ? 'Groq LLaMA 3.3' : 'Gemini 2.0 Flash';
+            $engineLabel = $aiCfg['provider'] === 'groq' ? 'Groq LLaMA 3.3' : ($aiCfg['provider'] === 'openai' ? 'OpenAI GPT-4o' : ucfirst($aiCfg['provider']) . ' AI');
         }
     }
 

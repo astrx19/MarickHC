@@ -590,7 +590,7 @@ mh_layout_head(['title' => 'Child Immunization Form', 'late_styles' => ['css/dep
 
             const imageFile = fileInput.files[0];
             statusDiv.style.color = '#0284c7';
-            statusDiv.innerText = 'Scanning document via Google Cloud Vision OCR... Please wait...';
+            statusDiv.innerText = 'Analyzing document... Please wait.';
 
             const formData = new FormData();
             formData.append('ocr_file', imageFile);

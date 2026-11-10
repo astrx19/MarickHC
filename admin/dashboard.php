@@ -142,14 +142,28 @@ mh_layout_head(['title' => 'Dashboard']);
          * Dashboard toolbar (Customize / Add Widget / Save / Reset)
          * ------------------------------------------------------------- */
         .dash-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-        .dash-toolbar button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--border-color, #cbd5e1); background: var(--bg-card); color: var(--text-main); font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s; }
+        .dash-toolbar button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--border-color, #cbd5e1); background: var(--bg-card); color: var(--text-main); font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: background 0.18s, border-color 0.18s, opacity 0.22s, transform 0.22s; }
         .dash-toolbar button .mh-icon { width: 15px; height: 15px; }
         .dash-toolbar button:hover { background: var(--bg-hover); border-color: var(--text-muted); }
         .dash-toolbar button.btn-primary-toolbar { background: var(--primary, #4ca1af); color: white; border-color: var(--primary, #4ca1af); }
         .dash-toolbar button.btn-primary-toolbar:hover { background: var(--primary-hover, #3b828e); }
-        .dash-toolbar .edit-only { display: none; }
-        body.dashboard-edit-mode .dash-toolbar .edit-only { display: inline-flex; }
-        body.dashboard-edit-mode .dash-toolbar .view-only { display: none; }
+        /* Toolbar state swap */
+        .dash-toolbar .edit-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+        /* Required: ".dash-toolbar button { display:inline-flex }" beats the browser's [hidden] rule */
+        .dash-toolbar [hidden] { display: none !important; }
+
+        @keyframes tb-slide-in {
+            from { opacity: 0; transform: translateX(12px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+        .dash-toolbar .edit-actions:not([hidden]),
+        .dash-toolbar #customizeBtn:not([hidden]) { animation: tb-slide-in 0.22s ease both; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .dash-toolbar .edit-actions:not([hidden]),
+            .dash-toolbar #customizeBtn:not([hidden]) { animation: none; }
+        }
         .dash-edit-banner { display: none; align-items: center; gap: 10px; background: rgba(59, 130, 246, 0.12); border: 1px dashed #93c5fd; color: var(--text-main); padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; font-weight: 500; }
         .dash-edit-banner .mh-icon { width: 15px; height: 15px; flex-shrink: 0; vertical-align: -2px; }
         body.dashboard-edit-mode .dash-edit-banner { display: flex; }
@@ -204,6 +218,16 @@ mh_layout_head(['title' => 'Dashboard']);
         .widget-list li a:hover { color: #3b82f6; }
         .widget-list-meta { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
         .widget-empty { text-align: center; padding: 18px 5px; color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
+        /* Today's Active Queue: Walk-in / Scheduled badges + footer link (translucent fills so they read in light and dark mode) */
+        .queue-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+        .queue-tag-walkin { background: rgba(14, 165, 233, 0.15); color: #0284c7; box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.35); }
+        .queue-tag-sched  { background: rgba(99, 102, 241, 0.15); color: #4f46e5; box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35); }
+        html[data-theme="dark"] .queue-tag-walkin { color: #7dd3fc; }
+        html[data-theme="dark"] .queue-tag-sched  { color: #a5b4fc; }
+        .queue-widget-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-color, #e2e8f0); }
+        .queue-widget-viewall { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; font-weight: bold; color: #3b82f6; text-decoration: none; }
+        .queue-widget-viewall .mh-icon { width: 13px; height: 13px; }
+        .queue-widget-viewall:hover { text-decoration: underline; }
         .data-table { font-size: 0.95rem; width: 100%; border-collapse: collapse; }
         .data-table th { background-color: var(--bg-hover); color: var(--text-muted); font-weight: bold; text-transform: uppercase; padding: 15px; text-align: left; }
         .data-table td { padding: 15px; border-bottom: 1px solid var(--border-subtle, #f1f5f9); }
@@ -318,12 +342,14 @@ mh_layout_head(['title' => 'Dashboard']);
             </div>
 
             <div class="dash-toolbar">
-                <button type="button" class="view-only" id="customizeBtn" onclick="mhToggleCustomize()"><?php echo mh_icon('sliders'); ?> Customize Dashboard</button>
+                <button type="button" id="customizeBtn"><?php echo mh_icon('sliders'); ?> Customize Dashboard</button>
 
-                <button type="button" class="edit-only" onclick="mhOpenAddWidgetModal()"><?php echo mh_icon('plus'); ?> Add Widget</button>
-                <button type="button" class="edit-only" onclick="mhResetLayout()"><?php echo mh_icon('rotate-ccw'); ?> Reset Default</button>
-                <button type="button" class="edit-only btn-primary-toolbar" onclick="mhSaveLayout()"><?php echo mh_icon('save'); ?> Save Layout</button>
-                <button type="button" class="edit-only" onclick="mhToggleCustomize()"><?php echo mh_icon('check'); ?> Done</button>
+                <div class="edit-actions" id="editActions" hidden>
+                    <button type="button" id="addWidgetBtn" onclick="mhOpenAddWidgetModal()"><?php echo mh_icon('plus'); ?> Add Widget</button>
+                    <button type="button" onclick="mhResetLayout()"><?php echo mh_icon('rotate-ccw'); ?> Reset Default</button>
+                    <button type="button" class="btn-primary-toolbar" onclick="mhSaveLayout()"><?php echo mh_icon('save'); ?> Save Layout</button>
+                    <button type="button" id="doneBtn"><?php echo mh_icon('check'); ?> Done</button>
+                </div>
             </div>
 
             <div class="dash-edit-banner">
@@ -590,13 +616,24 @@ mh_layout_head(['title' => 'Dashboard']);
         const widgetGrid = document.getElementById('widgetGrid');
         let mhDraggingEl = null;
 
-        function mhToggleCustomize() {
-            document.body.classList.toggle('dashboard-edit-mode');
-            const editing = document.body.classList.contains('dashboard-edit-mode');
+        const customizeBtn = document.getElementById('customizeBtn');
+        const editActions  = document.getElementById('editActions');
+
+        function mhSetCustomize(editing) {
+            document.body.classList.toggle('dashboard-edit-mode', editing);
             widgetGrid.querySelectorAll('.dash-widget').forEach(el => {
                 el.setAttribute('draggable', editing ? 'true' : 'false');
             });
+
+            customizeBtn.hidden = editing;
+            editActions.hidden  = !editing;
+
+            // Keep keyboard focus from being lost when the focused button disappears
+            (editing ? document.getElementById('addWidgetBtn') : customizeBtn).focus();
         }
+
+        customizeBtn.addEventListener('click', () => mhSetCustomize(true));
+        document.getElementById('doneBtn').addEventListener('click', () => mhSetCustomize(false));
 
         // --- Drag & drop reordering (native HTML5 D&D, no dependencies) ---
         widgetGrid.addEventListener('dragstart', function(e) {
@@ -716,7 +753,7 @@ mh_layout_head(['title' => 'Dashboard']);
         }
 
         async function mhSaveLayout() {
-            const btn = event.target;
+            const btn = event.currentTarget;
             const originalText = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = 'Saving…';

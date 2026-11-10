@@ -1,10 +1,11 @@
 <?php
 /**
  * =====================================================================
- * MARICK HEALTH CENTER - GOOGLE CLOUD VISION OCR HELPER
+ * MARICK HEALTH CENTER - OCR HELPER
  * =====================================================================
- * Reusable helper providing integration with the Google Cloud Vision API
- * (DOCUMENT_TEXT_DETECTION feature) and document parsing functions.
+ * Reusable helper providing integration with the active OCR engine
+ * (Google Cloud Vision, Google Gemini, Groq, OpenAI, or AWS Textract)
+ * and document parsing functions.
  * =====================================================================
  */
 
@@ -97,7 +98,7 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
         }
 
         if (trim((string) $apiKey) === '') {
-            $err = 'Google Cloud Vision API key is not configured. Please set it in System Settings > Scanner (OCR).';
+            $err = 'Google Cloud Vision API key is not configured. Open System Settings > Scanner (OCR) and enter your API key.';
             vision_ocr_log_error('vision', 'Config', $err);
             return [
                 'success' => false,
@@ -173,7 +174,7 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
 
         $ch = curl_init($url);
         if (!$ch) {
-            $err = 'Failed to initialize cURL for Google Cloud Vision API.';
+            $err = 'Failed to initialize the OCR HTTP client.';
             vision_ocr_log_error('vision', 'cURL', $err);
             return [
                 'success' => false,
@@ -210,7 +211,7 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
             return [
                 'success' => false,
                 'text'    => '',
-                'error'   => 'Network error connecting to Google Cloud Vision API: ' . $errDesc,
+                'error'   => 'Network error connecting to the OCR service: ' . $errDesc,
             ];
         }
 
@@ -218,26 +219,26 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
         $data = json_decode((string) $response, true);
         if (!is_array($data)) {
             $snippet = substr(trim((string) $response), 0, 300);
-            vision_ocr_log_error('vision', 'JSON', 'Invalid JSON response from Google Cloud Vision API', [
+            vision_ocr_log_error('vision', 'JSON', 'Invalid JSON response from OCR service', [
                 'http_code'        => $httpCode,
                 'response_snippet' => $snippet,
             ]);
             return [
                 'success' => false,
                 'text'    => '',
-                'error'   => 'Google Cloud Vision API returned an invalid response (HTTP ' . $httpCode . '). Please check the system logs.',
+                'error'   => 'The OCR service returned an invalid response (HTTP ' . $httpCode . '). Please check the system logs.',
             ];
         }
 
         // Check for API-level errors from Google
         if (!empty($data['error'])) {
-            $msg  = (string) ($data['error']['message'] ?? 'Google Cloud Vision API error.');
+            $msg  = (string) ($data['error']['message'] ?? 'OCR service error.');
             $code = $data['error']['code'] ?? $httpCode;
             vision_ocr_log_error('vision', 'API', $msg, ['api_code' => $code]);
             return [
                 'success' => false,
                 'text'    => '',
-                'error'   => 'Google Cloud Vision error: ' . $msg,
+                'error'   => 'OCR service error: ' . $msg,
                 'raw'     => $data,
             ];
         }
@@ -275,7 +276,7 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
         return [
             'success' => false,
             'text'    => '',
-            'error'   => 'An error occurred during Cloud Vision OCR processing: ' . $e->getMessage(),
+            'error'   => 'An error occurred during OCR processing: ' . $e->getMessage(),
         ];
     }
 }
@@ -1127,7 +1128,7 @@ function mh_textract_call_sigv4($bytes, $accessKey, $secretKey, $region)
  *
  * Uses the AWS SDK for PHP (Aws\Textract\TextractClient) when vendor/autoload.php is
  * present, otherwise an equivalent hand-signed SigV4 request - either way the result is
- * Textract's, and this function NEVER falls back to Google Cloud Vision or Gemini.
+ * Textract's, and this function NEVER falls back to Vision or Gemini.
  *
  * Credentials and region are read live from System Settings (aws_access_key_id,
  * aws_secret_access_key, aws_region - default ap-southeast-1) unless passed explicitly.
@@ -1486,196 +1487,80 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
  */
 function call_gemini_vision_ocr($imagePath, $apiKey = null)
 {
-    try {
-        require_once __DIR__ . '/../config/vision.php';
-        require_once __DIR__ . '/ocr/GeminiOcrClient.php';
-
-        if (empty($apiKey)) {
-            $apiKey = function_exists('mh_ocr_live_setting')
-                ? mh_ocr_live_setting('gemini_api_key', '')
-                : (defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '');
-            if ($apiKey === '' && defined('GEMINI_API_KEY')) {
-                $apiKey = GEMINI_API_KEY;
-            }
-        }
-
-        if (trim((string) $apiKey) === '') {
-            $err = 'The Gemini API key has not been configured yet. Open System Settings > Scanner (OCR) and paste a Gemini key (starts with "AIzaSy").';
-            vision_ocr_log_error('gemini', 'Config', $err);
-            return [
-                'success' => false,
-                'text'    => '',
-                'error'   => $err,
-            ];
-        }
-
-        if (!is_file($imagePath) || !is_readable($imagePath)) {
-            $err = 'The document image file could not be read or does not exist on the server.';
-            vision_ocr_log_error('gemini', 'File', $err, ['path' => $imagePath]);
-            return [
-                'success' => false,
-                'text'    => '',
-                'error'   => $err,
-            ];
-        }
-
-        // Detect MIME type
-        $mimeType = '';
-        if (function_exists('finfo_open')) {
-            $fi = finfo_open(FILEINFO_MIME_TYPE);
-            if ($fi) { $mimeType = (string) finfo_file($fi, $imagePath); finfo_close($fi); }
-        }
-        if ($mimeType === '' && function_exists('mime_content_type')) {
-            $mimeType = (string) mime_content_type($imagePath);
-        }
-        $aliases = ['image/jpg' => 'image/jpeg', 'image/pjpeg' => 'image/jpeg', 'image/x-png' => 'image/png'];
-        if (isset($aliases[$mimeType])) { $mimeType = $aliases[$mimeType]; }
-        if ($mimeType === '') { $mimeType = 'image/jpeg'; }
-
-        $fileContents = @file_get_contents($imagePath);
-        if ($fileContents === false || strlen($fileContents) === 0) {
-            $err = 'The uploaded document is empty or could not be loaded into memory.';
-            vision_ocr_log_error('gemini', 'File', $err);
-            return ['success' => false, 'text' => '', 'error' => $err];
-        }
-
-        $imageData = base64_encode($fileContents);
-        unset($fileContents);
-
-        $promptText = 'You are an OCR engine. Transcribe ALL visible text from this document exactly as printed, preserving field labels, values, dates, and table rows. Return plain text only — no commentary, no markdown, no explanations. If a field is blank, leave it blank.';
-
-        $payload = [
-            'contents' => [[
-                'role'  => 'user',
-                'parts' => [
-                    ['text' => $promptText],
-                    ['inline_data' => ['mime_type' => $mimeType, 'data' => $imageData]],
-                ],
-            ]],
-            'generationConfig' => [
-                'temperature'      => 0,
-                'responseMimeType' => 'text/plain',
-            ],
-        ];
-        unset($imageData);
-
-        $payloadJson = json_encode($payload);
-        unset($payload);
-
-        if ($payloadJson === false) {
-            $err = 'Failed to prepare the document payload (JSON encoding error).';
-            vision_ocr_log_error('gemini', 'JSON', $err, ['json_error' => json_last_error_msg()]);
-            return ['success' => false, 'text' => '', 'error' => $err];
-        }
-
-        if (!function_exists('curl_init')) {
-            $err = 'The cURL PHP extension is not enabled on this server. Contact the administrator to enable php_curl.';
-            vision_ocr_log_error('gemini', 'cURL', $err);
-            return ['success' => false, 'text' => '', 'error' => $err];
-        }
-
-        // Try each model in the fallback chain
-        $models   = function_exists('gemini_ocr_model_candidates') ? gemini_ocr_model_candidates() : ['gemini-2.0-flash'];
-        $version  = defined('GEMINI_API_VERSION') ? GEMINI_API_VERSION : 'v1beta';
-        $timeout  = defined('GEMINI_HTTP_TIMEOUT') ? (int) GEMINI_HTTP_TIMEOUT : 60;
-        $maxTries = defined('GEMINI_MAX_ATTEMPTS') ? max(1, (int) GEMINI_MAX_ATTEMPTS) : 3;
-
-        $lastError = 'Gemini OCR service could not be reached.';
-
-        foreach ($models as $model) {
-            $url = 'https://generativelanguage.googleapis.com/' . $version . '/models/'
-                 . rawurlencode($model) . ':generateContent';
-
-            for ($attempt = 0; $attempt < $maxTries; $attempt++) {
-                $ch = curl_init($url);
-                if (!$ch) {
-                    vision_ocr_log_error('gemini', 'cURL', 'Failed to initialize cURL', ['model' => $model]);
-                    return ['success' => false, 'text' => '', 'error' => 'Failed to initialize cURL for Gemini AI.'];
-                }
-
-                curl_setopt_array($ch, [
-                    CURLOPT_POST           => true,
-                    CURLOPT_POSTFIELDS     => $payloadJson,
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT        => $timeout,
-                    CURLOPT_CONNECTTIMEOUT => 15,
-                    CURLOPT_SSL_VERIFYPEER => true,
-                    CURLOPT_SSL_VERIFYHOST => 2,
-                    CURLOPT_HTTPHEADER     => [
-                        'Content-Type: application/json',
-                        'x-goog-api-key: ' . $apiKey,
-                    ],
-                ]);
-
-                $body     = curl_exec($ch);
-                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $curlErr  = (string) curl_error($ch);
-                $curlNo   = (int) curl_errno($ch);
-                curl_close($ch);
-
-                if ($curlNo !== 0) {
-                    $lastError = 'Network error reaching Gemini: ' . ($curlErr ?: ('Code #' . $curlNo));
-                    vision_ocr_log_error('gemini', 'cURL', $lastError, ['curl_no' => $curlNo, 'model' => $model, 'attempt' => $attempt + 1]);
-                    if ($attempt < $maxTries - 1) { usleep(700000); continue; }
-                    break;
-                }
-
-                $decoded = ($body !== false && $body !== '') ? json_decode($body, true) : null;
-
-                if ($httpCode === 200 && is_array($decoded)) {
-                    $rawText = (string) ($decoded['candidates'][0]['content']['parts'][0]['text'] ?? '');
-                    // Strip any accidental markdown fences
-                    $rawText = trim($rawText);
-                    if (strpos($rawText, '```') === 0) {
-                        $rawText = preg_replace('/^```[^\n]*\n?/i', '', $rawText);
-                        $rawText = preg_replace('/\n?```$/', '', $rawText);
-                    }
-                    return ['success' => true, 'text' => trim($rawText)];
-                }
-
-                // If non-JSON received, log explicitly
-                if (!is_array($decoded)) {
-                    $snippet = substr(trim((string) $body), 0, 300);
-                    vision_ocr_log_error('gemini', 'JSON', 'Invalid JSON from Gemini API', [
-                        'http_code'        => $httpCode,
-                        'model'            => $model,
-                        'response_snippet' => $snippet,
-                    ]);
-                }
-
-                if ($httpCode === 404) {
-                    vision_ocr_log_error('gemini', 'API', "Gemini model '{$model}' returned 404 (retired); attempting fallback model.");
-                    break; // Model gone → try next in chain
-                }
-
-                if (in_array($httpCode, [400, 401, 403, 413], true)) {
-                    $msg = (string) ($decoded['error']['message'] ?? ('Gemini API error (HTTP ' . $httpCode . ').'));
-                    vision_ocr_log_error('gemini', 'API', $msg, ['http_code' => $httpCode, 'model' => $model]);
-                    return ['success' => false, 'text' => '', 'error' => $msg];
-                }
-
-                $lastError = 'Gemini returned HTTP ' . $httpCode . '.';
-                vision_ocr_log_error('gemini', 'HTTP', $lastError, ['model' => $model, 'attempt' => $attempt + 1]);
-
-                if ($attempt < $maxTries - 1) {
-                    $delay = function_exists('gemini_ocr_backoff_delay_ms') ? gemini_ocr_backoff_delay_ms($attempt) : 700000;
-                    usleep(is_int($delay) && $delay > 0 ? $delay * 1000 : 700000);
-                }
-            }
-        }
-
-        return ['success' => false, 'text' => '', 'error' => $lastError];
-    } catch (Throwable $e) {
-        vision_ocr_log_error('gemini', 'Exception', $e->getMessage(), [
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-        ]);
-        return [
-            'success' => false,
-            'text'    => '',
-            'error'   => 'An error occurred during Gemini AI OCR processing: ' . $e->getMessage(),
-        ];
+    require_once __DIR__ . '/ai_helper.php';
+    if (empty($apiKey)) {
+        $apiKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('gemini_api_key', '') : '';
     }
+    if ($apiKey === '' && function_exists('mh_setting')) {
+        $apiKey = (string) mh_setting('gemini_api_key', '');
+    }
+    if ($apiKey === '') {
+        $groqKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : '';
+        return call_groq_ocr($imagePath, $groqKey);
+    }
+    if (!is_file($imagePath) || !is_readable($imagePath)) {
+        return ['success' => false, 'text' => '', 'error' => 'File not found or unreadable.'];
+    }
+    $bytes = @file_get_contents($imagePath);
+    if ($bytes === false || $bytes === '') {
+        return ['success' => false, 'text' => '', 'error' => 'Empty file.'];
+    }
+    $b64 = base64_encode($bytes);
+    if (function_exists('callAiService')) {
+        $res = callAiService(
+            'You are an OCR engine. Transcribe ALL visible text from this document verbatim. Return plain text only.',
+            $b64,
+            [
+                'provider' => 'gemini',
+                'api_key'  => $apiKey,
+                'model'    => 'gemini-2.0-flash',
+            ]
+        );
+        if (!empty($res['success'])) {
+            return ['success' => true, 'text' => $res['content'] ?? ''];
+        }
+    }
+    $groqKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : '';
+    return call_groq_ocr($imagePath, $groqKey);
+}
+
+function call_openai_vision_ocr($imagePath, $apiKey = null)
+{
+    require_once __DIR__ . '/ai_helper.php';
+    if (empty($apiKey)) {
+        $apiKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('openai_api_key', '') : '';
+    }
+    if ($apiKey === '' && function_exists('mh_setting')) {
+        $apiKey = (string) mh_setting('openai_api_key', '');
+    }
+    if ($apiKey === '') {
+        $groqKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : '';
+        return call_groq_ocr($imagePath, $groqKey);
+    }
+    if (!is_file($imagePath) || !is_readable($imagePath)) {
+        return ['success' => false, 'text' => '', 'error' => 'File not found or unreadable.'];
+    }
+    $bytes = @file_get_contents($imagePath);
+    if ($bytes === false || $bytes === '') {
+        return ['success' => false, 'text' => '', 'error' => 'Empty file.'];
+    }
+    $b64 = base64_encode($bytes);
+    if (function_exists('callAiService')) {
+        $res = callAiService(
+            'You are an OCR engine. Transcribe ALL visible text from this document verbatim. Return plain text only.',
+            $b64,
+            [
+                'provider' => 'openai',
+                'api_key'  => $apiKey,
+                'model'    => 'gpt-4o-mini',
+            ]
+        );
+        if (!empty($res['success'])) {
+            return ['success' => true, 'text' => $res['content'] ?? ''];
+        }
+    }
+    $groqKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : '';
+    return call_groq_ocr($imagePath, $groqKey);
 }
 
 /* ---------------------------------------------------------------------
@@ -2229,6 +2114,7 @@ PROMPT;
  *   - Google Gemini AI API     (ocr_engine = 'gemini')
  *   - Amazon Textract          (ocr_engine = 'aws_textract')
  *   - Groq vision LLM          (ocr_engine = 'groq_ocr')
+ *   - OpenAI Vision            (ocr_engine = 'openai')
  *
  * Always returns a standardized contract:
  *   {success: bool, text: string, engine: string, error?: string, kv?: array}
@@ -2251,8 +2137,8 @@ function call_ocr_engine($imagePath, $apiKey = null)
 
         switch ($engine) {
             case 'aws_textract':
-                // Textract only. A Textract failure is reported as a Textract failure -
-                // it never silently retries on Google Cloud Vision or Gemini.
+                // Textract only. A Textract failure is reported as a Textract failure;
+                // it never silently retries on another engine.
                 $result = call_aws_textract_ocr($imagePath);
                 break;
 
@@ -2260,11 +2146,14 @@ function call_ocr_engine($imagePath, $apiKey = null)
                 $result = call_gemini_vision_ocr($imagePath, $apiKey);
                 break;
 
+            case 'openai':
+                $result = call_openai_vision_ocr($imagePath, $apiKey);
+                break;
+
             case 'groq_ocr':
                 // Groq only. The key is read LIVE from system_settings on every scan (never a
                 // constant frozen at include time). The returned `kv` map flows through the same
-                // mh_textract_map_fields() pipeline the scan endpoints already use for Textract.
-                $groqKey = (string) mh_ocr_live_setting('groq_api_key', '');
+                // mh_textract_map_fields() pipeline the scan endpoints already use for Textract.                $groqKey = (string) mh_ocr_live_setting('groq_api_key', '');
                 $result  = call_groq_ocr($imagePath, $groqKey);
                 break;
 

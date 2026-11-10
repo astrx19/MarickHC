@@ -1,21 +1,8 @@
 <?php
-// Wrapped in a constant-keyed block so a second include under a different path case cannot redeclare functions.
+
 if (!defined('MH_LOADED_INCLUDES_QUEUE_HELPER')) {
 define('MH_LOADED_INCLUDES_QUEUE_HELPER', true);
 
-/**
- * =====================================================================
- * FIRST-COME, FIRST-SERVED WALK-IN QUEUE
- * =====================================================================
- * Order = order of arrival. Each department numbers its own queue per calendar day (1, 2, 3 ...).
- * The number is computed INSIDE the same transaction that inserts the row, using
- * SELECT ... FOR UPDATE on the (department, date, queue_number) index, so two receptionists
- * registering at the same moment can never get the same number. A UNIQUE key is the final backstop.
- *
- * Queue status for a patient who has arrived and is waiting to be called: 'Waiting'.
- */
-
-/** Adds appointments.queue_number + indexes if missing (DDL, so call BEFORE begin_transaction()). */
 function mh_ensure_queue_schema(mysqli $conn)
 {
     static $done = false;
@@ -28,18 +15,12 @@ function mh_ensure_queue_schema(mysqli $conn)
                             ADD UNIQUE KEY `uq_queue_slot` (`department`, `appointment_date`, `queue_number`)");
         }
     } catch (Throwable $e) {
-        // e.g. the DB user has no ALTER right: run database/queue_number_migration.sql manually.
+
         error_log('mh_ensure_queue_schema failed: ' . $e->getMessage());
     }
     $done = true;
 }
 
-/**
- * Returns an array of operating days configured in system settings.
- * Defaults to Monday - Friday if not set.
- *
- * @return array List of days e.g. ['Monday', 'Tuesday', ...]
- */
 function mh_operating_days()
 {
     $daysRaw = '';
@@ -49,7 +30,7 @@ function mh_operating_days()
     if ($daysRaw === '') {
         $daysRaw = 'Monday,Tuesday,Wednesday,Thursday,Friday';
     }
-    // Handle JSON or comma-separated format
+
     if (strpos($daysRaw, '[') === 0) {
         $decoded = json_decode($daysRaw, true);
         if (is_array($decoded)) {
@@ -60,9 +41,6 @@ function mh_operating_days()
     return array_values(array_filter(array_map('trim', $parts)));
 }
 
-/**
- * Returns a human-friendly string of operating days, e.g. "Monday – Friday" or "Monday, Wednesday, Friday".
- */
 function mh_operating_days_summary()
 {
     $days = mh_operating_days();
@@ -71,46 +49,33 @@ function mh_operating_days_summary()
     }
     $weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     if ($days === $weekdays) {
-        return 'Monday – Friday';
+        return 'Monday - Friday';
     }
-    $allWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     if (count($days) === 7) {
-        return 'Every day (Monday – Sunday)';
+        return 'Every day (Monday - Sunday)';
     }
     return implode(', ', $days);
 }
 
-/**
- * Returns formatted operating hours, e.g. "8:00 AM – 5:00 PM".
- */
-function mh_operating_hours_summary()
+function mh_operating_window()
 {
-    $openTime  = '08:00';
-    $closeTime = '17:00';
+    $open = '08:00';
+    $close = '17:00';
     if (function_exists('mh_setting')) {
-        $openTime  = (string) mh_setting('opening_time', '08:00');
-        $closeTime = (string) mh_setting('closing_time', '17:00');
+        $o = (string) mh_setting('opening_time', $open);
+        $c = (string) mh_setting('closing_time', $close);
+        if (preg_match('/^\d{2}:\d{2}$/', $o)) { $open = $o; }
+        if (preg_match('/^\d{2}:\d{2}$/', $c)) { $close = $c; }
     }
-    $openFormatted  = date('g:i A', strtotime("2000-01-01 $openTime"));
-    $closeFormatted = date('g:i A', strtotime("2000-01-01 $closeTime"));
-    return "$openFormatted – $closeFormatted";
+    return ['open' => $open . ':00', 'close' => $close . ':00'];
 }
 
-/**
- * Is the clinic closed TODAY? Returns a user-facing reason, or null when it is open.
- *
- * Checks:
- *   1. Declared holidays (calendar table `holidays`)
- *   2. Operating days configured in system_settings (`operating_days`)
- *   3. Operating hours configured in system_settings (`opening_time` - `closing_time`) when testing current time
- *
- * If the check itself fails the clinic is treated as OPEN (a database hiccup must never block patient care).
- *
- * @param mysqli $conn
- * @param string|null $date 'Y-m-d' to test another day (defaults to today)
- * @param bool $checkTime Whether to also check current time against opening/closing hours (default true)
- * @return string|null Reason when closed, or null when open
- */
+function mh_operating_hours_summary()
+{
+    $w = mh_operating_window();
+    return date('g:i A', strtotime('2000-01-01 ' . $w['open'])) . ' - ' . date('g:i A', strtotime('2000-01-01 ' . $w['close']));
+}
+
 function mh_clinic_closed_reason(mysqli $conn, $date = null, $checkTime = true)
 {
     $date = ($date !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date)) ? $date : null;
@@ -126,7 +91,6 @@ function mh_clinic_closed_reason(mysqli $conn, $date = null, $checkTime = true)
     $st->close();
     if (!$row) { return null; }
 
-    // 1. Holiday check
     if ($row['holiday'] !== null) {
         return 'The clinic is closed today (' . trim((string) $row['holiday']) . '). Patients cannot be added to the queue on a declared holiday.';
     }
@@ -134,7 +98,6 @@ function mh_clinic_closed_reason(mysqli $conn, $date = null, $checkTime = true)
     $daysSummary = mh_operating_days_summary();
     $hoursSummary = mh_operating_hours_summary();
 
-    // 2. Operating days check
     $dayName = trim((string) ($row['dayname'] ?? ''));
     $operatingDays = mh_operating_days();
     $isOperatingDay = in_array($dayName, $operatingDays, true);
@@ -143,32 +106,17 @@ function mh_clinic_closed_reason(mysqli $conn, $date = null, $checkTime = true)
         return 'The clinic is closed today (' . $dayName . '). Operating schedule is ' . $daysSummary . ' (' . $hoursSummary . ').';
     }
 
-    // 3. Operating hours check (only if evaluating today)
     if ($checkTime && $date === null) {
+        $w = mh_operating_window();
         $serverTime = trim((string) ($row['server_time'] ?? date('H:i:s')));
-        $openTime   = '08:00:00';
-        $closeTime  = '17:00:00';
-        if (function_exists('mh_setting')) {
-            $ot = (string) mh_setting('opening_time', '08:00');
-            $ct = (string) mh_setting('closing_time', '17:00');
-            if (preg_match('/^\d{2}:\d{2}$/', $ot)) { $openTime = $ot . ':00'; }
-            if (preg_match('/^\d{2}:\d{2}$/', $ct)) { $closeTime = $ct . ':00'; }
-        }
-
-        if ($serverTime < $openTime || $serverTime >= $closeTime) {
-            $openFmt  = date('g:i A', strtotime("2000-01-01 $openTime"));
-            $closeFmt = date('g:i A', strtotime("2000-01-01 $closeTime"));
-            return 'The clinic is currently outside its operating hours (' . $openFmt . ' – ' . $closeFmt . '). Walk-in registration is closed.';
+        if ($serverTime < $w['open'] || $serverTime >= $w['close']) {
+            return 'The clinic is currently outside its operating hours (' . $hoursSummary . '). Walk-in registration is closed.';
         }
     }
 
     return null;
 }
 
-/**
- * Queue number as people read it: department initials + 3 digits, e.g. GC-001 (General Consultation),
- * DC-014 (Dental Clinic), MC-003 (Maternal Care), CI-002 (Child Immunization). The stored number stays a plain integer.
- */
 function mh_queue_label($department, $number)
 {
     $n = (int) $number;
@@ -181,30 +129,26 @@ function mh_queue_label($department, $number)
     return $prefix . '-' . str_pad((string) $n, 3, '0', STR_PAD_LEFT);
 }
 
-/** Fingerprint of today's whole queue (every department). Changes whenever an entry is added, renumbered or changes status. */
 function mh_queue_signature(mysqli $conn)
 {
-    $parts = [];
-    $res = $conn->query("SELECT id, department, status, COALESCE(queue_number, 0) AS q FROM appointments WHERE appointment_date = CURDATE() ORDER BY id");
-    while ($res && ($r = $res->fetch_assoc())) { $parts[] = $r['id'] . ':' . $r['department'] . ':' . $r['status'] . ':' . $r['q']; }
-    return ['sig' => md5(implode('|', $parts)), 'count' => count($parts)];
+    $res = $conn->query(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(CRC32(CONCAT_WS(':', id, department, status, COALESCE(queue_number, 0)))), 0) AS s
+           FROM appointments WHERE appointment_date = CURDATE()"
+    );
+    $row = $res ? $res->fetch_assoc() : null;
+    $count = (int) ($row['c'] ?? 0);
+    return ['sig' => md5($count . ':' . ($row['s'] ?? '0')), 'count' => $count];
 }
 
-/** Status values meaning "in today's queue, ready to be called". 'Approved' = a staff-approved appointment. */
 function mh_queue_active_statuses()
 {
     return ['Waiting', 'Approved'];
 }
 
-/**
- * Strict check that a department is a currently ACTIVE Clinic Department and that the clinical module
- * it maps to (Dental, Maternal Care, ...) is switched on in System Settings.
- * @return string|null error message, or null when the department can take patients
- */
 function mh_queue_department_problem(mysqli $conn, $department)
 {
     $department = (string) $department;
-    $options = mh_options($conn, 'clinic_departments', false);   // every row, with is_active
+    $options = mh_options($conn, 'clinic_departments', false);
     if ($options) {
         $active = false;
         foreach ($options as $o) {
@@ -221,20 +165,12 @@ function mh_queue_department_problem(mysqli $conn, $department)
     return null;
 }
 
-/**
- * Put an EXISTING, ACTIVE patient at the end of a department's queue for today.
- * Call inside a transaction opened by the caller (so patient creation + queueing commit together).
- *
- * @return array{0:?int,1:string} [queue_number or null, error message]
- */
 function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Walk-In Queue Registration')
 {
     $patientId = (int) $patientId;
 
-    // 0) Closed day? (holiday / weekend) - enforced here so no screen can bypass it.
     if (($closed = mh_clinic_closed_reason($conn)) !== null) { return [null, $closed]; }
 
-    // 1) Patient must exist and be active (status = 1, i.e. not archived).
     $st = $conn->prepare("SELECT status, sex FROM patients WHERE id = ? LIMIT 1 FOR UPDATE");
     $st->bind_param('i', $patientId);
     $st->execute();
@@ -242,12 +178,10 @@ function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Wa
     $st->close();
     if (!$p || (int) $p['status'] !== 1) { return [null, 'That patient record is not active.']; }
 
-    // Male patients cannot join the Maternal Care queue (also stops a new walk-in registered as male).
     if (mh_department_module($department) === 'maternal_care' && strcasecmp(trim((string) $p['sex']), 'Male') === 0) {
         return [null, 'Maternal Care is for female patients. This patient is registered as male, so they cannot be added to that queue.'];
     }
 
-    // 2) No double booking: already waiting in this department today?
     $statuses = mh_queue_active_statuses();
     $in = implode(',', array_fill(0, count($statuses), '?'));
     $dup = $conn->prepare(
@@ -263,7 +197,6 @@ function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Wa
             . ($already['queue_number'] ? ' (Queue ' . mh_queue_label($department, $already['queue_number']) . ')' : '') . '.'];
     }
 
-    // 3) Next number for THIS department and day. FOR UPDATE locks the index range -> arrivals are serialised.
     $next = $conn->prepare(
         "SELECT COALESCE(MAX(queue_number), 0) + 1 AS n FROM appointments
           WHERE department = ? AND appointment_date = CURDATE() FOR UPDATE"
@@ -273,7 +206,6 @@ function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Wa
     $queueNo = (int) $next->get_result()->fetch_assoc()['n'];
     $next->close();
 
-    // 4) Arrival time is stored for the record; the queue number is what orders the line.
     $ins = $conn->prepare(
         "INSERT INTO appointments (patient_id, department, appointment_date, appointment_time, reason, status, queue_number)
          VALUES (?, ?, CURDATE(), CURTIME(), ?, 'Waiting', ?)"
@@ -285,25 +217,6 @@ function mh_enqueue_patient(mysqli $conn, $patientId, $department, $reason = 'Wa
     return [$queueNo, ''];
 }
 
-
-/**
- * =====================================================================
- * "PROCEED" HAND-OFF: queue -> department form -> Save record -> Completed
- * =====================================================================
- * Pressing Proceed on Patient Queueing only OPENS the department page for that queue entry
- * (?walkin_id=<patient>&apt_id=<queue entry>). The queue entry stays Waiting/Approved until the
- * doctor / attendant actually saves the record on the department page, which then calls
- * mh_queue_complete(). Nothing is marked Completed just because someone clicked Proceed.
- */
-
-/**
- * The open queue entry a department page was opened for, or null when there is none / it is not valid.
- * Valid = exists, patient is active, still Waiting/Approved, belongs to $module's department,
- * and (when $patientHint > 0) belongs to that patient.
- *
- * @param string|null $module module key from mh_module_registry(), e.g. 'immunization', 'maternal_care'
- * @return array|null  [id, patient_id, department, status, queue_number, reason, appointment_date]
- */
 function mh_queue_open_context(mysqli $conn, $aptId, $module = null, $patientHint = 0)
 {
     $aptId = (int) $aptId;
@@ -326,25 +239,21 @@ function mh_queue_open_context(mysqli $conn, $aptId, $module = null, $patientHin
     return $row;
 }
 
-/** Marks the queue entry Completed. Only moves Waiting/Approved -> Completed. @return bool true when a row changed */
 function mh_queue_complete(mysqli $conn, $aptId, $patientId)
 {
     $aptId = (int) $aptId; $patientId = (int) $patientId;
     if ($aptId <= 0 || $patientId <= 0) { return false; }
+    $statuses = mh_queue_active_statuses();
     $st = $conn->prepare("UPDATE appointments SET status = 'Completed'
-                           WHERE id = ? AND patient_id = ? AND status IN ('Waiting','Approved')");
+                           WHERE id = ? AND patient_id = ? AND status IN (" . implode(',', array_fill(0, count($statuses), '?')) . ")");
     if (!$st) { return false; }
-    $st->bind_param('ii', $aptId, $patientId);
+    $st->bind_param('ii' . str_repeat('s', count($statuses)), $aptId, $patientId, ...$statuses);
     $st->execute();
     $changed = $st->affected_rows > 0;
     $st->close();
     return $changed;
 }
 
-/**
- * Maternal Care is for female patients. Returns an error message when this registered patient is male
- * (null = fine, or the patient is not registered / not found - an unregistered typed name cannot be checked).
- */
 function mh_maternal_sex_error(mysqli $conn, $patientId)
 {
     $patientId = (int) $patientId;
@@ -361,16 +270,11 @@ function mh_maternal_sex_error(mysqli $conn, $patientId)
     return null;
 }
 
-/** Normalises a name part for comparison (case, dots, commas, extra spaces). */
 function mh_queue_norm_name($v)
 {
     return trim(preg_replace('/\s+/u', ' ', str_replace(['.', ','], '', mb_strtolower((string) $v))));
 }
 
-/**
- * Does the name typed on the form (from mh_read_patient_name_post()) still belong to this registered patient?
- * Used so a record saved for a DIFFERENT person never closes someone else's queue entry.
- */
 function mh_queue_name_matches(mysqli $conn, $patientId, array $pn)
 {
     $st = $conn->prepare("SELECT first_name, middle_name, last_name FROM patients WHERE id = ? LIMIT 1");
@@ -388,24 +292,15 @@ function mh_queue_name_matches(mysqli $conn, $patientId, array $pn)
     return $mi === '' || $pm === '' || $mi === $pm;
 }
 
-/**
- * Which registered patient is this record for?
- * When the form was opened from the queue and the name is unchanged, it is exactly that queue patient
- * (even if two registered patients share the name); otherwise fall back to the usual unique-name match.
- *
- * @return int|null
- */
 function mh_queue_resolve_patient(mysqli $conn, $ctx, array $pn)
 {
     if ($ctx && mh_queue_name_matches($conn, $ctx['patient_id'], $pn)) { return (int) $ctx['patient_id']; }
-    // A patient chosen from the "Search registered patients" box wins over a name guess - it is the only way
-    // to tell apart two registered patients who share a name. Still verified: the typed name must match them.
+
     $picked = (int) ($_POST['picked_patient_id'] ?? 0);
     if ($picked > 0 && mh_queue_name_matches($conn, $picked, $pn)) { return $picked; }
     return mh_find_patient_id_by_parts($conn, $pn['last'], $pn['first'], $pn['mi']);
 }
 
-/** Registered-patient details used to pre-fill forms (never includes password/session columns). */
 function mh_queue_patient_profile(mysqli $conn, $patientId)
 {
     $patientId = (int) $patientId;
@@ -420,7 +315,6 @@ function mh_queue_patient_profile(mysqli $conn, $patientId)
     return $row ?: null;
 }
 
-/** Vital signs recorded for the patient TODAY (Vital Signs page), newest first; null when none. */
 function mh_queue_today_vitals(mysqli $conn, $patientId)
 {
     $patientId = (int) $patientId;
@@ -436,22 +330,16 @@ function mh_queue_today_vitals(mysqli $conn, $patientId)
     return $row ?: null;
 }
 
-/** First numeric value in a string ("65 kg" -> "65"); '' when none. For <input type="number">. */
 function mh_queue_number($v)
 {
     return preg_match('/\d+(?:\.\d+)?/', (string) $v, $m) ? $m[0] : '';
 }
 
-/** Drops empty values so only real data is sent to the form. */
 function mh_queue_clean_prefill(array $f)
 {
     return array_filter($f, function ($v) { return $v !== null && $v !== ''; });
 }
 
-/**
- * Banner shown above a department form that was opened from the queue.
- * @param array $ctx result of mh_queue_open_context()
- */
 function mh_queue_render_banner(array $ctx, $patientLabel, $hasPrefill = true)
 {
     $e = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
@@ -465,4 +353,4 @@ function mh_queue_render_banner(array $ctx, $patientLabel, $hasPrefill = true)
     <?php
 }
 
-} // MH_LOADED_INCLUDES_QUEUE_HELPER
+}

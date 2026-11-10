@@ -247,41 +247,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* ---------------- 4. OCR ENGINE + API KEYS ---------------------- */
     if (isset($_POST['save_ocr'])) {
-        // ---- Engine selector ----------------------------------------
         $ocrEngine = trim($_POST['ocr_engine'] ?? 'vision');
-        if (!in_array($ocrEngine, ['vision', 'gemini', 'aws_textract', 'groq_ocr'], true)) { $ocrEngine = 'vision'; }
+        if (!in_array($ocrEngine, ['vision', 'gemini', 'groq_ocr', 'aws_textract', 'openai'], true)) { $ocrEngine = 'vision'; }
 
-        // ---- Google Cloud Vision key --------------------------------
+        $aiProvider = trim($_POST['ai_provider'] ?? 'groq');
+        if (!in_array($aiProvider, ['groq', 'gemini', 'openai'], true)) { $aiProvider = 'groq'; }
+
         $visionKey = trim($_POST['google_vision_api_key'] ?? '');
         if ($visionKey === '') {
-            // Keep the currently-saved key (never echoed back to the form)
             $visionKey = (string) (mh_setting('google_vision_api_key', '') ?: mh_setting('vision_api_key', ''));
         }
         if ($visionKey !== '' && preg_match('/\s/', $visionKey)) {
             mh_redirect('ocr', 'error', 'The Cloud Vision API key contains a space or line break. Re-paste it as a single line.');
         }
 
-        // ---- Gemini AI key ------------------------------------------
         $geminiKey = trim($_POST['gemini_api_key'] ?? '');
         if ($geminiKey === '') {
-            // Keep the currently-saved key
             $geminiKey = (string) mh_setting('gemini_api_key', '');
         }
         if ($geminiKey !== '' && preg_match('/\s/', $geminiKey)) {
             mh_redirect('ocr', 'error', 'The Gemini API key contains a space or line break. Re-paste it as a single line.');
         }
 
-        // ---- Groq API key -------------------------------------------
         $groqKey = trim($_POST['groq_api_key'] ?? '');
         if ($groqKey === '') {
-            // Keep the currently-saved key (never echoed back to the form)
             $groqKey = (string) mh_setting('groq_api_key', '');
         }
         if ($groqKey !== '' && preg_match('/\s/', $groqKey)) {
             mh_redirect('ocr', 'error', 'The Groq API key contains a space or line break. Re-paste it as a single line.');
         }
 
-        // ---- AWS Textract credentials -------------------------------
+        $openaiKey = trim($_POST['openai_api_key'] ?? '');
+        if ($openaiKey === '') {
+            $openaiKey = (string) mh_setting('openai_api_key', '');
+        }
+        if ($openaiKey !== '' && preg_match('/\s/', $openaiKey)) {
+            mh_redirect('ocr', 'error', 'The OpenAI API key contains a space or line break. Re-paste it as a single line.');
+        }
+
         $awsAccessKey = trim($_POST['aws_access_key_id'] ?? '');
         if ($awsAccessKey === '') {
             $awsAccessKey = (string) mh_setting('aws_access_key_id', '');
@@ -303,32 +306,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $awsRegion = (string) mh_setting('aws_region', 'ap-southeast-1');
         }
 
-        // ---- Gemini model -------------------------------------------
-        $ocrModel = preg_replace('/[^a-zA-Z0-9._-]/', '', trim($_POST['ocr_model'] ?? ''));
-        if ($ocrModel === '') { $ocrModel = (string) mh_setting('ocr_model', 'gemini-2.0-flash'); }
-
         mh_set_settings($conn, [
             'ocr_engine'            => $ocrEngine,
+            'ai_provider'           => $aiProvider,
             'google_vision_api_key' => $visionKey,
             'gemini_api_key'        => $geminiKey,
             'groq_api_key'          => $groqKey,
+            'openai_api_key'        => $openaiKey,
             'aws_access_key_id'     => $awsAccessKey,
             'aws_secret_access_key' => $awsSecretKey,
             'aws_region'            => $awsRegion,
-            'ocr_model'             => $ocrModel,
         ], $user_id);
         mh_all_settings($conn, true);
 
         $engineLabels = [
-            'gemini'       => 'Gemini AI',
             'vision'       => 'Google Cloud Vision',
+            'gemini'       => 'Google Gemini API',
             'aws_textract' => 'AWS Textract',
             'groq_ocr'     => 'Groq OCR',
+            'openai'       => 'OpenAI',
         ];
         $engineLabel = $engineLabels[$ocrEngine] ?? 'Google Cloud Vision';
-        logActivity($conn, $user_id, $user_role, 'System Settings', 'OCR engine set to: ' . $engineLabel . '. Credentials updated.');
+        logActivity($conn, $user_id, $user_role, 'System Settings', 'AI and OCR engine set to: ' . $engineLabel . '. Credentials updated.');
 
-        mh_redirect('ocr', 'success', 'Scanner (OCR) settings saved. Active engine: ' . $engineLabel . '.');
+        mh_redirect('ocr', 'success', 'Scanner (OCR) & AI settings saved. Active engine: ' . $engineLabel . '.');
     }
 
     /* ---------------- 5. SMS PROVIDER + SEMAPHORE + ANDROID GATEWAY -- */
@@ -536,14 +537,14 @@ $system_name = mh_setting('system_name');
 // Quick health check for the active OCR engine, shown on the OCR tab.
 $vision_key_problem  = null;
 $gemini_key_problem  = null;
-$aws_textract_problem = null;
 $groq_key_problem    = null;
+$aws_textract_problem = null;
+$openai_key_problem  = null;
 $active_ocr_engine   = 'vision';
 if ($active_tab === 'ocr') {
     require_once __DIR__ . '/../config/vision.php';
     $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
 
-    // Vision key validation
     $vk = defined('GOOGLE_VISION_API_KEY') ? GOOGLE_VISION_API_KEY : '';
     if (empty($vk)) {
         $vision_key_problem = 'The Google Cloud Vision API key is not configured yet.';
@@ -551,15 +552,13 @@ if ($active_tab === 'ocr') {
         $vision_key_problem = 'The saved key does not appear to be a valid Google Cloud Vision key (typically starts with "AIzaSy").';
     }
 
-    // Gemini key validation
-    $gk = defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '';
-    if (empty($gk)) {
-        $gemini_key_problem = 'The Gemini AI API key has not been configured yet.';
+    $gk = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('gemini_api_key', '') : (string) mh_setting('gemini_api_key', '');
+    if ($gk === '') {
+        $gemini_key_problem = 'The Gemini API key has not been configured yet.';
     } elseif (strpos($gk, 'AIzaSy') !== 0 && strpos($gk, 'AQ.') !== 0) {
-        $gemini_key_problem = 'The saved Gemini key does not look like a valid key (should start with "AIzaSy" or "AQ.").';
+        $gemini_key_problem = 'The saved Gemini key does not look valid (typically starts with "AIzaSy" or "AQ.").';
     }
 
-    // Groq key validation (read live from system_settings - same source the scanner uses)
     $grk = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('groq_api_key', '') : (string) mh_setting('groq_api_key', '');
     if ($grk === '') {
         $groq_key_problem = 'The Groq API key has not been configured yet.';
@@ -567,7 +566,13 @@ if ($active_tab === 'ocr') {
         $groq_key_problem = 'The saved Groq key does not look valid (should start with "gsk_").';
     }
 
-    // AWS Textract credentials validation
+    $okKey = function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('openai_api_key', '') : (string) mh_setting('openai_api_key', '');
+    if ($okKey === '') {
+        $openai_key_problem = 'The OpenAI API key has not been configured yet.';
+    } elseif (strpos($okKey, 'sk-') !== 0) {
+        $openai_key_problem = 'The saved OpenAI key does not look valid (should start with "sk-").';
+    }
+
     $awsKey = defined('AWS_TEXTRACT_ACCESS_KEY_ID') ? AWS_TEXTRACT_ACCESS_KEY_ID : '';
     $awsSec = defined('AWS_TEXTRACT_SECRET_ACCESS_KEY') ? AWS_TEXTRACT_SECRET_ACCESS_KEY : '';
     if (empty($awsKey) || empty($awsSec)) {
@@ -1212,20 +1217,33 @@ mh_layout_head(['title' => 'System Settings']);
 <?php elseif ($active_tab === 'ocr'): ?>
 
     <?php
-    // Helper: current engine label
     $engineLabels = [
         'vision'       => 'Google Cloud Vision API',
-        'gemini'       => 'Gemini AI API',
-        'aws_textract' => 'Amazon Textract (AWS)',
-        'groq_ocr'     => 'Groq OCR (qwen/qwen3.8-27b)',
+        'gemini'       => 'Google Gemini API (Gemini 3.6 Flash / 3.1 Pro)',
+        'groq_ocr'     => 'Groq OCR',
+        'aws_textract' => 'AWS Textract',
+        'openai'       => 'OpenAI',
     ];
-    $ocr_engine_label = $engineLabels[$active_ocr_engine] ?? 'Google Cloud Vision API';
-    if ($active_ocr_engine === 'gemini') {
-        $ocr_engine_ok  = ($gemini_key_problem === null);
-        $ocr_key_notice = $gemini_key_problem;
-    } elseif ($active_ocr_engine === 'groq_ocr') {
+    $aiLabels = [
+        'groq'   => 'Groq Cloud (LLaMA 3.3 / Qwen)',
+        'gemini' => 'Google Gemini API (Gemini 3.6 Flash / 3.1 Pro)',
+        'openai' => 'OpenAI (GPT-4o / GPT-4o mini)',
+    ];
+    $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
+    $activeAiProvider  = function_exists('mh_active_ai_provider') ? mh_active_ai_provider() : (mh_setting('ai_provider', 'groq') ?: 'groq');
+
+    $ocr_engine_label  = $engineLabels[$active_ocr_engine] ?? 'Google Cloud Vision API';
+    $ai_provider_label = $aiLabels[$activeAiProvider] ?? 'Groq Cloud (LLaMA 3.3 / Qwen)';
+
+    if ($active_ocr_engine === 'groq_ocr') {
         $ocr_engine_ok  = ($groq_key_problem === null);
         $ocr_key_notice = $groq_key_problem;
+    } elseif ($active_ocr_engine === 'gemini') {
+        $ocr_engine_ok  = ($gemini_key_problem === null);
+        $ocr_key_notice = $gemini_key_problem;
+    } elseif ($active_ocr_engine === 'openai') {
+        $ocr_engine_ok  = ($openai_key_problem === null);
+        $ocr_key_notice = $openai_key_problem;
     } elseif ($active_ocr_engine === 'aws_textract') {
         $ocr_engine_ok  = ($aws_textract_problem === null);
         $ocr_key_notice = $aws_textract_problem;
@@ -1233,33 +1251,39 @@ mh_layout_head(['title' => 'System Settings']);
         $ocr_engine_ok  = ($vision_key_problem === null);
         $ocr_key_notice = $vision_key_problem;
     }
+
+    $display_engine_label = $ocr_engine_label;
+    if ($active_ocr_engine === 'groq_ocr' && $activeAiProvider === 'openai') {
+        $display_engine_label = 'OpenAI';
+    } elseif ($active_ocr_engine === 'groq_ocr' && $activeAiProvider === 'gemini') {
+        $display_engine_label = 'Google Gemini API (Gemini 3.6 Flash / 3.1 Pro)';
+    }
     ?>
 
     <div class="settings-grid">
 
         <div class="card">
             <header>
-                <h3>Document Scanner (OCR) Configuration</h3>
-                <p>Select which AI engine processes scanned forms for Immunization, Check-up, Maternal Care, and Dental modules.</p>
+                <h3>Document Scanner (OCR) &amp; AI Provider Configuration</h3>
+                <p>Configure the OCR engine for document scanning and select the active AI provider for clinical insights.</p>
             </header>
             <div class="body">
 
                 <?php if (!$ocr_engine_ok): ?>
                     <div class="alert alert-error" style="margin-bottom:20px;">
-                        <strong>Active engine — <?php echo htmlspecialchars($ocr_engine_label); ?> — Configuration notice:</strong><br>
+                        <strong>Active engine &mdash; <?php echo htmlspecialchars($display_engine_label); ?> &mdash; Configuration notice:</strong><br>
                         <?php echo htmlspecialchars($ocr_key_notice); ?>
                     </div>
                 <?php else: ?>
                     <div class="alert alert-success" style="margin-bottom:20px;">
-                        Active engine: <strong><?php echo htmlspecialchars($ocr_engine_label); ?></strong> — Credentials are configured and ready.
+                        Active engine: <strong><?php echo htmlspecialchars($display_engine_label); ?></strong> &mdash; Credentials are configured and ready.
                     </div>
                 <?php endif; ?>
 
                 <form method="POST" id="ocrSettingsForm">
                     <?php echo mh_csrf_field(); ?>
 
-                    <!-- ── Engine selector ──────────────────────────────── -->
-                    <div class="field" style="margin-bottom:22px;">
+                    <div class="field" style="margin-bottom:18px;">
                         <label for="ocr_engine_select" style="font-weight:600;">Active OCR Engine</label>
                         <select id="ocr_engine_select" name="ocr_engine" onchange="mhOcrEngineSwitch(this.value)"
                                 style="max-width:340px; padding:8px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
@@ -1267,19 +1291,38 @@ mh_layout_head(['title' => 'System Settings']);
                                 Google Cloud Vision API (recommended)
                             </option>
                             <option value="gemini" <?php echo $active_ocr_engine === 'gemini' ? 'selected' : ''; ?>>
-                                Gemini AI API
-                            </option>
-                            <option value="aws_textract" <?php echo $active_ocr_engine === 'aws_textract' ? 'selected' : ''; ?>>
-                                AWS Textract (Amazon Web Services)
+                                Google Gemini API (Gemini 3.6 Flash / 3.1 Pro)
                             </option>
                             <option value="groq_ocr" <?php echo $active_ocr_engine === 'groq_ocr' ? 'selected' : ''; ?>>
                                 Groq OCR (Qwen vision AI)
                             </option>
+                            <option value="aws_textract" <?php echo $active_ocr_engine === 'aws_textract' ? 'selected' : ''; ?>>
+                                AWS Textract (Amazon Web Services)
+                            </option>
+                            <option value="openai" <?php echo $active_ocr_engine === 'openai' ? 'selected' : ''; ?>>
+                                OpenAI (GPT-4o / GPT-4o mini)
+                            </option>
                         </select>
-                        <p class="hint">Switch at any time. The scanner modules use whichever engine is active here.</p>
+                        <p class="hint">The scanner modules use whichever engine is active here.</p>
                     </div>
 
-                    <!-- ── Google Cloud Vision section ───────────────────── -->
+                    <div class="field" style="margin-bottom:22px;">
+                        <label for="ai_provider_select" style="font-weight:600;">Active AI Intelligence Provider</label>
+                        <select id="ai_provider_select" name="ai_provider" onchange="mhAiProviderSwitch(this.value)"
+                                style="max-width:340px; padding:8px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
+                            <option value="groq" <?php echo $activeAiProvider === 'groq' ? 'selected' : ''; ?>>
+                                Groq Cloud (LLaMA 3.3 / Qwen)
+                            </option>
+                            <option value="gemini" <?php echo $activeAiProvider === 'gemini' ? 'selected' : ''; ?>>
+                                Google Gemini API (Gemini 3.6 Flash / 3.1 Pro)
+                            </option>
+                            <option value="openai" <?php echo $activeAiProvider === 'openai' ? 'selected' : ''; ?>>
+                                OpenAI (GPT-4o / GPT-4o mini)
+                            </option>
+                        </select>
+                        <p class="hint">Powers automated disease outbreak summaries, epidemiological insights, and clinical normalization.</p>
+                    </div>
+
                     <div id="ocrVisionSection" style="<?php echo $active_ocr_engine !== 'vision' ? 'display:none;' : ''; ?>">
                         <div class="field">
                             <label>Google Cloud Vision API Key</label>
@@ -1292,53 +1335,29 @@ mh_layout_head(['title' => 'System Settings']);
                             </div>
                             <p class="hint">
                                 Google Cloud Vision API key (starts with <code class="inline">AIzaSy</code>).
-                                Leave blank to keep the existing key. Default configured in
-                                <code class="inline">config/vision.php</code>.
+                                Leave blank to keep the existing key.
                             </p>
                         </div>
                     </div>
 
-                    <!-- ── Gemini AI section ─────────────────────────────── -->
-                    <div id="ocrGeminiSection" style="<?php echo $active_ocr_engine !== 'gemini' ? 'display:none;' : ''; ?>">
+                    <div id="ocrGeminiSection" style="<?php echo ($active_ocr_engine !== 'gemini' && $activeAiProvider !== 'gemini') ? 'display:none;' : ''; ?>">
                         <div class="field">
-                            <label>Gemini AI API Key</label>
+                            <label>Google Gemini API Key</label>
                             <div style="position:relative;">
-                                <input type="password" id="gemini_api_key_input" name="gemini_api_key" maxlength="80"
+                                <input type="password" id="gemini_api_key_input" name="gemini_api_key" maxlength="120"
                                        style="padding-right:70px;"
                                        value="" autocomplete="new-password"
-                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '')); ?>">
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('gemini_api_key', '') : (string) mh_setting('gemini_api_key', ''))); ?>">
                                 <button type="button" class="reveal-btn" onclick="mhToggleReveal('gemini_api_key_input', this)">Show</button>
                             </div>
                             <p class="hint">
-                                Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a>.
-                                Starts with <code class="inline">AIzaSy</code>. Leave blank to keep the existing key.
+                                Google Gemini API key (starts with <code class="inline">AIzaSy</code>).
+                                Leave blank to keep the existing key.
                             </p>
-                        </div>
-
-                        <div class="field">
-                            <label>Gemini Model</label>
-                            <select name="ocr_model" style="max-width:280px; padding:8px 12px; border-radius:6px; border:1px solid var(--border,#e2e8f0); font-size:0.95rem;">
-                                <?php
-                                $savedModel = mh_setting('ocr_model', 'gemini-2.0-flash');
-                                $geminiModels = [
-                                    'gemini-2.0-flash'      => 'Gemini 2.0 Flash (default)',
-                                    'gemini-2.5-flash'      => 'Gemini 2.5 Flash',
-                                    'gemini-flash-latest'   => 'Gemini Flash Latest',
-                                    'gemini-2.0-flash-001'  => 'Gemini 2.0 Flash 001',
-                                ];
-                                foreach ($geminiModels as $mv => $ml):
-                                ?>
-                                <option value="<?php echo htmlspecialchars($mv); ?>" <?php echo $savedModel === $mv ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($ml); ?>
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="hint">Primary model. The system automatically falls back to alternates if the primary returns 404.</p>
                         </div>
                     </div>
 
-                    <!-- ── Groq OCR section ──────────────────────────────── -->
-                    <div id="ocrGroqSection" style="<?php echo $active_ocr_engine !== 'groq_ocr' ? 'display:none;' : ''; ?>">
+                    <div id="ocrGroqSection" style="<?php echo ($active_ocr_engine !== 'groq_ocr' && $activeAiProvider !== 'groq') ? 'display:none;' : ''; ?>">
                         <div class="field">
                             <label>Groq API Key</label>
                             <div style="position:relative;">
@@ -1351,12 +1370,27 @@ mh_layout_head(['title' => 'System Settings']);
                             <p class="hint">
                                 Get a key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>.
                                 Starts with <code class="inline">gsk_</code>. Leave blank to keep the existing key.
-                                Uses the vision model <code class="inline">qwen/qwen3.8-27b</code>; the key is read live on every scan.
                             </p>
                         </div>
                     </div>
 
-                    <!-- ── AWS Textract section ──────────────────────────── -->
+                    <div id="aiOpenAiSection" style="<?php echo ($active_ocr_engine !== 'openai' && $activeAiProvider !== 'openai') ? 'display:none;' : ''; ?>">
+                        <div class="field">
+                            <label>OpenAI API Key</label>
+                            <div style="position:relative;">
+                                <input type="password" id="openai_api_key_input" name="openai_api_key" maxlength="120"
+                                       style="padding-right:70px;"
+                                       value="" autocomplete="new-password"
+                                       placeholder="<?php echo htmlspecialchars(mh_mask_secret(function_exists('mh_ocr_live_setting') ? (string) mh_ocr_live_setting('openai_api_key', '') : (string) mh_setting('openai_api_key', ''))); ?>">
+                                <button type="button" class="reveal-btn" onclick="mhToggleReveal('openai_api_key_input', this)">Show</button>
+                            </div>
+                            <p class="hint">
+                                Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>.
+                                Starts with <code class="inline">sk-</code>. Leave blank to keep the existing key.
+                            </p>
+                        </div>
+                    </div>
+
                     <div id="ocrAwsSection" style="<?php echo $active_ocr_engine !== 'aws_textract' ? 'display:none;' : ''; ?>">
                         <div class="field">
                             <label>AWS Access Key ID</label>
@@ -1368,7 +1402,7 @@ mh_layout_head(['title' => 'System Settings']);
                                 <button type="button" class="reveal-btn" onclick="mhToggleReveal('aws_access_key_input', this)">Show</button>
                             </div>
                             <p class="hint">
-                                IAM user Access Key ID (e.g. <code class="inline">AKIAIOSFODNN7EXAMPLE</code>). Leave blank to keep existing.
+                                IAM user Access Key ID. Leave blank to keep existing.
                             </p>
                         </div>
 
@@ -1406,19 +1440,27 @@ mh_layout_head(['title' => 'System Settings']);
                                 </option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="hint">Region where Textract requests are routed. <code class="inline">ap-southeast-1</code> is closest to the Philippines.</p>
+                            <p class="hint">Region where Textract requests are routed.</p>
                         </div>
                     </div>
 
-                    <button type="submit" name="save_ocr" class="btn btn-main" style="margin-top:8px;">Save OCR Settings</button>
+                    <button type="submit" name="save_ocr" class="btn btn-main" style="margin-top:8px;">Save Settings</button>
                 </form>
 
                 <script>
                 function mhOcrEngineSwitch(val) {
+                    var aiProv = document.getElementById('ai_provider_select') ? document.getElementById('ai_provider_select').value : 'groq';
                     document.getElementById('ocrVisionSection').style.display = val === 'vision' ? '' : 'none';
-                    document.getElementById('ocrGeminiSection').style.display = val === 'gemini' ? '' : 'none';
-                    document.getElementById('ocrGroqSection').style.display = val === 'groq_ocr' ? '' : 'none';
+                    document.getElementById('ocrGeminiSection').style.display = (val === 'gemini' || aiProv === 'gemini') ? '' : 'none';
+                    document.getElementById('ocrGroqSection').style.display = (val === 'groq_ocr' || aiProv === 'groq') ? '' : 'none';
+                    document.getElementById('aiOpenAiSection').style.display = (val === 'openai' || aiProv === 'openai') ? '' : 'none';
                     document.getElementById('ocrAwsSection').style.display = val === 'aws_textract' ? '' : 'none';
+                }
+                function mhAiProviderSwitch(val) {
+                    var ocrEng = document.getElementById('ocr_engine_select') ? document.getElementById('ocr_engine_select').value : 'vision';
+                    document.getElementById('ocrGeminiSection').style.display = (ocrEng === 'gemini' || val === 'gemini') ? '' : 'none';
+                    document.getElementById('aiOpenAiSection').style.display = (ocrEng === 'openai' || val === 'openai') ? '' : 'none';
+                    document.getElementById('ocrGroqSection').style.display = (ocrEng === 'groq_ocr' || val === 'groq') ? '' : 'none';
                 }
                 function mhToggleReveal(inputId, btn) {
                     var el = document.getElementById(inputId);
@@ -1444,51 +1486,45 @@ mh_layout_head(['title' => 'System Settings']);
                         <tr style="background:var(--page-bg,#f1f5f9);">
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Feature</th>
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Cloud Vision</th>
-                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Gemini AI</th>
                             <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">AWS Textract</th>
-                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Groq OCR</th>
+                            <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border,#e2e8f0);">Groq OCR &amp; AI</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Best for</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Printed &amp; typed forms</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten &amp; mixed layouts</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Structured forms &amp; key-value fields</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten forms, returns fields as JSON</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Handwritten forms &amp; clinical AI analysis</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Speed</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Moderate (~3–8s)</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1–3s)</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~2–5s)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1&ndash;3s)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Fast (~1&ndash;3s)</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Ultra Fast (~0.5&ndash;2s)</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Key features</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Full-text detection</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Generative visual reasoning</td>
                             <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Key-value pair extraction (FORMS)</td>
-                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Vision LLM, JSON-mode field extraction</td>
+                            <td style="padding:7px 10px; border-bottom:1px solid var(--border,#e2e8f0);">Vision LLM &amp; epidemiological surveillance</td>
                         </tr>
                         <tr>
                             <td style="padding:7px 10px;">Auth format</td>
-                            <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
-                            <td style="padding:7px 10px;"><code class="inline">AIzaSy…</code></td>
+                            <td style="padding:7px 10px;"><code class="inline">AIzaSy&hellip;</code></td>
                             <td style="padding:7px 10px;">IAM Access Key &amp; Secret Key</td>
-                            <td style="padding:7px 10px;"><code class="inline">gsk_…</code></td>
+                            <td style="padding:7px 10px;"><code class="inline">gsk_&hellip;</code></td>
                         </tr>
                     </tbody>
                 </table>
 
                 <p style="margin-top:0;"><strong>Troubleshooting:</strong><br>
-                • <strong>Google Cloud / Gemini:</strong> Ensure the API is enabled in your Google Cloud or AI Studio project.<br>
-                • <strong>Groq:</strong> Photos must be JPG, PNG or WebP and under ~3 MB (PDFs are not supported). A 401 means the key is wrong; a 429 means the rate limit was hit.<br>
-                • <strong>AWS Textract:</strong> Ensure the IAM user has the policy <code class="inline">AmazonTextractFullAccess</code> or permission <code class="inline">textract:AnalyzeDocument</code>, and that the region matches where your account is authorized.</p>
+                &bull; <strong>Google Cloud:</strong> Ensure Cloud Vision API is enabled in your Google Cloud project.<br>
+                &bull; <strong>Groq:</strong> Photos must be JPG, PNG or WebP. A 401 indicates an invalid key; a 429 indicates rate limit reached.<br>
+                &bull; <strong>AWS Textract:</strong> Ensure the IAM user has permission <code class="inline">textract:AnalyzeDocument</code>.</p>
 
-                <p><strong>HTTP 404 (Gemini only)</strong><br>
-                The configured model is retired. The system automatically falls back to alternates.
-                Switch to a newer model in the dropdown above.</p>
+                <p><strong>HTTP 404 &ndash; model unavailable</strong><br>
+                The requested model is unavailable or decommissioned. Verify your active model configuration.</p>
 
                 <p><strong>HTTP 429 &ndash; rate limit</strong><br>
                 Free-tier cap reached. Wait ~1 minute, or enable billing on the project.</p>

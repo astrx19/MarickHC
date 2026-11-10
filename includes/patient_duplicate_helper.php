@@ -1,45 +1,22 @@
 <?php
-// Definitions wrapped in a constant-keyed if-block ON PURPOSE (same convention as auth_helpers.php).
+
 if (!defined('MH_LOADED_INCLUDES_PATIENT_DUP')) {
 define('MH_LOADED_INCLUDES_PATIENT_DUP', true);
-/**
- * =====================================================================
- * DUPLICATE-PATIENT DETECTION (staff Walk-In / Quick Registration)
- * =====================================================================
- * The old check only looked at the email. Walk-ins without an email get a random
- * "...@walkin.local" placeholder, so that check could NEVER fire for them - the same
- * person could be registered again and again.
- *
- * Rules (checked in this order, first hit wins):
- *   1. SAME FIRST NAME + LAST NAME + BIRTHDATE  -> BLOCK. It is the same person. (Middle name,
- *      sex, email and phone are deliberately ignored: they are the fields people mistype.)
- *      Active record -> offer "Use this patient". Archived record -> ask an admin to restore it.
- *   2. REAL EMAIL already on a record           -> BLOCK (emails are unique; the portal login depends on it).
- *   3. SAME MOBILE + SAME FIRST/LAST NAME but a DIFFERENT BIRTHDATE -> CONFIRM. Almost always the same
- *      person with a mistyped birthdate (or a "Jr."/"Sr." pair); staff must tick a box to go ahead.
- *   Same mobile with a DIFFERENT name is allowed on purpose: parents, grandparents and siblings
- *   share one phone in a barangay clinic, so blocking it would turn families away.
- *
- * Name matching relies on the table's *_ci collation (case/accent-insensitive); input is trimmed
- * and inner whitespace collapsed first.
- * ================================================================== */
 
 if (!function_exists('mh_normalize_ph_mobile')) {
-    require_once __DIR__ . '/sms_helper.php';   // loads includes/sms/SemaphoreSmsClient.php
+    require_once __DIR__ . '/sms_helper.php';
 }
 
-/** "  juan   dela  cruz " -> "juan dela cruz" */
 function mh_pd_clean_name($s)
 {
     return trim((string) preg_replace('/\s+/u', ' ', (string) $s));
 }
 
-/** Every way the same mobile can be stored in `patients.contact_number` (09.., 639.., +639..). */
 function mh_pd_phone_variants($raw)
 {
-    $n = mh_normalize_ph_mobile($raw);          // 09XXXXXXXXX or ''
+    $n = mh_normalize_ph_mobile($raw);
     if ($n === '') { return []; }
-    $tail = substr($n, 1);                       // 9XXXXXXXXX
+    $tail = substr($n, 1);
     return [$n, '63' . $tail, '+63' . $tail];
 }
 
@@ -64,22 +41,11 @@ function mh_pd_mask_mobile($raw)
     return $n === '' ? 'none' : substr($n, 0, 2) . str_repeat('*', 6) . substr($n, -3);
 }
 
-/**
- * Checks a NEW patient before it is inserted.
- *
- * @param array $np  fname, lname, bdate (Y-m-d), contact_norm (09XXXXXXXXX), real_email ('' when none given)
- * @param bool  $confirmedDifferent staff ticked "this is a different person"
- * @param bool  $lock run inside the registration transaction: SELECT ... FOR UPDATE so two staff
- *                    members registering the same person at the same moment can't both pass
- * @return array|null null = no problem; otherwise
- *   ['level' => 'block'|'confirm', 'title' => str, 'message' => str, 'select_id' => int (0 = none)]
- */
 function mh_pd_check_new_patient(mysqli $conn, array $np, $confirmedDifferent = false, $lock = false)
 {
     $suffix = $lock ? ' FOR UPDATE' : '';
     $cols = "id, first_name, middle_name, last_name, birthdate, sex, contact_number, email, status";
 
-    /* 1) Same first + last name + birthdate (prefer the active record if there are several) */
     $stmt = $conn->prepare("SELECT $cols FROM patients WHERE last_name = ? AND first_name = ? AND birthdate = ? ORDER BY status DESC, id ASC LIMIT 1" . $suffix);
     $stmt->bind_param('sss', $np['lname'], $np['fname'], $np['bdate']);
     $stmt->execute();
@@ -97,7 +63,6 @@ function mh_pd_check_new_patient(mysqli $conn, array $np, $confirmedDifferent = 
             'message' => mh_pd_describe($hit) . ' has an archived record. Do not create a new one - ask an Administrator to restore the archived record, then use the "Existing Patient" tab.'];
     }
 
-    /* 2) Real email already used */
     if ($np['real_email'] !== '') {
         $stmt = $conn->prepare("SELECT $cols FROM patients WHERE email = ? LIMIT 1" . $suffix);
         $stmt->bind_param('s', $np['real_email']);
@@ -113,7 +78,6 @@ function mh_pd_check_new_patient(mysqli $conn, array $np, $confirmedDifferent = 
         }
     }
 
-    /* 3) Same mobile + same first/last name, different birthdate -> likely mistyped birthdate */
     $variants = mh_pd_phone_variants($np['contact_norm']);
     if ($variants && !$confirmedDifferent) {
         $stmt = $conn->prepare("SELECT $cols FROM patients WHERE contact_number IN (?, ?, ?) ORDER BY status DESC, id ASC LIMIT 25" . $suffix);

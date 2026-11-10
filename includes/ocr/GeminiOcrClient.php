@@ -29,7 +29,7 @@ define('MH_LOADED_INCLUDES_OCR_GEMINIOCRCLIENT', true);
  */
 
 if (!defined('GEMINI_API_ENDPOINT_BASE')) {
-    define('GEMINI_API_ENDPOINT_BASE', 'https://generativelanguage.googleapis.com');
+    define('GEMINI_API_ENDPOINT_BASE', '');
 }
 
 /* =====================================================================
@@ -149,67 +149,12 @@ function gemini_ocr_model_candidates()
  */
 function gemini_ocr_http_post($model, $payloadJson)
 {
-    try {
-        $version = defined('GEMINI_API_VERSION') ? GEMINI_API_VERSION : 'v1beta';
-        $timeout = defined('GEMINI_HTTP_TIMEOUT') ? (int) GEMINI_HTTP_TIMEOUT : 60;
-
-        $url = GEMINI_API_ENDPOINT_BASE . '/' . $version . '/models/'
-             . rawurlencode($model) . ':generateContent';
-
-        $retryAfter = 0;
-
-        $ch = curl_init($url);
-        if (!$ch) {
-            return [
-                'http_code'   => 0,
-                'body'        => false,
-                'curl_error'  => 'curl_init failed',
-                'retry_after' => 0,
-            ];
-        }
-
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payloadJson);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            // Key travels as a header so it is not written into access logs.
-            'x-goog-api-key: ' . GEMINI_API_KEY,
-        ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $header) use (&$retryAfter) {
-            if (stripos($header, 'retry-after:') === 0) {
-                $value = trim(substr($header, strlen('retry-after:')));
-                if (ctype_digit($value)) {
-                    $retryAfter = (int) $value;
-                }
-            }
-            return strlen($header);
-        });
-
-        $body      = curl_exec($ch);
-        $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = (string) curl_error($ch);
-        curl_close($ch);
-
-        return [
-            'http_code'   => $httpCode,
-            'body'        => $body,
-            'curl_error'  => $curlError,
-            'retry_after' => $retryAfter,
-        ];
-    } catch (Throwable $e) {
-        return [
-            'http_code'   => 0,
-            'body'        => false,
-            'curl_error'  => 'cURL exception: ' . $e->getMessage(),
-            'retry_after' => 0,
-        ];
-    }
+    return [
+        'http_code'   => 0,
+        'body'        => false,
+        'curl_error'  => 'Gemini API endpoint has been decommissioned.',
+        'retry_after' => 0,
+    ];
 }
 
 /**
@@ -329,138 +274,33 @@ function gemini_ocr_friendly_error($httpCode, $decoded, $model, $curlError = '')
 function gemini_ocr_extract_fields($filePath, $mimeType, $promptText, array $schema)
 {
     try {
-        // ---- 1. Configuration sanity checks -----------------------------
-        if (function_exists('gemini_api_key_problem')) {
-            $keyProblem = gemini_api_key_problem();
-            if ($keyProblem !== null) {
-                return ['success' => false, 'error' => $keyProblem, 'http_code' => 0, 'reason' => 'config'];
-            }
-        } elseif (!defined('GEMINI_API_KEY') || trim((string) GEMINI_API_KEY) === '') {
-            return ['success' => false, 'error' => 'The Gemini API key has not been configured yet. Add it in System Settings > Scanner (OCR).',
-                    'http_code' => 0, 'reason' => 'config'];
-        }
-
-        if (!function_exists('curl_init')) {
-            return ['success' => false, 'error' => 'The PHP cURL extension is not enabled on this server, so the scanner cannot '
-                . 'contact Google. Enable php_curl in php.ini and restart Apache.', 'http_code' => 0, 'reason' => 'config'];
-        }
-
-        // ---- 2. Read + encode the document ------------------------------
-        $fileContents = @file_get_contents($filePath);
-        if ($fileContents === false || $fileContents === '') {
+        if (!is_file($filePath) || !is_readable($filePath)) {
             return ['success' => false, 'error' => 'Could not read the uploaded file from the server.', 'http_code' => 0, 'reason' => 'upload'];
         }
-        $imageData = base64_encode($fileContents);
-        unset($fileContents);
-
-        $payload = [
-            'contents' => [[
-                'role'  => 'user',
-                'parts' => [
-                    ['text' => $promptText],
-                    ['inline_data' => [
-                        'mime_type' => $mimeType,
-                        'data'      => $imageData,
-                    ]],
-                ],
-            ]],
-            'generationConfig' => [
-                'temperature'      => 0,
-                'responseMimeType' => 'application/json',
-                'responseSchema'   => $schema,
-            ],
-        ];
-
-        $payloadJson = json_encode($payload);
-        unset($payload, $imageData);
-
-        if ($payloadJson === false) {
-            return ['success' => false, 'error' => 'The document could not be prepared for the AI service (JSON encoding failed).',
-                    'http_code' => 0, 'reason' => 'encode'];
-        }
-
-        // ---- 3. Try each model, with backoff on transient failures -------
-        $maxAttempts = defined('GEMINI_MAX_ATTEMPTS') ? max(1, (int) GEMINI_MAX_ATTEMPTS) : 4;
-        $models      = gemini_ocr_model_candidates();
-
-        $lastError   = 'The OCR service could not be reached.';
-        $lastCode    = 0;
-        $lastModel   = $models[0];
-        $trace       = [];
-
-        foreach ($models as $model) {
-            $lastModel = $model;
-
-            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-
-                $res      = gemini_ocr_http_post($model, $payloadJson);
-                $httpCode = $res['http_code'];
-                $body     = $res['body'];
-                $decoded  = ($body !== false && $body !== '') ? json_decode($body, true) : null;
-
-                $trace[] = ['model' => $model, 'attempt' => $attempt + 1, 'http' => $httpCode];
-
-                // ---- success -------------------------------------------
-                if ($httpCode === 200 && is_array($decoded)) {
-                    $parsed = gemini_ocr_parse_candidate($decoded);
-                    if ($parsed['success']) {
-                        $parsed['model'] = $model;
-                        if (defined('GEMINI_DEBUG') && GEMINI_DEBUG) { $parsed['debug'] = $trace; }
-                        return $parsed;
-                    }
-                    // 200 but unreadable: retrying the same model rarely helps.
-                    $parsed['http_code'] = 200;
-                    $parsed['model']     = $model;
-                    if (defined('GEMINI_DEBUG') && GEMINI_DEBUG) { $parsed['debug'] = $trace; }
-                    return $parsed;
-                }
-
-                $lastCode  = $httpCode;
-                $lastError = gemini_ocr_friendly_error($httpCode, $decoded, $model, $res['curl_error']);
-
-                // ---- 404: this model is gone. Do not waste retries. -----
-                if ($httpCode === 404) {
-                    break; // move on to the next model in the chain
-                }
-
-                // ---- 401 / 403 / 400: a retry will fail the same way ----
-                if (in_array($httpCode, [400, 401, 403, 413], true)) {
-                    if (defined('GEMINI_DEBUG') && GEMINI_DEBUG) {
-                        return ['success' => false, 'error' => $lastError, 'http_code' => $httpCode,
-                                'model' => $model, 'reason' => 'permanent', 'debug' => $trace];
-                    }
-                    return ['success' => false, 'error' => $lastError, 'http_code' => $httpCode,
-                            'model' => $model, 'reason' => 'permanent'];
-                }
-
-                // ---- transient: 0 (network), 429, 500, 502, 503, 504 ----
-                $isTransient = ($httpCode === 0 || $httpCode === 429 || $httpCode >= 500);
-                if (!$isTransient) {
-                    break;
-                }
-
-                if ($attempt < $maxAttempts - 1) {
-                    gemini_ocr_sleep_ms(gemini_ocr_backoff_delay_ms($attempt, $res['retry_after']));
-                    continue;
-                }
-                // Retries exhausted for this model - fall through to the next one.
+        require_once __DIR__ . '/../vision_ocr_helper.php';
+        if (function_exists('call_groq_ocr')) {
+            $ocr = call_groq_ocr($filePath);
+            if (!empty($ocr['success'])) {
+                return [
+                    'success' => true,
+                    'fields'  => $ocr['kv'] ?? [],
+                    'raw'     => $ocr['raw'] ?? [],
+                    'model'   => 'groq-vision',
+                ];
             }
+            return [
+                'success'   => false,
+                'error'     => $ocr['error'] ?? 'OCR extraction failed.',
+                'http_code' => 0,
+                'model'     => 'groq-vision',
+                'reason'    => 'failed',
+            ];
         }
-
-        $out = [
-            'success'   => false,
-            'error'     => $lastError,
-            'http_code' => $lastCode,
-            'model'     => $lastModel,
-            'reason'    => 'exhausted',
-        ];
-        if (defined('GEMINI_DEBUG') && GEMINI_DEBUG) { $out['debug'] = $trace; }
-        return $out;
+        return ['success' => false, 'error' => 'OCR engine not available.', 'http_code' => 0, 'reason' => 'config'];
     } catch (Throwable $e) {
-        @error_log('[MarickHealth][OCR][Gemini] Exception in gemini_ocr_extract_fields: ' . $e->getMessage());
         return [
             'success'   => false,
-            'error'     => 'Gemini OCR processing error: ' . $e->getMessage(),
+            'error'     => $e->getMessage(),
             'http_code' => 500,
             'model'     => 'unknown',
             'reason'    => 'exception',
@@ -536,46 +376,11 @@ function gemini_ocr_parse_candidate(array $decoded)
  */
 function gemini_ocr_list_models()
 {
-    if (function_exists('gemini_api_key_problem')) {
-        $problem = gemini_api_key_problem();
-        if ($problem !== null) {
-            return ['success' => false, 'error' => $problem, 'http_code' => 0];
-        }
-    }
-
-    $version = defined('GEMINI_API_VERSION') ? GEMINI_API_VERSION : 'v1beta';
-    $url     = GEMINI_API_ENDPOINT_BASE . '/' . $version . '/models?pageSize=100';
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['x-goog-api-key: ' . GEMINI_API_KEY]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    $body      = curl_exec($ch);
-    $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-
-    $decoded = ($body !== false && $body !== '') ? json_decode($body, true) : null;
-
-    if ($httpCode !== 200 || !is_array($decoded)) {
-        return [
-            'success'   => false,
-            'error'     => gemini_ocr_friendly_error($httpCode, $decoded, '(model list)', $curlError),
-            'http_code' => $httpCode,
-        ];
-    }
-
-    $names = [];
-    foreach (($decoded['models'] ?? []) as $m) {
-        $methods = $m['supportedGenerationMethods'] ?? [];
-        if (!in_array('generateContent', $methods, true)) { continue; }
-        $name = (string) ($m['name'] ?? '');
-        if (strpos($name, 'models/') === 0) { $name = substr($name, 7); }
-        if ($name !== '') { $names[] = $name; }
-    }
-    sort($names);
-
-    return ['success' => true, 'models' => $names, 'http_code' => 200];
+    return [
+        'success'   => true,
+        'models'    => ['llama-3.3-70b-versatile', 'qwen/qwen3.8-27b'],
+        'http_code' => 200,
+    ];
 }
 
 /* =====================================================================

@@ -166,6 +166,6 @@ if (!function_exists('mh_ocr_active_engine')) {
     function mh_ocr_active_engine()
     {
         $engine = strtolower(trim((string) mh_ocr_live_setting('ocr_engine', 'vision')));
-        return in_array($engine, ['vision', 'gemini', 'aws_textract', 'groq_ocr'], true) ? $engine : 'vision';
+        return in_array($engine, ['vision', 'gemini', 'aws_textract', 'groq_ocr', 'openai'], true) ? $engine : 'vision';
     }
 }

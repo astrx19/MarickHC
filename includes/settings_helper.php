@@ -121,7 +121,9 @@ function mh_setting_defaults()
         'show_db_seeder_sidebar' => '0',
         'logo_path'             => 'assets/images/logo.png',
         'background_path'       => 'assets/images/barangay_bg.png',
-        'ocr_model'             => 'gemini-2.0-flash',
+        'ocr_model'             => 'llama-3.3-70b-versatile',
+        'ai_provider'           => 'groq',
+        'openai_api_key'        => '',
         'semaphore_api_key'     => '',
         'semaphore_sender_name' => 'SEMAPHORE',
         'sms_password_reset_enabled' => '0',
@@ -131,9 +133,9 @@ function mh_setting_defaults()
         'android_gateway_url'   => '',
         'android_gateway_key'   => '',
         // ---- OCR engine selection + API keys --------------------------
-        'ocr_engine'            => 'vision',   // 'vision' (Google Cloud Vision) | 'gemini' (Gemini AI) | 'aws_textract' (AWS Textract) | 'groq_ocr' (Groq vision LLM)
+        'ocr_engine'            => 'vision',   // 'vision' (Google Cloud Vision) | 'aws_textract' (AWS Textract) | 'groq_ocr' (Groq vision LLM)
         'google_vision_api_key' => '',          // DB-backed override of config/vision.php hardcoded key
-        'gemini_api_key'        => '',          // DB-backed override of config/gemini.php
+        'gemini_api_key'        => '',
         'aws_access_key_id'     => '',          // AWS IAM Access Key ID for Textract
         'aws_secret_access_key' => '',          // AWS IAM Secret Access Key for Textract
         'aws_region'            => 'ap-southeast-1', // Default to Singapore for Philippines low latency
@@ -609,7 +611,7 @@ function mh_calculate_patient_age($birthdate)
             return ['text' => $text, 'is_infant' => true, 'years' => 0, 'months' => $months];
         }
 
-        return ['text' => $years . ' yrs', 'is_infant' => false, 'years' => $years, 'months' => $months];
+        return ['text' => $years . ($years === 1 ? ' yr' : ' yrs'), 'is_infant' => false, 'years' => $years, 'months' => $months];
     } catch (Throwable $e) {
         return ['text' => 'N/A', 'is_infant' => false, 'years' => -1, 'months' => -1];
     }

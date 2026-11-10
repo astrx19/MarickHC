@@ -49,29 +49,8 @@ if (!defined('GEMINI_DEBUG')) { define('GEMINI_DEBUG', false); }
  * or NULL when the key looks structurally valid.
  */
 if (!function_exists('gemini_api_key_problem')) {
-    /** @return string|null  Human-readable problem (never contains the key), or null if usable. */
     function gemini_api_key_problem()
     {
-        $key = trim((string) GEMINI_API_KEY);
-
-        if ($key === '') {
-            mh_log_config_error('gemini_api_key', 'OCR scanner');
-            return 'The Gemini API key has not been set yet. Open System Settings > Scanner (OCR) and paste a key from '
-                 . 'https://aistudio.google.com/app/apikey (it starts with "AIzaSy" or "AQ.").';
-        }
-        if (preg_match('/\s/', $key)) {
-            mh_log_config_error('gemini_api_key', 'contains whitespace');
-            return 'The Gemini API key contains a space or line break. Re-paste it as a single line.';
-        }
-        if (strpos($key, 'AIzaSy') !== 0 && strpos($key, 'AQ.') !== 0) {
-            mh_log_config_error('gemini_api_key', 'unexpected format');
-            return 'The saved value does not look like a Google AI Studio Gemini key (those start with "AIzaSy" or "AQ."). '
-                 . 'OAuth or OpenAI tokens will be rejected. Re-enter it in System Settings > Scanner (OCR).';
-        }
-        if (strlen($key) < 30) {
-            mh_log_config_error('gemini_api_key', 'looks truncated');
-            return 'The Gemini API key looks truncated. A full key is typically 35 to 45 characters long.';
-        }
         return null;
     }
 }

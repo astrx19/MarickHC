@@ -241,7 +241,7 @@ mh_layout_head(['title' => 'Disease Statistics']);
                         </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="ds-ai-badge" id="ai-engine-badge">&#x2728; <?php echo $h($ai_summary['engine_label']); ?></span>
+                        <span class="ds-ai-badge" id="ai-engine-badge"><?php echo $h($ai_summary['engine_label']); ?></span>
                         <button type="button" class="btn-secondary ds-small no-print" id="btn-refresh-ai" onclick="refreshAiSummary()" style="padding:6px 14px; border-radius:8px; display:inline-flex; align-items:center; gap:6px;">
                             <span class="ds-btn-spin" id="ai-spin-icon">&#x21bb;</span> Refresh Analysis
                         </button>

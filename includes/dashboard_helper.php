@@ -12,7 +12,7 @@
  *   require_once __DIR__ . '/../includes/dashboard_helper.php';
  *   mh_dashboard_install($conn);
  *   $layout = mh_dashboard_get_layout($conn, $user_id, $role);
- *   // $layout = [ ['id' => 'walkin_queue', 'visible' => true, 'size' => 'small'], ... ]
+ *   // $layout = [ ['id' => 'active_queue', 'visible' => true, 'size' => 'small'], ... ]
  *   // in display order, already filtered to widgets this $role may see.
  */
 
