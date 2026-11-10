@@ -135,36 +135,22 @@ if (isset($_POST['change_password'])) {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Profile - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'My Profile']);
+?>
     <style>
         .profile-grid { display: grid; grid-template-columns: 350px 1fr; gap: 25px; align-items: start; }
         @media (max-width: 768px) { .profile-grid { grid-template-columns: 1fr; } }
-        
         .profile-avatar-large { width: 180px; height: 180px; border-radius: 50%; object-fit: cover; border: 4px solid var(--border-color, #cbd5e1); margin: 0 auto 20px auto; display: block; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
-        
         .detail-group { margin-bottom: 20px; border-bottom: 1px dashed var(--border-color, #cbd5e1); padding-bottom: 15px; }
         .detail-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .detail-label { display: block; color: var(--text-muted, #64748b); font-size: 0.85rem; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; letter-spacing: 0.5px; }
         .detail-value { color: var(--heading-color, #1e293b); font-size: 1.1rem; font-weight: 600; }
-        
         .upload-btn-wrapper { position: relative; overflow: hidden; display: inline-block; width: 100%; text-align: center; }
         .upload-btn-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; height: 100%; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
             
@@ -280,7 +266,7 @@ if (isset($_POST['change_password'])) {
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <?php if(mh_is_admin_tier()): ?>
     <div class="modal-overlay" id="editProfileModal">
@@ -355,5 +341,4 @@ if (isset($_POST['change_password'])) {
             n.addEventListener('input', sync); c.addEventListener('input', sync);
         })();
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

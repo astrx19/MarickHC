@@ -84,22 +84,18 @@ if (!empty($stats['unclassified'])) {
 $dominantCondition = key($ov['by_cond']) ?: (isset($conds[0]['name']) ? $conds[0]['name'] : 'None logged');
 $dominantCount = current($ov['by_cond']) ?: (isset($conds[0]['cur']) ? $conds[0]['cur'] : 0);
 $outbreakBadge = $stats['spikes'] > 0
-    ? ['Active Spike Alert', '#fee2e2', '#991b1b', '⚠️ Outbreak Triggered']
+    ? ['Active Spike Alert', '#fee2e2', '#991b1b', 'Outbreak Triggered']
     : ($stats['rising'] > 0
-        ? ['Rising Trend', '#fef3c7', '#92400e', '📈 Cases Rising']
-        : ['Normal Baseline', '#dcfce7', '#166534', '✅ Stable Baseline']);
+        ? ['Rising Trend', '#fef3c7', '#92400e', 'Cases Rising']
+        : ['Normal Baseline', '#dcfce7', '#166534', 'Stable Baseline']);
 
 // AI Executive Outbreak Summary
 $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Disease Statistics - Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Disease Statistics']);
+?>
     <style>
         .ds-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 600; }
         .ds-ok { background: #dcfce7; color: #166534; } .ds-err { background: #fee2e2; color: #991b1b; }
@@ -120,7 +116,6 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
         .ds-form label { display: block; font-size: .78rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); margin-bottom: 4px; }
         .ds-form input[type=text], .ds-form input[type=number] { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; background: var(--card-bg, #fff); color: var(--text-color, #1e293b); }
         .ds-small { font-size: .85rem; padding: 7px 14px; cursor: pointer; }
-
         /* Collapsible Drawer for Demographic Micro-Breakdowns */
         .ds-drawer { border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; background: var(--card-bg, #fff); margin: 18px 0; overflow: hidden; }
         .ds-drawer summary { padding: 13px 18px; cursor: pointer; font-weight: 700; font-size: 0.95rem; color: var(--heading-color, #1e293b); display: flex; justify-content: space-between; align-items: center; background: var(--bg-hover, #f8fafc); user-select: none; list-style: none; }
@@ -129,7 +124,6 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
         .ds-drawer-hint { font-size: 0.8rem; font-weight: 600; color: var(--text-muted, #64748b); }
         .ds-drawer-content { padding: 20px; border-top: 1px solid var(--border-color, #e2e8f0); }
         @media print { .ds-drawer { display: block !important; } .ds-drawer summary { display: none !important; } .ds-drawer-content { padding: 0 !important; border-top: none !important; } }
-        
         /* AI Health Insights Card */
         .ds-ai-card {
             background: linear-gradient(135deg, rgba(76, 161, 175, 0.08) 0%, rgba(14, 165, 233, 0.05) 100%);
@@ -218,12 +212,7 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
         }
         @media print { .no-print, .sidebar, .topbar, .ds-ai-header button { display: none !important; } }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
         <div class="dashboard-container">
 
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
@@ -349,8 +338,8 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
                 <!-- Collapsible Demographic & Department Breakdown Drawer -->
                 <details class="ds-drawer no-print">
                     <summary>
-                        <span>👥 Demographic &amp; Department Breakdowns (Sex, Age, Area, Department)</span>
-                        <span class="ds-drawer-hint">Click to expand / collapse ▾</span>
+                        <span>Demographic &amp; Department Breakdowns (Sex, Age, Area, Department)</span>
+                        <span class="ds-drawer-hint">Click to expand / collapse</span>
                     </summary>
                     <div class="ds-drawer-content">
                         <div class="ds-grid3">
@@ -498,7 +487,7 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
             <?php endif; ?>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <!-- Quick Track Condition Modal (Health Head only) -->
     <?php if ($is_head): ?>
@@ -578,7 +567,7 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
             .then(function(data) {
                 if (data.success && data.summary) {
                     if (textEl) textEl.innerText = data.summary;
-                    if (badge && data.engine_label) badge.innerText = '✨ ' + data.engine_label;
+                    if (badge && data.engine_label) badge.innerText = '' + data.engine_label;
                     if (timeEl && data.generated_at) timeEl.innerText = data.generated_at;
                 }
             })
@@ -592,5 +581,4 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
             });
     }
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

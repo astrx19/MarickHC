@@ -470,17 +470,12 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
     echo '</div>';
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Staff Management - Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Staff Management']);
+?>
     <style>
         .staff-grid { display: block; width: 100%; }   /* directory now spans the full width; the add form lives in #addStaffModal */
-        
         .role-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border: 1px solid; display: inline-block; background: #f1f5f9; color: #475569; border-color: #cbd5e1; }   /* default look for custom roles */
         .role-health_head { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
         .role-admin { background: #f1f5f9; color: var(--text-main, #334155); border-color: var(--border-color, #cbd5e1); }
@@ -489,16 +484,13 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
         .role-dental { background: #fef3c7; color: #b45309; border-color: #fde68a; }
         .role-bhw { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
         .role-inventory { background: #ffedd5; color: #c2410c; border-color: #fed7aa; }
-
         /* ---------- Delegated Functions picker (compact) ---------- */
         .cap-box { grid-column: 1 / -1; border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; padding: 14px; background: var(--bg-hover, #f8fafc); }
         .cap-box h4 { margin: 0 0 2px; font-size: 0.95rem; font-weight: 800; color: var(--heading-color, #1e293b); }
         .cap-box p.cap-note { margin: 0 0 10px; font-size: 0.76rem; line-height: 1.4; color: var(--text-muted, #64748b); }
-
         .cap-groups { display: grid; gap: 10px; }
         .cap-group-title { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted, #64748b); margin: 0 0 5px; }
         .cap-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-
         .cap-item { position: relative; display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 5px 11px 5px 8px;
                     cursor: pointer; text-transform: none; font-weight: 600; font-size: 0.78rem; line-height: 1.2;
                     color: var(--text-main, #334155); background: var(--bg-card, #fff);
@@ -508,28 +500,18 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
         .cap-item input[data-cap] { position: absolute; opacity: 0; width: 1px !important; height: 1px !important; padding: 0 !important; margin: 0 !important; border: 0 !important; pointer-events: none; }
         .cap-tick { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--text-muted, #94a3b8); position: relative; transition: all .15s ease; }
         .cap-tick::after { content: ""; position: absolute; left: 3.5px; top: 1px; width: 4px; height: 7px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform .15s ease; }
-
         /* selected */
         .cap-item:has(input:checked) { background: var(--primary, #4ca1af); border-color: var(--primary, #4ca1af); color: #fff; }
         .cap-item input:checked ~ .cap-tick { background: rgba(255,255,255,.25); border-color: #fff; }
         .cap-item input:checked ~ .cap-tick::after { transform: rotate(45deg) scale(1); }
         .cap-item input:focus-visible ~ .cap-tick { outline: 2px solid var(--primary, #4ca1af); outline-offset: 2px; }
-
         /* locked (Admin / Health Head hold every function) */
         .cap-box.is-locked .cap-item { opacity: 0.6; cursor: not-allowed; }
-
         .cap-chip { display: inline-block; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; border-radius: 12px; padding: 1px 8px; font-size: 0.68rem; font-weight: 600; margin: 1px 2px 1px 0; white-space: nowrap; }
         .cap-chip.all { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
         .protected-note { color: var(--text-muted, #64748b); font-size: 0.75rem; font-style: italic; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
             
@@ -633,7 +615,7 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
 
             </div>
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <div class="modal-overlay" id="addStaffModal">
         <div class="modal-content" style="max-width: 560px; max-height: 92vh; overflow-y: auto;">
@@ -969,5 +951,4 @@ function mh_render_capability_checkboxes(array $registry, $idPrefix)
             document.getElementById(id).classList.remove('active');
         }
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

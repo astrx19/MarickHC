@@ -1,27 +1,5 @@
-/* ==============================================================
-   MARICK HEALTH CENTER - UNIFIED UI LAYER  (Step 1)
-   assets/css/mh_ui.css
-
-   Loaded on EVERY page by includes/modal_assets.php, AFTER
-   admin_theme.css / custom_modal.css, so it is the single place that
-   decides how buttons, inputs, selects, date pickers, Select2
-   dropdowns, badges, tables, modals, toasts and banners look + move.
-
-   - Safe from System Settings: admin/system_settings.php only rewrites
-     theme_vars.css and the AUTO-GENERATED block of admin_theme.css.
-     This file is never touched by it.
-   - Public pages (body.bg-landing / body.bg-auth) only get the
-     animations, toasts, alert modals and banners - their forms keep
-     assets/css/style.css.
-   - Everything is written against the existing theme tokens
-     (--bg-card, --bg-input, --border-color, --text-main, --primary ...)
-     so Light/Dark both work from ONE rule - no per-theme duplicates
-     except for the semantic status colours and the select arrow.
-   ============================================================== */
-
-/* ---------- 1. Design tokens ---------- */
 :root {
-    --mh-control-h: 42px;
+    --mh-control-h: 48px;
     --mh-radius-control: 10px;
     --mh-radius-card: 16px;
     --mh-radius-pill: 999px;
@@ -36,7 +14,6 @@
     --mh-shadow-pop: 0 16px 40px -8px rgba(15, 23, 42, 0.28);
     --mh-focus-ring: 0 0 0 3px rgba(var(--primary-rgb, 76, 161, 175), 0.22);
 
-    /* semantic colours (light). *-solid = icon/accent, *-fg = text on tint */
     --mh-success-solid: #16a34a; --mh-success-fg: #047857; --mh-success-bg: #ecfdf5; --mh-success-border: #a7f3d0;
     --mh-warning-solid: #d97706; --mh-warning-fg: #b45309; --mh-warning-bg: #fffbeb; --mh-warning-border: #fde68a;
     --mh-danger-solid:  #dc2626; --mh-danger-fg:  #b91c1c; --mh-danger-bg:  #fef2f2; --mh-danger-border:  #fecaca;
@@ -55,7 +32,6 @@ html[data-theme="dark"] {
     --mh-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
-/* ---------- 2. Shared keyframes (the ONLY animation vocabulary) ---------- */
 @keyframes mh-fade-in    { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mh-pop-in     { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
 @keyframes mh-slide-down { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
@@ -65,17 +41,13 @@ html[data-theme="dark"] {
 @keyframes mh-shake      { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-5px); } 40%,80% { transform: translateX(5px); } }
 @keyframes mh-toast-bar  { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
-/* Page feedback: soft fade when a page loads.  opacity ONLY - transform/filter
-   would turn .main-content into the containing block of position:fixed modals. */
 body:not(.bg-auth):not(.bg-landing) .main-content { animation: mh-page-in var(--mh-dur-slow) var(--mh-ease) both; }
 
-/* Lock page scroll while any standard modal is open (all pages, no JS) */
 body:has(.modal-overlay.active), body:has(.universal-modal.active) { overflow: hidden; }
 
-/* ---------- 3. Buttons ---------- */
 body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-primary, .btn-save, .btn-secondary, .btn-danger, .btn-ghost) {
     min-height: var(--mh-control-h);
-    padding: 0 22px;
+    padding: 0 28px;
     border-radius: var(--mh-radius-pill);
     font-family: inherit;
     font-size: 0.93rem;
@@ -96,10 +68,9 @@ body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-primary, .bt
 body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-primary, .btn-save, .btn-secondary, .btn-danger, .btn-ghost)[aria-disabled="true"] {
     opacity: 0.55; cursor: not-allowed; transform: none !important; box-shadow: none !important; filter: grayscale(0.25);
 }
-/* Small / compact size for table-row actions */
-body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-secondary, .btn-danger, .btn-ghost, .btn-primary, .btn-save).btn-sm { min-height: 34px; padding: 0 16px; font-size: 0.85rem; }
 
-/* Loading state (added automatically on form submit by mh_ui.js, or mh_setLoading()) */
+body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-secondary, .btn-danger, .btn-ghost, .btn-primary, .btn-save).btn-sm { min-height: 40px; padding: 0 20px; font-size: 0.88rem; }
+
 .is-loading { position: relative; color: transparent !important; pointer-events: none; }
 .is-loading > * { opacity: 0; }
 .is-loading::after {
@@ -112,7 +83,6 @@ body:not(.bg-auth):not(.bg-landing) :is(.btn-add, .btn-submit, .btn-secondary, .
     border-color: rgba(100, 116, 139, 0.35); border-top-color: var(--primary);
 }
 
-/* ---------- 4. Form controls: ONE look for input / select / textarea / date ---------- */
 body:not(.bg-auth):not(.bg-landing) .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
 body:not(.bg-auth):not(.bg-landing) .form-group select,
 body:not(.bg-auth):not(.bg-landing) .form-group textarea,
@@ -240,7 +210,6 @@ body:not(.bg-auth):not(.bg-landing) .filter-toolbar input:not([type="checkbox"])
 body:not(.bg-auth):not(.bg-landing) .panel-controls select::placeholder,
 body:not(.bg-auth):not(.bg-landing) .panel-controls input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"])::placeholder { color: var(--text-muted, #64748b); opacity: 0.7; }
 
-/* horizontal padding only for real form fields (search boxes keep their icon padding) */
 body:not(.bg-auth):not(.bg-landing) .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
 body:not(.bg-auth):not(.bg-landing) .form-group select,
 body:not(.bg-auth):not(.bg-landing) .form-group textarea,
@@ -266,7 +235,6 @@ body:not(.bg-auth):not(.bg-landing) .mh-field textarea,
 body:not(.bg-auth):not(.bg-landing) .modal-content textarea,
 body:not(.bg-auth):not(.bg-landing) .du-modal-box textarea { padding-top: 10px; padding-bottom: 10px; min-height: 90px; resize: vertical; line-height: 1.5; }
 
-/* Invalid state - same red everywhere (Step 4 reuses these classes) */
 body:not(.bg-auth):not(.bg-landing) .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]).invalid,
 body:not(.bg-auth):not(.bg-landing) .form-group select.invalid,
 body:not(.bg-auth):not(.bg-landing) .form-group textarea.invalid,
@@ -310,7 +278,6 @@ body:not(.bg-auth):not(.bg-landing) .field-error { display: block; margin-top: 5
 body:not(.bg-auth):not(.bg-landing) .field-hint  { display: block; margin-top: 5px; font-size: 0.8rem; color: var(--text-muted, #64748b); }
 body:not(.bg-auth):not(.bg-landing) .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-main, #334155); margin-bottom: 6px; }
 
-/* Select boxes: custom arrow instead of the OS one (identical in every browser/theme) */
 body:not(.bg-auth):not(.bg-landing) .form-group select:not([multiple]):not([size]),
 body:not(.bg-auth):not(.bg-landing) .mh-field select:not([multiple]):not([size]),
 body:not(.bg-auth):not(.bg-landing) .modal-content select:not([multiple]):not([size]),
@@ -324,7 +291,6 @@ body:not(.bg-auth):not(.bg-landing) .panel-controls select:not([multiple]):not([
 }
 body:not(.bg-auth):not(.bg-landing) select[multiple], body:not(.bg-auth):not(.bg-landing) select[size]:not([size="1"]) { min-height: 120px; padding: 6px; }
 
-/* Date / time pickers: same box as every other control; only the picker icon is tuned */
 body:not(.bg-auth):not(.bg-landing) input[type="date"]::-webkit-calendar-picker-indicator,
 body:not(.bg-auth):not(.bg-landing) input[type="time"]::-webkit-calendar-picker-indicator,
 body:not(.bg-auth):not(.bg-landing) input[type="datetime-local"]::-webkit-calendar-picker-indicator,
@@ -334,7 +300,6 @@ body:not(.bg-auth):not(.bg-landing) input[type="time"]::-webkit-calendar-picker-
 body:not(.bg-auth):not(.bg-landing) input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
 body:not(.bg-auth):not(.bg-landing) input[type="month"]::-webkit-calendar-picker-indicator:hover { opacity: 1; background-color: rgba(var(--primary-rgb, 76, 161, 175), 0.14); }
 
-/* Checkbox / radio / file */
 body:not(.bg-auth):not(.bg-landing) input[type="checkbox"], body:not(.bg-auth):not(.bg-landing) input[type="radio"] { accent-color: var(--primary); width: 17px; height: 17px; cursor: pointer; vertical-align: -3px; }
 body:not(.bg-auth):not(.bg-landing) input[type="file"]::file-selector-button {
     margin-right: 12px; padding: 7px 16px; border: 1px solid var(--border-color, #cbd5e1); border-radius: var(--mh-radius-pill);
@@ -343,7 +308,6 @@ body:not(.bg-auth):not(.bg-landing) input[type="file"]::file-selector-button {
 }
 body:not(.bg-auth):not(.bg-landing) input[type="file"]::file-selector-button:hover { border-color: var(--primary); color: var(--primary); }
 
-/* ---------- 5. Searchable dropdowns (Select2) - same box as the other controls ---------- */
 body:not(.bg-auth):not(.bg-landing) .select2-container { max-width: 100%; }
 .select2-container--default .select2-selection--single,
 .select2-container--default .select2-selection--multiple {
@@ -374,7 +338,7 @@ body:not(.bg-auth):not(.bg-landing) .select2-container { max-width: 100%; }
 .select2-container--default .select2-selection--multiple .select2-selection__choice {
     background: rgba(var(--primary-rgb, 76, 161, 175), 0.14); border: 1px solid rgba(var(--primary-rgb, 76, 161, 175), 0.3); color: var(--text-main, #334155); border-radius: var(--mh-radius-pill); padding: 2px 10px;
 }
-/* the open panel */
+
 .select2-dropdown {
     background: var(--bg-card, #fff) !important; color: var(--text-main, #334155);
     border: 1px solid var(--border-color, #cbd5e1) !important; border-radius: 12px !important;
@@ -397,11 +361,10 @@ body:not(.bg-auth):not(.bg-landing) .select2-container { max-width: 100%; }
 .select2-container--default .select2-results__option--disabled { opacity: 0.5; }
 .select2-results__message { color: var(--text-muted, #64748b) !important; }
 
-/* ---------- 6. Badges & status pills (one metric, semantic colours) ---------- */
-body:not(.bg-auth):not(.bg-landing) .badge { padding: 5px 12px; border-radius: var(--mh-radius-pill); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.4; }
+body:not(.bg-auth):not(.bg-landing) .badge { padding: 6px 14px; border-radius: var(--mh-radius-pill); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.4; }
 .mh-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--mh-radius-pill);
-    font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.4; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: var(--mh-radius-pill);
+    font-size: 0.8rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.4; white-space: nowrap;
     border: 1px solid var(--mh-neutral-border); background: var(--mh-neutral-bg); color: var(--mh-neutral-fg);
 }
 .mh-badge-success { background: var(--mh-success-bg); color: var(--mh-success-fg); border-color: var(--mh-success-border); }
@@ -411,7 +374,6 @@ body:not(.bg-auth):not(.bg-landing) .badge { padding: 5px 12px; border-radius: v
 .mh-text-success { color: var(--mh-success-fg); } .mh-text-warning { color: var(--mh-warning-fg); }
 .mh-text-danger  { color: var(--mh-danger-fg); }  .mh-text-info    { color: var(--mh-info-fg); }
 
-/* ---------- 7. Tables ---------- */
 body:not(.bg-auth):not(.bg-landing) :is(.unified-table, .data-table, .mh-table) { width: 100%; border-collapse: collapse; }
 body:not(.bg-auth):not(.bg-landing) :is(.unified-table, .data-table, .mh-table) th {
     padding: 14px 16px; text-align: left; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
@@ -424,7 +386,6 @@ body:not(.bg-auth):not(.bg-landing) :is(.unified-table, .data-table, .mh-table) 
 body:not(.bg-auth):not(.bg-landing) .mh-table-sticky thead th { position: sticky; top: 0; z-index: 2; }
 body:not(.bg-auth):not(.bg-landing) .table-scroll { border-radius: var(--mh-radius-control); }
 
-/* ---------- 8. Modals: one open animation for every modal family ---------- */
 body:not(.bg-auth):not(.bg-landing) .modal-overlay {
     background: rgba(15, 23, 42, 0.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
     padding: 16px; box-sizing: border-box; overscroll-behavior: contain;
@@ -441,7 +402,6 @@ body:not(.bg-auth):not(.bg-landing) .close-btn {
 }
 body:not(.bg-auth):not(.bg-landing) .close-btn:hover { background: var(--mh-danger-bg); color: var(--mh-danger-solid); transform: rotate(90deg); }
 
-/* the alert / confirm / prompt modal (mh_alert, mh_confirm, mh_prompt) - dark-mode aware */
 .mh-modal-card { background: var(--bg-card, var(--panel-bg, #fff)); border: 1px solid var(--border-color, transparent); }
 .mh-modal-input { background: var(--bg-input, #fff); color: var(--text-main, #334155); border-color: var(--border-color, #e2e8f0); border-radius: var(--mh-radius-control); }
 .mh-modal-icon.mh-type-success { background: var(--mh-success-bg); color: var(--mh-success-solid); }
@@ -450,7 +410,6 @@ body:not(.bg-auth):not(.bg-landing) .close-btn:hover { background: var(--mh-dang
 .mh-modal-icon.mh-type-info    { background: var(--mh-info-bg);    color: var(--mh-info-solid); }
 .mh-modal-message strong { color: var(--heading-color, #1e293b); }
 
-/* ---------- 9. Toasts ---------- */
 .mh-toast {
     position: relative; overflow: hidden; background: var(--bg-card, var(--panel-bg, #fff)); color: var(--text-main, #334155);
     border: 1px solid var(--border-color, #e2e8f0); border-left-width: 4px; border-radius: 12px; box-shadow: var(--mh-shadow-pop);
@@ -469,8 +428,6 @@ body:not(.bg-auth):not(.bg-landing) .close-btn:hover { background: var(--mh-dang
 .mh-toast-icon.mh-type-danger  { color: var(--mh-danger-solid); }  .mh-toast-icon.mh-type-info    { color: var(--mh-info-solid); }
 .mh-toast-text { font-weight: 500; word-break: break-word; }
 
-/* ---------- 10. Banners: every legacy alert class = one component ----------
-   .alert / .alert-*  (admin + public)   .pr-alert.ok|.err  (password recovery)   .flash (claim account) */
 .alert, .pr-alert, .flash {
     border-radius: 12px; border: 1px solid var(--mh-neutral-border); border-left-width: 4px;
     background: var(--mh-neutral-bg); color: var(--mh-neutral-fg);
@@ -483,15 +440,12 @@ body:not(.bg-auth):not(.bg-landing) .close-btn:hover { background: var(--mh-dang
 .flash { background: var(--mh-info-bg); color: var(--mh-info-fg); border-color: var(--mh-info-border); border-left-color: var(--mh-info-solid); }
 .pp-notice { animation: mh-slide-down 0.28s var(--mh-ease) both; }
 
-/* ---------- 11. Dropdown expansion (landing page login menu) ---------- */
 .dropdown-content.show, .dropdown:hover .dropdown-content { animation: mh-dropdown-in var(--mh-dur-fast) var(--mh-ease) both; transform-origin: top right; }
 
-/* ---------- 12. Accessibility: honour "reduce motion" ---------- */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
 
-/* ---------- 13. Small screens ---------- */
 @media (max-width: 768px) {
     body:not(.bg-auth):not(.bg-landing) .modal-overlay { padding: 10px; align-items: flex-start; overflow-y: auto; }
     body:not(.bg-auth):not(.bg-landing) .modal-content { margin: 8px auto; }
@@ -499,8 +453,6 @@ body:not(.bg-auth):not(.bg-landing) .close-btn:hover { background: var(--mh-dang
     .mh-toast-stack { top: 10px; left: 10px; right: 10px; max-width: none; }
 }
 
-/* ---------- 14. Step 4: password eye, red validation state, error list ----------
-   Not scoped to the admin theme on purpose: the public registration modal uses them too. */
 .mh-pw { position: relative; display: block; width: 100%; }
 .mh-pw > input { width: 100%; box-sizing: border-box; padding-right: 46px !important; }
 .mh-eye {
@@ -523,7 +475,6 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .mh-error-list li { margin: 4px 0; line-height: 1.4; }
 .mh-modal-message .mh-error-list strong { color: var(--mh-danger-fg, #b91c1c); }
 
-/* ---------- 15. Step 6: "Search registered patients" picker (department forms) ---------- */
 .mh-ps { position: relative; margin: 4px 0 12px; }
 .mh-ps-input {
     width: 100%; box-sizing: border-box; min-height: 42px; padding: 0 14px 0 38px; border-radius: 10px;
@@ -550,7 +501,6 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .mh-ps-clear { border: 0; background: none; color: inherit; font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 6px; }
 .mh-ps-clear:hover { background: rgba(0, 0, 0, 0.08); }
 
-/* ---------- 16. Dental visit form + records (Part 1) ---------- */
 .dv-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .dv-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 720px) { .dv-grid-3, .dv-grid-2 { grid-template-columns: 1fr; } }
@@ -574,7 +524,6 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .dv-detail td { background: var(--bg-hover, #f8fafc); }
 .dv-detail[hidden] { display: none; }
 
-/* ---------- 17. Dental Part 2: per-tooth rows + chart history ---------- */
 .dv-toothrows { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 12px; background: var(--bg-hover, #f8fafc); }
 .dv-toothrows[hidden] { display: none; }
 .dv-tr-head { margin-bottom: 8px; font-size: .88rem; }
@@ -586,7 +535,6 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .dv-snaplist { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 8px; font-size: .88rem; }
 @media (max-width: 640px) { .dv-tr { grid-template-columns: 38px 1fr; } .dv-tr select + select { grid-column: 2; } }
 
-/* ---------- 18. Dental Part 3: scan from the New Dental Record form ---------- */
 .dv-scanbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
 .dv-scan { margin: 0 0 14px; padding: 12px; border: 1px solid var(--mh-info-border, #bae6fd); background: var(--mh-info-bg, #eff6ff); border-radius: 12px; }
 .dv-scan[hidden] { display: none; }
@@ -594,17 +542,15 @@ input.mh-invalid, select.mh-invalid, textarea.mh-invalid {
 .dv-scan-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .dv-scan input[type="date"] { min-height: 34px; }
 
-/* ---------- 19. Step 7: Stock / Disposal History tabs ---------- */
 .mh-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--bg-hover, #f1f5f9); border: 1px solid var(--border-color, #e2e8f0); }
-.mh-tabs a { padding: 7px 18px; border-radius: 999px; font-weight: 700; font-size: .85rem; text-decoration: none; color: var(--text-muted, #64748b); transition: background-color .15s ease, color .15s ease; }
+.mh-tabs a { padding: 10px 22px; border-radius: 999px; font-weight: 700; font-size: .85rem; text-decoration: none; color: var(--text-muted, #64748b); transition: background-color .15s ease, color .15s ease; }
 .mh-tabs a:hover { color: var(--text-main, #334155); }
 .mh-tabs a.active { background: var(--primary, #4ca1af); color: #fff; }
 
-/* ---------- 20. Round A: live updates, required marker ---------- */
 @keyframes mh-live-flash { from { background-color: rgba(var(--primary-rgb, 76, 161, 175), 0.18); } to { background-color: transparent; } }
 .mh-live-flash { animation: mh-live-flash 1.4s ease-out 1; }
 .mh-live-pill {
-    position: fixed; right: 18px; bottom: 18px; z-index: 100001; padding: 10px 16px; border: 0; border-radius: 999px; cursor: pointer;
+    position: fixed; right: 18px; bottom: 18px; z-index: 100001; padding: 13px 22px; border: 0; border-radius: 999px; cursor: pointer;
     background: var(--primary, #4ca1af); color: #fff; font-family: inherit; font-size: .88rem; box-shadow: var(--mh-shadow-pop, 0 12px 30px rgba(15,23,42,.3));
     animation: mh-slide-down .25s var(--mh-ease, ease) both;
 }

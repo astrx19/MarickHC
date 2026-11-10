@@ -234,31 +234,24 @@ $js_inventory = json_encode(array_map(function($r) {
 
 $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supply Masterlist - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Supply Masterlist']);
+?>
     <style>
         .stats-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 25px; }
         @media (max-width: 1100px) { .stats-grid-4 { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 560px) { .stats-grid-4 { grid-template-columns: 1fr; } }
-
         .stat-card.clickable { cursor: pointer; text-align: left; flex-direction: row; align-items: center; gap: 14px; padding: 20px; }
         .stat-card.clickable .stat-icon-badge { margin-bottom: 0; flex-shrink: 0; }
         .stat-card.clickable .stat-body h3 { margin: 0 0 6px 0; }
         .stat-card.clickable .stat-body .number { font-size: 1.9rem; }
         .stat-card.clickable.active-quick { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb, 76, 161, 175), 0.18); }
-
         /* --- Filter toolbar --- */
         .filter-toolbar { flex-wrap: wrap; }
         .mode-toggle { display: inline-flex; border: 1px solid var(--border-color, #cbd5e1); border-radius: 20px; overflow: hidden; }
         .mode-toggle button { border: none; background: var(--bg-input); color: var(--text-muted); padding: 9px 16px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: 0.15s; }
         .mode-toggle button.active { background: var(--primary); color: #fff; }
-
         .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px 16px 24px; }
         .filter-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(var(--primary-rgb, 76, 161, 175), 0.12); color: var(--primary); border: 1px solid rgba(var(--primary-rgb, 76, 161, 175), 0.3); border-radius: var(--radius-pill); padding: 5px 8px 5px 12px; font-size: 0.78rem; font-weight: 700; }
         .filter-chip button { border: none; background: transparent; color: inherit; cursor: pointer; display: flex; align-items: center; padding: 2px; border-radius: 50%; }
@@ -266,7 +259,6 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
         .filter-chip button .mh-icon { width: 12px; height: 12px; }
         .filter-reset-btn { border: 1px dashed var(--border-color, #cbd5e1); background: transparent; color: var(--text-muted); border-radius: var(--radius-pill); padding: 5px 12px; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
         .filter-reset-btn:hover { color: var(--heading-color); border-color: var(--text-muted); }
-
         /* --- Grouped table --- */
         .group-row { cursor: pointer; }
         .group-row:hover { background-color: var(--bg-hover); }
@@ -279,42 +271,33 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
         .brand-badge { font-size: 0.8rem; color: var(--primary); font-weight: 700; }
         .brand-badge.multi { color: var(--text-muted); font-style: italic; }
         .batch-count-tag { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; background: var(--bg-hover); border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-pill); padding: 1px 8px; margin-left: 6px; }
-
         .near-expiry-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 700; color: #c2410c; background: #ffedd5; border: 1px solid #fed7aa; border-radius: var(--radius-pill); padding: 2px 9px; margin-top: 4px; }
         html[data-theme="dark"] .near-expiry-pill { background: rgba(194, 65, 12, 0.2); color: #fdba74; border-color: rgba(194, 65, 12, 0.4); }
-
         /* .fefo-tag, .tracking-chip and the .packaging-* calculator classes
            are now canonical, shared components declared once in
            assets/css/admin_theme.css (section 6f/6g) so
            dispense_medicine.php can reuse the exact same look. */
-
         .batch-detail-row td { padding: 0 !important; border-bottom: 1px solid var(--border-color, #e2e8f0); background: var(--bg-body); }
         .batch-subtable-wrap { padding: 6px 16px 16px 54px; }
         .batch-subtable { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-md); overflow: hidden; }
         .batch-subtable th { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding: 10px 14px; background: var(--bg-hover); border-bottom: 1px solid var(--border-color, #e2e8f0); }
         .batch-subtable td { padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); font-size: 0.88rem; color: var(--text-main); vertical-align: middle; }
         .batch-subtable tr:last-child td { border-bottom: none; }
-
         .action-btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
         .btn-manage { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.8rem; transition: 0.2s; white-space: nowrap; }
         .btn-manage:hover { background: #bae6fd; }
         html[data-theme="dark"] .btn-manage { background: rgba(3,105,161,0.25); color: #7dd3fc; border-color: rgba(3,105,161,0.5); }
         html[data-theme="dark"] .btn-manage:hover { background: rgba(3,105,161,0.4); }
-
         .btn-dispense { background: #d1fae5; color: #047857; border: 1px solid #a7f3d0; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.8rem; transition: 0.2s; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; }
         .btn-dispense:hover { background: #a7f3d0; }
         .btn-dispense.disabled { opacity: 0.5; pointer-events: none; }
         html[data-theme="dark"] .btn-dispense { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.4); }
-
         .btn-add-batch { background: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-color, #cbd5e1); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.8rem; white-space: nowrap; }
         .btn-add-batch:hover { border-color: var(--primary); color: var(--primary); }
-
         .empty-state td { padding: 48px 16px; text-align: center; color: var(--text-muted); font-size: 0.95rem; }
-
         .batch-toggle-container { display: flex; gap: 10px; font-weight: normal; font-size: 0.8rem; }
         .batch-toggle-container label { cursor: pointer; display: flex; align-items: center; gap: 3px; margin: 0; color: #475569; }
         .batch-toggle-container input[type="radio"] { width: auto; height: auto; margin: 0; cursor: pointer; accent-color: #0369a1; }
-
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { 
             -webkit-appearance: none; 
@@ -324,14 +307,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
             -moz-appearance: textfield;
         }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
             
@@ -436,7 +412,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <?php if ($can_edit_stock): /* stock-editing modals exist only for roles/accounts holding add_medicine */ ?>
     <div class="modal-overlay" id="addItemModal">
@@ -1454,5 +1430,4 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
         });
         <?php endif; ?>
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

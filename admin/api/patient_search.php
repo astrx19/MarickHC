@@ -58,10 +58,14 @@ $today = new DateTime('today');
 $out = [];
 foreach ($rows as $r) {
     $age = null;
-    try { $age = (new DateTime($r['birthdate']))->diff($today)->y; } catch (Exception $e) { /* bad date: leave blank */ }
+    $ageFormatted = '';
+    try {
+        $age = (new DateTime($r['birthdate']))->diff($today)->y;
+        $ageFormatted = function_exists('mh_format_patient_age') ? mh_format_patient_age($r['birthdate']) : ($age . ' yrs');
+    } catch (Exception $e) { /* bad date: leave blank */ }
     $out[] = [
         'id' => (int) $r['id'], 'first_name' => $r['first_name'], 'middle_name' => (string) $r['middle_name'],
-        'last_name' => $r['last_name'], 'birthdate' => $r['birthdate'], 'age' => $age, 'sex' => $r['sex'],
+        'last_name' => $r['last_name'], 'birthdate' => $r['birthdate'], 'age' => $age, 'age_formatted' => $ageFormatted, 'sex' => $r['sex'],
     ];
 }
 echo json_encode(['results' => $out], JSON_UNESCAPED_UNICODE);

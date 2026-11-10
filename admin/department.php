@@ -109,14 +109,10 @@ if ($can_write) {
     while ($res && ($r = $res->fetch_assoc())) { $patients[] = $r; }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $h($dept); ?> - Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => $dept]);
+?>
     <style>
         .dp-hl { background: rgba(59,130,246,.08); border-radius: 8px; }
         .dp-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 600; }
@@ -125,12 +121,7 @@ if ($can_write) {
         .dp-row input[type=text], .dp-form select, .dp-form textarea { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; background: var(--card-bg, #fff); color: var(--text-color, #1e293b); }
         .dp-form label { display: block; font-size: .8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); margin: 10px 0 4px; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
         <div class="dashboard-container">
 
             <div class="unified-panel">
@@ -188,6 +179,5 @@ if ($can_write) {
                 </table></div>
             </div>
         </div>
-    </div>
-</body>
-</html>
+    <?php mh_layout_close(); ?>
+<?php mh_layout_end(); ?>

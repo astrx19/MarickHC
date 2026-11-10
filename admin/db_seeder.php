@@ -75,7 +75,7 @@ class MhSeeder
     {
         $this->log[] = ['ok', $msg];
         if (PHP_SAPI === 'cli') {
-            echo "  ✓ $msg\n";
+            echo "  [OK] $msg\n";
         }
     }
 
@@ -91,7 +91,7 @@ class MhSeeder
     {
         $this->log[] = ['err', $msg];
         if (PHP_SAPI === 'cli') {
-            echo "  ✗ $msg\n";
+            echo "  [ERR] $msg\n";
         }
     }
 
@@ -127,7 +127,14 @@ class MhSeeder
         $this->staffId = $this->getOrFindStaffId();
 
         $patients = [
-            // Pediatric patients (0-14 yrs)
+            // Babies & Infants (under 1 yr old - months formatting)
+            ['Carlo',   'Santos',  'Reyes',   '', '2026-06-15', 'Male',   '09171234526', 'marick.seed.026@test.local', 'Marick',          '10 Aida St.'],
+            ['Chloe',   'Garcia',  'Torres',  '', '2026-03-10', 'Female', '09181234527', 'marick.seed.027@test.local', 'Marick',          'Purok 1, Sto. Domingo'],
+            ['Mateo',   'Villanueva','Cruz',  '', '2026-10-05', 'Male',   '09191234528', 'marick.seed.028@test.local', 'Marick',          'Zone 1, Sto. Domingo'],
+            ['Althea',  'Pascual', 'Dela Torre','', '2026-05-20', 'Female', '09201234529', 'marick.seed.029@test.local', 'Outside Marick', 'Blk 2 Lot 14, Cainta, Rizal'],
+            ['Lucas',   'Mendoza', 'Flores',  '', '2026-08-12', 'Male',   '09211234530', 'marick.seed.030@test.local', 'Outside Marick', '45 San Roque, Antipolo, Rizal'],
+
+            // Pediatric children (1-14 yrs)
             ['Mariano', 'Santos', 'Rivera', '', '2023-04-10', 'Male',   '09171234501', 'marick.seed.001@test.local', 'Marick',          '15 Aida St.'],
             ['Kristina', 'Reyes', 'Cruz',  '', '2022-11-25', 'Female',  '09181234502', 'marick.seed.002@test.local', 'Marick',          '7 Cattleya St.'],
             ['Angelo',  'Garcia', 'Lim',   '', '2020-07-14', 'Male',   '09191234503', 'marick.seed.003@test.local', 'Marick',          '3 Cora St.'],
@@ -418,7 +425,7 @@ class MhSeeder
                 if ($st->execute()) {
                     $count++;
                     $queueNum++;
-                    $this->ok("Queue: Patient $pid → $dept queue #" . ($queueNum - 1) . " [$status]");
+                    $this->ok("Queue: Patient $pid to $dept queue #" . ($queueNum - 1) . " [$status]");
                 } else {
                     $this->skip("Queue insert skip for patient $pid / $dept: " . $st->error);
                 }
@@ -879,7 +886,7 @@ if ($isCli) {
     $seeder = new MhSeeder($conn);
     $totals = $seeder->run();
     echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-    echo "Done! ✓ {$totals['ok']} inserted  · {$totals['skip']} skipped  ✗ {$totals['err']} errors\n\n";
+    echo "Done! {$totals['ok']} inserted, {$totals['skip']} skipped, {$totals['err']} errors\n\n";
     exit(0);
 }
 
@@ -905,14 +912,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_seeder'])) {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DB Seeder — Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Database Seeder']);
+?>
     <style>
         .seed-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
         .seed-title { font-size: 1.3rem; font-weight: 800; color: var(--heading-color, #1e293b); margin: 0 0 6px; }
@@ -931,11 +934,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_seeder'])) {
         .seed-module strong { display: block; color: var(--heading-color, #1e293b); font-size: 0.95rem; margin-bottom: 4px; }
         .seed-module span { color: var(--text-muted, #64748b); }
     </style>
-</head>
-<body>
-    <?php include __DIR__ . '/../includes/admin_sidebar.php'; ?>
-    <div class="main-content">
-        <?php include __DIR__ . '/../includes/admin_topbar.php'; ?>
+<?php mh_layout_open(); ?>
         <div class="dashboard-container">
 
             <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:18px;">
@@ -947,44 +946,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_seeder'])) {
 
             <?php if (!$ran): ?>
             <div class="seed-warn">
-                ⚠️ <strong>Test Environment Only.</strong> This tool inserts mock patient data, consultations, and clinical records into the live database. Only run this on a development or staging server. All seed emails end with <code>@test.local</code> to prevent confusion with real patients. The seeder is <strong>safe to re-run</strong> — existing records are skipped automatically.
+                <strong>Test Environment Only.</strong> This tool inserts mock patient data, consultations, and clinical records into the live database. Only run this on a development or staging server. All seed emails end with <code>@test.local</code> to prevent confusion with real patients. The seeder is <strong>safe to re-run</strong> — existing records are skipped automatically.
             </div>
 
             <div class="seed-card">
-                <p class="seed-title">🌱 Database Seeder</p>
+                <p class="seed-title">Database Seeder</p>
                 <p class="seed-sub">Generates 25 realistic patient profiles and populates all clinical modules with clinically-sound data distributed across the last 90 days.</p>
 
                 <div class="seed-modules">
-                    <div class="seed-module"><strong>👤 25 Patients</strong><span>Pediatric, adult, elderly — Marick & outsiders</span></div>
-                    <div class="seed-module"><strong>🩺 150 Consultations</strong><span>90-day spread, 17 valid clinical diagnoses</span></div>
-                    <div class="seed-module"><strong>🚶 Queue Entries</strong><span>All 4 departments, mixed statuses</span></div>
-                    <div class="seed-module"><strong>🤰 Maternal Records</strong><span>Prenatal visits, gravida/para, vitals</span></div>
-                    <div class="seed-module"><strong>💉 Immunization</strong><span>BCG, HepB, Pentavalent, PCV, MR</span></div>
-                    <div class="seed-module"><strong>🦷 Dental Records</strong><span>Charts, caries, treatment codes</span></div>
-                    <div class="seed-module"><strong>💊 18 Inventory Items</strong><span>Medicines, vaccines, medical supplies</span></div>
-                    <div class="seed-module"><strong>⚙️ System Options</strong><span>Streets, departments, masterlists</span></div>
+                    <div class="seed-module"><strong>25 Patients</strong><span>Pediatric, adult, elderly — Marick & outsiders</span></div>
+                    <div class="seed-module"><strong>150 Consultations</strong><span>90-day spread, 17 valid clinical diagnoses</span></div>
+                    <div class="seed-module"><strong>Queue Entries</strong><span>All 4 departments, mixed statuses</span></div>
+                    <div class="seed-module"><strong>Maternal Records</strong><span>Prenatal visits, gravida/para, vitals</span></div>
+                    <div class="seed-module"><strong>Immunization</strong><span>BCG, HepB, Pentavalent, PCV, MR</span></div>
+                    <div class="seed-module"><strong>Dental Records</strong><span>Charts, caries, treatment codes</span></div>
+                    <div class="seed-module"><strong>18 Inventory Items</strong><span>Medicines, vaccines, medical supplies</span></div>
+                    <div class="seed-module"><strong>System Options</strong><span>Streets, departments, masterlists</span></div>
                 </div>
 
                 <form method="POST">
                     <?php echo $csrfField; ?>
                     <button type="submit" name="run_seeder" value="1" class="seed-btn"
                         onclick="return confirm('Run the database seeder? This will insert test data into your database.')">
-                        🌱 Run Database Seeder
+                        Run Database Seeder
                     </button>
                 </form>
             </div>
 
             <?php else: ?>
             <div class="seed-card">
-                <p class="seed-title">✅ Seeder Complete</p>
+                <p class="seed-title">Seeder Complete</p>
                 <p class="seed-sub">The following data was inserted or verified in your database.</p>
 
                 <?php if ($totals): ?>
                 <div class="totals">
-                    <div class="tot-card tot-ok">✓ <?php echo $totals['ok']; ?> Inserted / Updated</div>
+                    <div class="tot-card tot-ok"><?php echo $totals['ok']; ?> Inserted / Updated</div>
                     <div class="tot-card tot-skip">· <?php echo $totals['skip']; ?> Skipped (already exists)</div>
                     <?php if ($totals['err'] > 0): ?>
-                    <div class="tot-card tot-err">✗ <?php echo $totals['err']; ?> Errors</div>
+                    <div class="tot-card tot-err"><?php echo $totals['err']; ?> Errors</div>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
@@ -992,27 +991,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_seeder'])) {
                 <div class="log-box">
                 <?php foreach ($seeder->getLogs() as [$type, $msg]): ?>
                     <div class="log-<?php echo $type; ?>"><?php
-                        $icon = match($type) { 'ok' => '✓', 'skip' => '·', 'err' => '✗', default => '' };
+                        $icon = match($type) { 'ok' => 'OK', 'skip' => '-', 'err' => 'ERR', default => '' };
                         echo htmlspecialchars("$icon $msg", ENT_QUOTES, 'UTF-8');
                     ?></div>
                 <?php endforeach; ?>
                 </div>
 
                 <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
-                    <a href="disease_statistics.php" class="seed-btn" style="text-decoration:none;">📊 View Disease Statistics</a>
-                    <a href="patient_masterlist.php" class="seed-btn" style="text-decoration:none; background:#64748b;">👤 Patient Masterlist</a>
-                    <a href="appointments.php" class="seed-btn" style="text-decoration:none; background:#64748b;">🚶 Queue Monitor</a>
-                    <a href="inventory.php" class="seed-btn" style="text-decoration:none; background:#64748b;">💊 Inventory</a>
+                    <a href="disease_statistics.php" class="seed-btn" style="text-decoration:none;">View Disease Statistics</a>
+                    <a href="patient_masterlist.php" class="seed-btn" style="text-decoration:none; background:#64748b;">Patient Masterlist</a>
+                    <a href="appointments.php" class="seed-btn" style="text-decoration:none; background:#64748b;">Queue Monitor</a>
+                    <a href="inventory.php" class="seed-btn" style="text-decoration:none; background:#64748b;">Inventory</a>
                     <form method="POST" style="display:inline;">
                         <?php echo $csrfField; ?>
-                        <button type="submit" name="run_seeder" value="1" class="seed-btn" style="background:#64748b;">↺ Run Again</button>
+                        <button type="submit" name="run_seeder" value="1" class="seed-btn" style="background:#64748b;">Run Again</button>
                     </form>
                 </div>
             </div>
             <?php endif; ?>
 
         </div>
-    </div>
-</body>
-</html>
+    <?php mh_layout_close(); ?>
+<?php mh_layout_end(); ?>
 

@@ -98,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'hero_subtitle'         => trim($_POST['hero_subtitle'] ?? ''),
             'global_announcement'   => trim($_POST['global_announcement'] ?? ''),
             'enable_online_booking' => isset($_POST['enable_online_booking']) ? '1' : '0',
+            'show_db_seeder_sidebar' => isset($_POST['show_db_seeder_sidebar']) ? '1' : '0',
             // Address jurisdiction (replaces the old hardcoded "Marick" checks everywhere)
             'home_address_type'     => mb_substr(trim($_POST['home_address_type'] ?? ''), 0, 60),
             'outside_address_type'  => mb_substr(trim($_POST['outside_address_type'] ?? ''), 0, 60),
@@ -591,14 +592,10 @@ if ($active_tab === 'sms') {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Settings - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'System Settings']);
+?>
     <?php
     // Inline the live theme so this page always shows the current colours,
     // even before the browser re-fetches the cached stylesheet.
@@ -648,23 +645,19 @@ if ($active_tab === 'sms') {
             --ss-warn-bg: rgba(217, 119, 6, 0.16);  --ss-warn-bd: rgba(217, 119, 6, 0.40);  --ss-warn-tx: #fcd34d;
             --ss-danger-btn-bg: rgba(220, 38, 38, 0.18); --ss-danger-btn-tx: #fca5a5;
         }
-
         .tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 2px solid var(--ss-border); margin-bottom: 25px; }
         .tabs a {
             padding: 12px 20px; text-decoration: none; font-weight: 700; font-size: 0.95rem;
             color: var(--ss-muted); border-bottom: 3px solid transparent; margin-bottom: -2px;
         }
         .tabs a.active { color: var(--primary, #4ca1af); border-bottom-color: var(--primary, #4ca1af); }
-
         .settings-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 25px; align-items: start; }
         @media (max-width: 950px) { .settings-grid { grid-template-columns: 1fr; } }
-
         .card { background: var(--ss-card); color: var(--ss-text); border: 1px solid var(--ss-border); border-radius: 12px; overflow: hidden; margin-bottom: 25px; }
         .card > header { padding: 16px 22px; background: var(--ss-card-head); border-bottom: 1px solid var(--ss-border); }
         .card > header h3 { margin: 0; font-size: 1.05rem; color: var(--ss-heading); }
         .card > header p { margin: 4px 0 0; font-size: 0.82rem; color: var(--ss-muted); }
         .card .body { padding: 22px; }
-
         .field { margin-bottom: 16px; }
         .field label { display: block; font-weight: 600; font-size: 0.88rem; color: var(--ss-text); margin-bottom: 6px; }
         .field input[type="text"], .field input[type="password"], .field textarea, .field select, .field input[type="number"] {
@@ -675,13 +668,11 @@ if ($active_tab === 'sms') {
         .field textarea { resize: vertical; min-height: 80px; }
         .field input:focus, .field textarea:focus, .field select:focus { outline: 2px solid var(--primary, #4ca1af); outline-offset: 0; border-color: var(--primary, #4ca1af); }
         .hint { font-size: 0.78rem; color: var(--ss-muted); margin: 4px 0 0; line-height: 1.5; }
-
         /* Logo / Background upload dropzones */
         .preview-box { background: var(--ss-card-head); border: 2px dashed var(--ss-border-strong); padding: 18px; text-align: center; border-radius: 10px; margin-bottom: 16px; color: var(--ss-text); }
         .preview-box img { max-width: 100%; max-height: 130px; object-fit: contain; display: block; margin: 0 auto 12px; }
         .preview-box input[type="file"] { width: 100%; padding: 8px; border: 1px solid var(--ss-border-strong); border-radius: 6px; background: var(--ss-input-bg); color: var(--ss-text); box-sizing: border-box; font-size: 0.85rem; }
         .preview-box input[type="file"]::file-selector-button { margin-right: 10px; padding: 6px 12px; border: 1px solid var(--ss-border-strong); border-radius: 6px; background: var(--ss-card-head); color: var(--ss-text); font-weight: 600; cursor: pointer; }
-
         /* Feature toggles */
         .switch { position: relative; display: inline-block; width: 50px; height: 26px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -692,69 +683,52 @@ if ($active_tab === 'sms') {
         .feature-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 14px; background: var(--ss-card-head); border: 1px solid var(--ss-border); border-radius: 8px; margin-bottom: 15px; }
         .feature-row strong { display: block; color: var(--ss-heading); }
         .feature-row span.sub { color: var(--ss-muted); font-size: 0.83rem; }
-
         .color-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--ss-border); }
         .color-row:last-child { border-bottom: 0; }
         .color-row label { flex: 1; font-size: 0.9rem; color: var(--ss-text); font-weight: 600; margin: 0; }
         .color-row input[type="color"] { width: 46px; height: 34px; padding: 2px; border: 1px solid var(--ss-border-strong); border-radius: 6px; background: var(--ss-input-bg); cursor: pointer; flex-shrink: 0; }
         .color-row .hexcode { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--ss-muted); width: 70px; text-align: right; }
         .group-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ss-faint); font-weight: 800; margin: 18px 0 4px; }
-
         .list-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
         .list-nav a { padding: 8px 14px; border-radius: 20px; text-decoration: none; font-size: 0.85rem; font-weight: 700; background: var(--ss-pill-bg); color: var(--ss-pill-text); border: 1px solid var(--ss-border); }
         .list-nav a.active { background: var(--primary, #4ca1af); color: #fff; border-color: var(--primary, #4ca1af); }
-
         table.opts { width: 100%; border-collapse: collapse; }
         table.opts th { text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ss-faint); padding: 8px; border-bottom: 2px solid var(--ss-border); background: transparent; }
         table.opts td { padding: 7px 8px; border-bottom: 1px solid var(--ss-row-line); vertical-align: middle; color: var(--ss-text); background: transparent; }
         table.opts input[type="text"] { width: 100%; padding: 7px 9px; border: 1px solid var(--ss-border-strong); border-radius: 5px; box-sizing: border-box; background: var(--ss-input-bg); color: var(--ss-text); }
         table.opts input[type="number"] { width: 70px; padding: 7px; border: 1px solid var(--ss-border-strong); border-radius: 5px; background: var(--ss-input-bg); color: var(--ss-text); }
-
         .btn { padding: 10px 18px; border: 0; border-radius: 7px; font-weight: 700; font-size: 0.92rem; cursor: pointer; font-family: inherit; }
         .btn-main { background: var(--button-bg, #4ca1af); color: var(--button-text, #fff); }
         .btn-soft { background: var(--ss-soft-btn); color: var(--ss-text); }
         .btn-danger { background: var(--ss-danger-btn-bg); color: var(--ss-danger-btn-tx); }
         .btn-mini { padding: 6px 10px; font-size: 0.8rem; }
         .btn-block { width: 100%; padding: 14px; font-size: 1rem; }
-
         .alert { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 0.92rem; line-height: 1.55; }
         .alert-success { background: var(--ss-ok-bg);   border: 1px solid var(--ss-ok-bd);   color: var(--ss-ok-tx); }
         .alert-error   { background: var(--ss-err-bg);  border: 1px solid var(--ss-err-bd);  color: var(--ss-err-tx); }
         .alert-warn    { background: var(--ss-warn-bg); border: 1px solid var(--ss-warn-bd); color: var(--ss-warn-tx); }
-
         /* Global Announcement Banner field (was inline red-on-pink) */
         .field label.announce-label { color: var(--ss-err-tx); }
         .field textarea.announce-input { border-color: var(--ss-err-bd); background: var(--ss-err-bg); }
-
         /* API-key "Show" button + Gemini model list (were inline #f8fafc / white) */
         .reveal-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 1px solid var(--ss-border-strong); background: var(--ss-card-head); color: var(--ss-text); border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; cursor: pointer; }
         .model-list { max-height: 220px; overflow: auto; border: 1px solid var(--ss-border); border-radius: 8px; padding: 12px; background: var(--ss-card-head); color: var(--ss-text); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; line-height: 1.7; }
-
         .page-title { margin: 0 0 5px; color: var(--ss-heading); font-family: Georgia, serif; font-size: 1.8rem; }
         .page-sub { margin: 0; color: var(--ss-muted); font-size: 0.95rem; }
         .soft-hr { border: 0; border-top: 1px dashed var(--ss-border-strong); margin: 20px 0; }
         .sub-title { margin: 0 0 12px; font-size: 0.92rem; color: var(--ss-heading); }
         .prose { font-size: 0.9rem; line-height: 1.65; color: var(--ss-text); }
-
         /* Live preview of the colours being edited: its inner colours come
            from the pickers on purpose, only the frame follows the theme. */
         .theme-preview { border: 1px solid var(--ss-border); border-radius: 10px; overflow: hidden; }
         .tp-side { padding: 14px; font-size: 0.85rem; font-weight: 700; }
         .tp-body { padding: 18px; }
         code.inline { background: var(--ss-card-head); color: var(--ss-text); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
-
         /* Dark-mode-only polish that tokens alone can't express */
         html[data-theme="dark"] .card { box-shadow: var(--shadow-sm); }
         html[data-theme="dark"] .preview-box img { background: rgba(255,255,255,.04); border-radius: 8px; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-<?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-<div class="main-content">
-    <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
     <div class="dashboard-container">
 
@@ -856,6 +830,26 @@ if ($active_tab === 'sms') {
                                       placeholder="e.g. Clinic closed tomorrow due to storm..."
                                       class="announce-input"><?php echo htmlspecialchars($settings['global_announcement']); ?></textarea>
                             <p class="hint">Leave blank to hide. Any text here shows as a red alert on the patient portal.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <header>
+                        <h3>Administrator Tools</h3>
+                        <p>Controls which maintenance tools appear in the staff sidebar.</p>
+                    </header>
+                    <div class="body">
+                        <div class="feature-row" style="margin-bottom:0;">
+                            <div>
+                                <strong>Show Database Seeder in Sidebar</strong>
+                                <span class="sub">Adds a Database Seeder link for Health Heads. Keep this off on a live system; the seeder inserts mock records.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" name="show_db_seeder_sidebar" value="1"
+                                    <?php echo (($settings['show_db_seeder_sidebar'] ?? '0') === '1') ? 'checked' : ''; ?>>
+                                <span class="slider"></span>
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -1918,6 +1912,5 @@ if ($active_tab === 'sms') {
 <?php endif; ?>
 
     </div>
-</div>
-</body>
-</html>
+<?php mh_layout_close(); ?>
+<?php mh_layout_end(); ?>

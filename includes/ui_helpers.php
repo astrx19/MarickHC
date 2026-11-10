@@ -1,22 +1,7 @@
 <?php
-/**
- * Shared UI helpers (Step 1 - unified notifications).
- *
- * Loaded automatically by includes/modal_assets.php, which every page already
- * includes inside <head>, so these are available anywhere in the page body.
- *
- *   mh_h($value)                        -> HTML/attribute-safe output (htmlspecialchars with sane flags)
- *   mh_js($value)                       -> safe JSON literal for inline <script>
- *   mh_notify_script($msg, $type)       -> <script> that shows ONE toast/alert on page load
- *   mh_flash_scripts($success, $error)  -> convenience: success toast + error alert
- *
- * Replaces the old hand-written
- *   echo "<script>... showCustomModal('Success!', '" . addslashes($msg) . "') ...</script>";
- * which broke on newlines/quotes and was copy-pasted per page.
- */
 
 if (!function_exists('mh_js')) {
-    /** JSON-encode for use inside an inline <script> (no </script> or quote break-outs). */
+
     function mh_js($value): string
     {
         $json = json_encode(
@@ -28,10 +13,7 @@ if (!function_exists('mh_js')) {
 }
 
 if (!function_exists('mh_notify_script')) {
-    /**
-     * @param string|null $message  plain text (it is shown via textContent, never as HTML)
-     * @param string      $type     success | info | warning | error
-     */
+
     function mh_notify_script(?string $message, string $type = 'info', ?string $title = null): string
     {
         $message = trim((string) $message);
@@ -52,7 +34,7 @@ if (!function_exists('mh_flash_scripts')) {
 }
 
 if (!function_exists('mh_h')) {
-    /** Escape for HTML text AND attribute values (quotes included). Use for every echoed database/user value. */
+
     function mh_h($value): string
     {
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -60,13 +42,7 @@ if (!function_exists('mh_h')) {
 }
 
 if (!function_exists('mh_clean_temperature')) {
-    /**
-     * Body temperature in degrees Celsius: digits with an optional decimal part ("36", "36.8").
-     * A trailing "C" / "°C" (what OCR or habit adds) is tolerated and dropped; anything else is rejected.
-     * Empty input is fine (the field is optional).
-     *
-     * @return array ['ok' => bool, 'value' => string ('' when empty), 'error' => string|null]
-     */
+
     function mh_clean_temperature($raw)
     {
         $raw = trim((string) $raw);
@@ -83,16 +59,10 @@ if (!function_exists('mh_clean_temperature')) {
 }
 
 if (!function_exists('mh_clean_vitals')) {
-    /**
-     * Server-side twin of the numbers-only inputs (assets/js/mh_forms.js): the browser can be bypassed, this cannot.
-     * $raw may hold any of: bp, temp, pulse, resp_rate, spo2, weight, height, birth_weight, birth_height, bmi.
-     * Empty = fine (optional). A trailing unit ("65 kg", "98 %", "36.8 C") is tolerated and dropped; letters elsewhere are not.
-     *
-     * @return array ['values' => [key => cleaned string], 'errors' => [message, ...]]
-     */
+
     function mh_clean_vitals(array $raw)
     {
-        // key => [label, min, max, decimals, unit pattern]
+
         $spec = [
             'temp'         => ['Temperature', 30, 45, 2, 'c|°\s*c'],
             'pulse'        => ['Pulse rate', 20, 250, 0, 'bpm'],

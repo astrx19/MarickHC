@@ -23,21 +23,11 @@ $st->execute();
 $outsider_total = (int) ($st->get_result()->fetch_assoc()['count'] ?? 0);
 $st->close();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <title>Area Masterlist - Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Area Masterlist']);
+?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
 
@@ -121,7 +111,7 @@ $st->close();
                 </table>
             </div>
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <script>
         function filterTable() {
@@ -143,5 +133,4 @@ $st->close();
             }
         }
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

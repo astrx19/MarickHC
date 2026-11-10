@@ -44,14 +44,10 @@ $reasons = mh_disp_reasons(); $forms = mh_disp_forms();
 $form_short = ['liquid' => 'Liquid', 'capsule' => 'Capsule / Tablet', 'piece' => 'Item / Piece'];
 $filtered = ($f['from'] !== '' || $f['to'] !== '' || $f['reason'] !== '' || $f['form'] !== '' || $f['q'] !== '');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Disposal History - <?php echo $h($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Disposal History']);
+?>
     <style>
         .dh-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 20px; }
         .dh-card { background: var(--bg-card, #fff); border: 1px solid var(--border-color, #e2e8f0); border-top: 4px solid var(--primary, #4ca1af); border-radius: 12px; padding: 14px 16px; }
@@ -66,14 +62,7 @@ $filtered = ($f['from'] !== '' || $f['to'] !== '' || $f['reason'] !== '' || $f['
             body { background: #fff !important; }
         }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
 
@@ -143,6 +132,5 @@ $filtered = ($f['from'] !== '' || $f['to'] !== '' || $f['reason'] !== '' || $f['
             </div>
 
         </div>
-    </div>
-</body>
-</html>
+    <?php mh_layout_close(); ?>
+<?php mh_layout_end(); ?>

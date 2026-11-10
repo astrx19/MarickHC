@@ -81,67 +81,314 @@ $query = "SELECT p.*, pc.extra_contacts
            WHERE p.status = 1
            ORDER BY p.last_name ASC";
 $patients_result = $conn->query($query);
+
+$patients = [];
+$counts = [
+    'all'              => 0,
+    'marick'           => 0,
+    'outsider'         => 0,
+    'all_infants'      => 0,
+    'marick_infants'   => 0,
+    'outsider_infants' => 0,
+];
+
+if ($patients_result) {
+    while ($row = $patients_result->fetch_assoc()) {
+        $dob_val = !empty($row['birthdate']) ? $row['birthdate'] : ($row['date_of_birth'] ?? '');
+        $age_info = mh_calculate_patient_age($dob_val);
+
+        $row['age_display'] = $age_info['text'];
+        $row['is_infant']   = $age_info['is_infant'];
+        $row['age_years']   = $age_info['years'];
+        $row['age_months']  = $age_info['months'];
+
+        $is_marick = mh_is_marick_resident($row['address_type'] ?? '');
+        $row['is_marick']         = $is_marick;
+        $row['location_category'] = $is_marick ? 'marick' : 'outsider';
+
+        $raw_address = (string) ($row['address'] ?? '');
+        $street_name = '';
+
+        if ($is_marick) {
+            $parsed = mh_parse_resident_address($raw_address);
+            if ($parsed && !empty($parsed[1])) {
+                $street_name = $parsed[1];
+            } else {
+                if (!empty($marick_streets)) {
+                    foreach ($marick_streets as $mst) {
+                        if (stripos($raw_address, $mst) !== false) {
+                            $street_name = $mst;
+                            break;
+                        }
+                    }
+                }
+            }
+            $parts = explode(',', $raw_address);
+            $row['display_address'] = trim($parts[0]);
+            $row['badge_class']     = 'badge-marick';
+        } else {
+            $row['display_address'] = $raw_address;
+            $row['badge_class']     = 'badge-outsider';
+        }
+        $row['street_name'] = $street_name;
+
+        // Tally category counters
+        $counts['all']++;
+        if ($is_marick) {
+            $counts['marick']++;
+            if ($row['is_infant']) {
+                $counts['marick_infants']++;
+                $counts['all_infants']++;
+            }
+        } else {
+            $counts['outsider']++;
+            if ($row['is_infant']) {
+                $counts['outsider_infants']++;
+                $counts['all_infants']++;
+            }
+        }
+
+        $patients[] = $row;
+    }
+}
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patient Masterlist - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
-    
-    
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Patient Masterlist']);
+?>
     <style>
-        /* Page-specific only — shared table/panel/badge/modal/button styling
-           now comes from admin_theme.css (see .unified-panel, .unified-table,
-           .badge, .filter-toolbar, .modal-overlay, .btn-outline-*). */
+        /* Page-specific styling */
         .action-group { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         .patient-name { font-weight: bold; color: var(--heading-color, #1e293b); font-size: 1.02rem; }
-
         .btn-walkin {
             background: #0ea5e9; color: white; border: none; padding: 10px 20px;
             border-radius: 25px; font-weight: 600; cursor: pointer; transition: 0.2s;
             text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
             box-shadow: 0 4px 6px rgba(14, 165, 233, 0.25);
+            white-space: nowrap;
         }
         .btn-walkin:hover { background: #0284c7; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(14, 165, 233, 0.3); }
-
         .btn-save { background: #10b981; color: white; border: none; padding: 12px 25px; border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 1rem; transition: 0.2s; width: 100%; margin-top: 10px; box-shadow: 0 4px 6px rgba(16,185,129,0.2); }
         .btn-save:hover { background: #059669; transform: translateY(-2px); }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        /* Main Category Tabs */
+        .masterlist-nav-tabs {
+            display: flex;
+            gap: 6px;
+            border-bottom: 2px solid var(--border-color, #e2e8f0);
+            margin-bottom: 16px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .masterlist-nav-tabs::-webkit-scrollbar { display: none; }
+        .ml-tab-btn {
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            padding: 10px 18px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-muted, #64748b);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            margin-bottom: -2px;
+            border-radius: 8px 8px 0 0;
+        }
+        .ml-tab-btn:hover {
+            color: var(--heading-color, #1e293b);
+            background: rgba(0, 0, 0, 0.02);
+        }
+        .ml-tab-btn.active {
+            color: #0284c7;
+            border-bottom-color: #0284c7;
+            background: rgba(14, 165, 233, 0.06);
+        }
+        .tab-badge {
+            background: var(--bg-hover, #f1f5f9);
+            color: var(--text-muted, #64748b);
+            font-size: 0.74rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color, #e2e8f0);
+            transition: all 0.2s;
+        }
+        .ml-tab-btn.active .tab-badge {
+            background: #e0f2fe;
+            color: #0369a1;
+            border-color: #bae6fd;
+        }
+        /* Sub-filter Bar */
+        .subfilter-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            padding: 12px 14px;
+            background: var(--bg-hover, #f8fafc);
+            border: 1px solid var(--border-color, #e2e8f0);
+            border-radius: 10px;
+        }
+        .subfilter-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .subfilter-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-left: auto;
+        }
+        /* Age Filter Pills */
+        .age-filter-pills {
+            display: inline-flex;
+            background: var(--card-bg, #ffffff);
+            border: 1px solid var(--border-color, #cbd5e1);
+            border-radius: 20px;
+            padding: 2px;
+            gap: 2px;
+        }
+        .pill-btn {
+            border: none;
+            background: transparent;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-muted, #64748b);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .pill-btn:hover {
+            color: var(--heading-color, #1e293b);
+        }
+        .pill-btn.active {
+            background: #0ea5e9;
+            color: #ffffff;
+            box-shadow: 0 1px 3px rgba(14, 165, 233, 0.3);
+        }
+        .pill-badge {
+            background: rgba(0, 0, 0, 0.08);
+            color: inherit;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 10px;
+        }
+        .pill-btn.active .pill-badge {
+            background: rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+        }
+        /* Infant Badge in Table */
+        .badge-infant {
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #a7f3d0;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="masterlist-container">
 
+            <!-- Main Location Categories Tabs -->
+            <div class="masterlist-nav-tabs" role="tablist">
+                <button type="button" class="ml-tab-btn active" data-loc="all" onclick="setLocationFilter('all')" role="tab">
+                    <span class="tab-label">All Locations</span>
+                    <span class="tab-badge" id="badgeAll"><?php echo $counts['all']; ?></span>
+                </button>
+                <button type="button" class="ml-tab-btn" data-loc="marick" onclick="setLocationFilter('marick')" role="tab">
+                    <span class="tab-label">Marick Residents</span>
+                    <span class="tab-badge" id="badgeMarick"><?php echo $counts['marick']; ?></span>
+                </button>
+                <button type="button" class="ml-tab-btn" data-loc="outsider" onclick="setLocationFilter('outsider')" role="tab">
+                    <span class="tab-label">Outsiders</span>
+                    <span class="tab-badge" id="badgeOutsider"><?php echo $counts['outsider']; ?></span>
+                </button>
+            </div>
+
             <div class="unified-panel">
-                <div class="panel-controls">
-                    <h3 style="margin:0; font-size: 1.2rem; color: var(--heading-color, #1e293b);">Masterlist Directory</h3>
-                    
-                    <div class="filter-toolbar">
-                        <select id="areaFilter" onchange="filterTable()">
-                            <option value="">All Locations</option>
-                            <?php 
-                            if(!empty($marick_streets)) {
-                                foreach($marick_streets as $street) {
-                                    $filter_value = strtoupper($street) . " ST"; 
-                                    echo "<option value=\"" . htmlspecialchars($filter_value) . "\">" . htmlspecialchars($street) . " St.</option>";
-                                }
-                            }
-                            ?>
-                        </select>
-                        
-                        <input type="text" id="searchInput" class="search-box" placeholder="Search patient by name..." onkeyup="filterTable()">
-                        
+                <div class="panel-controls" style="flex-direction: column; align-items: stretch; gap: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h3 style="margin:0; font-size: 1.25rem; color: var(--heading-color, #1e293b); font-family: Georgia, serif;">Masterlist Directory</h3>
+                            <p style="margin:2px 0 0; font-size: 0.85rem; color: var(--text-muted, #64748b);" id="directorySubtitle">
+                                Viewing <strong>All Locations</strong> across Barangay Sto. Domingo and outside residents.
+                            </p>
+                        </div>
                         <a href="walkin.php" class="btn-walkin"><?php echo mh_icon('plus'); ?> Walk-In Registration</a>
+                    </div>
+                    
+                    <div class="subfilter-bar">
+                        <div class="subfilter-left">
+                            <!-- Main Location Filter Dropdown (Reorganized with Optgroups) -->
+                            <select id="areaFilter" onchange="onLocationDropdownChange(this.value)" style="min-width: 220px;" aria-label="Filter location">
+                                <option value="all">All Locations (<?php echo $counts['all']; ?>)</option>
+                                <optgroup label="Marick Residents (Brgy. Sto. Domingo) — <?php echo $counts['marick']; ?> patients">
+                                    <option value="marick:all">All Marick Residents (<?php echo $counts['marick']; ?>)</option>
+                                    <?php 
+                                    if(!empty($marick_streets)) {
+                                        foreach($marick_streets as $street) {
+                                            $sLabel = $street . (stripos($street, 'St') === false && stripos($street, 'Purok') === false && stripos($street, 'Zone') === false ? ' St.' : '');
+                                            echo "<option value=\"marick:" . htmlspecialchars(strtoupper(trim($street))) . "\">&nbsp;&nbsp;- " . htmlspecialchars($sLabel) . "</option>";
+                                        }
+                                    }
+                                    ?>
+                                </optgroup>
+                                <optgroup label="Outsiders (Outside Sto. Domingo) — <?php echo $counts['outsider']; ?> patients">
+                                    <option value="outsider:all">All Outsiders (<?php echo $counts['outsider']; ?>)</option>
+                                </optgroup>
+                            </select>
+
+                            <!-- Internal Street/Purok dropdown (visible when Marick Residents tab is active) -->
+                            <div id="streetFilterContainer" style="display: none;">
+                                <select id="streetFilter" onchange="filterTable()" style="min-width: 200px;" aria-label="Filter by street or purok in Marick">
+                                    <option value="">All Streets &amp; Puroks in Sto. Domingo</option>
+                                    <?php 
+                                    if(!empty($marick_streets)) {
+                                        foreach($marick_streets as $street) {
+                                            $sLabel = $street . (stripos($street, 'St') === false && stripos($street, 'Purok') === false && stripos($street, 'Zone') === false ? ' St.' : '');
+                                            echo "<option value=\"" . htmlspecialchars(strtoupper(trim($street))) . "\">" . htmlspecialchars($sLabel) . "</option>";
+                                        }
+                                    }
+                                    ?>
+                                </select>
+                            </div>
+
+                            <!-- Dedicated Babies / Infants Sub-Filter -->
+                            <div class="age-filter-pills" role="group" aria-label="Age sub-filter">
+                                <button type="button" class="pill-btn active" id="ageAllBtn" onclick="setAgeFilter('all')">
+                                    All Ages
+                                </button>
+                                <button type="button" class="pill-btn" id="ageInfantBtn" onclick="setAgeFilter('infants')">
+                                    Babies / Infants (&lt; 1 yr)
+                                    <span class="pill-badge" id="infantCountBadge"><?php echo $counts['all_infants']; ?></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="subfilter-right">
+                            <input type="text" id="searchInput" class="search-box" placeholder="Search patient by name or contact..." onkeyup="filterTable()" style="min-width: 240px;">
+                        </div>
                     </div>
                 </div>
                 
@@ -158,68 +405,66 @@ $patients_result = $conn->query($query);
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if($patients_result && $patients_result->num_rows > 0): ?>
-                            <?php while($row = $patients_result->fetch_assoc()): 
-                                $age = "N/A";
-                                if(!empty($row['date_of_birth']) || !empty($row['birthdate'])) {
-                                    $dob_val = !empty($row['birthdate']) ? $row['birthdate'] : $row['date_of_birth'];
-                                    $dob = new DateTime($dob_val);
-                                    $now = new DateTime();
-                                    $age = $now->diff($dob)->y . " yrs";
-                                }
-
-                                $raw_address = $row['address'];
-                                
-                                if (mh_is_marick_resident($row['address_type'] ?? '')) {   // home jurisdiction from System Settings
-                                    $parts = explode(',', $raw_address);
-                                    $display_address = trim($parts[0]); 
-                                    $badge_class = "badge-marick"; 
-                                } else {
-                                    $display_address = $raw_address;
-                                    $badge_class = "badge-outsider"; 
-                                }
-                            ?>
-                                <tr>
-                                    <td class="patient-name"><span style="display:inline-flex; align-items:center; gap:10px;"><?php echo mh_avatar_html(mh_initials($row['first_name'], $row['last_name']), 32, $row['first_name'] . ' ' . $row['last_name']); ?><span><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></span></span></td>
-                                    <td><?php echo $age; ?></td>
-                                    <td><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?>
-                                        <?php if (!empty($row['extra_contacts'])): ?>
-                                            <div style="font-size:0.78rem; color: var(--text-muted, #64748b); margin-top:3px; max-width:240px;" title="<?php echo mh_h($row['extra_contacts']); ?>"><?php echo mh_icon('users'); ?> <?php echo mh_h(str_replace(' | ', ' · ', $row['extra_contacts'])); ?></div>
-                                        <?php endif; ?></td>
-                                    
-                                    <td>
-                                        <span class="badge <?php echo $badge_class; ?>">
-                                            <?php echo htmlspecialchars($display_address); ?>
+                        <?php if(!empty($patients)): ?>
+                            <?php foreach($patients as $row): ?>
+                                <tr data-location-type="<?php echo $row['location_category']; ?>"
+                                    data-street="<?php echo htmlspecialchars(strtoupper($row['street_name'])); ?>"
+                                    data-address="<?php echo htmlspecialchars(strtoupper($row['display_address'])); ?>"
+                                    data-is-infant="<?php echo $row['is_infant'] ? '1' : '0'; ?>"
+                                    data-age-years="<?php echo $row['age_years']; ?>"
+                                    data-age-months="<?php echo $row['age_months']; ?>">
+                                    <td class="patient-name">
+                                        <span style="display:inline-flex; align-items:center; gap:10px;">
+                                            <?php echo mh_avatar_html(mh_initials($row['first_name'], $row['last_name']), 32, $row['first_name'] . ' ' . $row['last_name']); ?>
+                                            <span><?php echo htmlspecialchars($row['last_name'] . ', ' . $row['first_name']); ?></span>
                                         </span>
                                     </td>
-                                    
+                                    <td>
+                                        <?php if ($row['is_infant']): ?>
+                                            <span class="badge-infant" title="Infant under 1 year old (<?php echo $row['age_months']; ?> month<?php echo $row['age_months'] === 1 ? '' : 's'; ?> old)">
+                                                <?php echo htmlspecialchars($row['age_display']); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="font-weight: 600; color: var(--heading-color, #1e293b);"><?php echo htmlspecialchars($row['age_display']); ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?>
+                                        <?php if (!empty($row['extra_contacts'])): ?>
+                                            <div style="font-size:0.78rem; color: var(--text-muted, #64748b); margin-top:3px; max-width:240px;" title="<?php echo mh_h($row['extra_contacts']); ?>"><?php echo mh_icon('users'); ?> <?php echo mh_h(str_replace(' | ', ' · ', $row['extra_contacts'])); ?></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge <?php echo $row['badge_class']; ?>">
+                                            <?php echo htmlspecialchars($row['display_address']); ?>
+                                        </span>
+                                    </td>
                                     <td><?php echo date("M d, Y", strtotime($row['created_at'])); ?></td>
-                                    
                                     <td style="text-align: center;">
                                         <div class="row-actions" style="justify-content: center;">
-                                        <a href="view_patient.php?id=<?php echo $row['id']; ?>" class="btn-outline-blue">View Profile</a>
-                                        
-                                        <?php if ($can_edit_patient): ?>
-                                        <button type="button" class="btn-outline-green" 
-                                            data-id="<?php echo $row['id']; ?>"
-                                            data-fname="<?php echo htmlspecialchars($row['first_name']); ?>"
-                                            data-lname="<?php echo htmlspecialchars($row['last_name']); ?>"
-                                            data-bdate="<?php echo htmlspecialchars($row['birthdate'] ?? $row['date_of_birth'] ?? ''); ?>"
-                                            data-contact="<?php echo htmlspecialchars($row['contact_number'] ?? ''); ?>"
-                                            data-email="<?php echo htmlspecialchars($row['email'] ?? ''); ?>"
-                                            data-address="<?php echo htmlspecialchars($row['address'] ?? ''); ?>"
-                                            onclick="openEditModal(this)">Edit</button>
+                                            <a href="view_patient.php?id=<?php echo $row['id']; ?>" class="btn-outline-blue">View Profile</a>
+                                            
+                                            <?php if ($can_edit_patient): ?>
+                                            <button type="button" class="btn-outline-green" 
+                                                data-id="<?php echo $row['id']; ?>"
+                                                data-fname="<?php echo htmlspecialchars($row['first_name']); ?>"
+                                                data-lname="<?php echo htmlspecialchars($row['last_name']); ?>"
+                                                data-bdate="<?php echo htmlspecialchars($row['birthdate'] ?? $row['date_of_birth'] ?? ''); ?>"
+                                                data-contact="<?php echo htmlspecialchars($row['contact_number'] ?? ''); ?>"
+                                                data-email="<?php echo htmlspecialchars($row['email'] ?? ''); ?>"
+                                                data-address="<?php echo htmlspecialchars($row['address'] ?? ''); ?>"
+                                                onclick="openEditModal(this)">Edit</button>
 
-                                        <form id="archiveForm_<?php echo $row['id']; ?>" method="POST" style="margin:0;">
-                                            <input type="hidden" name="patient_id" value="<?php echo $row['id']; ?>">
-                                            <input type="hidden" name="archive_patient" value="1">
-                                            <button type="button" class="btn-outline-red" onclick="confirmArchive(<?php echo $row['id']; ?>)">Archive</button>
-                                        </form>
-                                        <?php endif; ?>
+                                            <form id="archiveForm_<?php echo $row['id']; ?>" method="POST" style="margin:0;">
+                                                <input type="hidden" name="patient_id" value="<?php echo $row['id']; ?>">
+                                                <input type="hidden" name="archive_patient" value="1">
+                                                <button type="button" class="btn-outline-red" onclick="confirmArchive(<?php echo $row['id']; ?>)">Archive</button>
+                                            </form>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr class="empty-state"><td colspan="6"><em>No active patients found in the masterlist.</em></td></tr>
                         <?php endif; ?>
@@ -229,7 +474,7 @@ $patients_result = $conn->query($query);
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <div class="modal-overlay" id="editModal">
         <div class="modal-content">
@@ -330,37 +575,169 @@ $patients_result = $conn->query($query);
             document.getElementById(modalId).style.display = 'none';
         }
 
-        function filterTable() {
-            var searchInput = document.getElementById("searchInput").value.toUpperCase();
-            var areaFilter = document.getElementById("areaFilter").value.toUpperCase();
-            var tr = document.getElementById("patientsTable").getElementsByTagName("tr");
-            
-            for (var i = 1; i < tr.length; i++) {
-                var nameCol = tr[i].getElementsByTagName("td")[0];
-                var areaCol = tr[i].getElementsByTagName("td")[3];
-                
-                if (nameCol && areaCol) {
-                    var nameText = nameCol.textContent || nameCol.innerText;
-                    var areaText = areaCol.textContent || areaCol.innerText;
-                    
-                    var matchesSearch = nameText.toUpperCase().indexOf(searchInput) > -1;
-                    var matchesArea = areaFilter === "" || areaText.toUpperCase().indexOf(areaFilter) > -1;
-                    
-                    if (matchesSearch && matchesArea) {
-                        tr[i].style.display = "";
-                    } else {
-                        tr[i].style.display = "none";
-                    }
+        let currentLocFilter = 'all';    // 'all' | 'marick' | 'outsider'
+        let currentStreetFilter = '';     // specific street uppercase
+        let currentAgeFilter = 'all';     // 'all' | 'infants'
+
+        const infantCounts = <?php echo json_encode([
+            'all'      => $counts['all_infants'],
+            'marick'   => $counts['marick_infants'],
+            'outsider' => $counts['outsider_infants'],
+        ]); ?>;
+
+        function setLocationFilter(loc) {
+            currentLocFilter = loc;
+
+            // Update main tab active states
+            document.querySelectorAll('.ml-tab-btn').forEach(btn => {
+                const isActive = btn.getAttribute('data-loc') === loc;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+
+            // Update subtitle description
+            const sub = document.getElementById('directorySubtitle');
+            if (sub) {
+                if (loc === 'marick') {
+                    sub.innerHTML = 'Viewing <strong>Marick Residents</strong> (Barangay Sto. Domingo internal streets, puroks, and zones).';
+                } else if (loc === 'outsider') {
+                    sub.innerHTML = 'Viewing <strong>Outsiders</strong> (patients residing outside Barangay Sto. Domingo).';
+                } else {
+                    sub.innerHTML = 'Viewing <strong>All Locations</strong> across Barangay Sto. Domingo and outside residents.';
                 }
+            }
+
+            // Toggle street dropdown container for Marick Residents
+            const streetBox = document.getElementById('streetFilterContainer');
+            if (streetBox) {
+                streetBox.style.display = (loc === 'marick') ? 'block' : 'none';
+                if (loc !== 'marick') {
+                    const sf = document.getElementById('streetFilter');
+                    if (sf) sf.value = '';
+                    currentStreetFilter = '';
+                }
+            }
+
+            // Dynamically sync the infant counter badge with current location scope
+            const infantBadge = document.getElementById('infantCountBadge');
+            if (infantBadge) {
+                infantBadge.textContent = infantCounts[loc] ?? infantCounts['all'];
+            }
+
+            // Keep location dropdown synchronized
+            const locDropdown = document.getElementById('areaFilter');
+            if (locDropdown) {
+                if (loc === 'all') locDropdown.value = 'all';
+                else if (loc === 'marick' && !currentStreetFilter) locDropdown.value = 'marick:all';
+                else if (loc === 'outsider') locDropdown.value = 'outsider:all';
+            }
+
+            filterTable();
+        }
+
+        function onLocationDropdownChange(val) {
+            if (!val || val === 'all') {
+                currentStreetFilter = '';
+                setLocationFilter('all');
+            } else if (val === 'outsider:all') {
+                currentStreetFilter = '';
+                setLocationFilter('outsider');
+            } else if (val.startsWith('marick:')) {
+                const street = val.substring(7);
+                currentStreetFilter = (street === 'all') ? '' : street;
+                setLocationFilter('marick');
+                const sf = document.getElementById('streetFilter');
+                if (sf) sf.value = currentStreetFilter;
             }
         }
 
-        // Linked from a patient profile: ?q=<last name> pre-fills the search box.
+        function setAgeFilter(age) {
+            currentAgeFilter = age;
+            const allBtn = document.getElementById('ageAllBtn');
+            const infBtn = document.getElementById('ageInfantBtn');
+            if (allBtn) allBtn.classList.toggle('active', age === 'all');
+            if (infBtn) infBtn.classList.toggle('active', age === 'infants');
+            filterTable();
+        }
+
+        function filterTable() {
+            const searchInput = (document.getElementById("searchInput").value || '').trim().toUpperCase();
+            const streetVal = (document.getElementById("streetFilter") ? document.getElementById("streetFilter").value : '').toUpperCase();
+            const rows = document.querySelectorAll("#patientsTable tbody tr");
+
+            let visibleCount = 0;
+            rows.forEach(tr => {
+                if (tr.classList.contains('empty-state') || tr.id === 'noResultsRow') return;
+
+                const nameCol = tr.getElementsByTagName("td")[0];
+                const contactCol = tr.getElementsByTagName("td")[2];
+                const areaCol = tr.getElementsByTagName("td")[3];
+                if (!nameCol) return;
+
+                const nameText = (nameCol.textContent || nameCol.innerText).toUpperCase();
+                const contactText = contactCol ? (contactCol.textContent || contactCol.innerText).toUpperCase() : '';
+                const areaText = areaCol ? (areaCol.textContent || areaCol.innerText).toUpperCase() : '';
+                const locType = tr.getAttribute('data-location-type') || '';
+                const trStreet = (tr.getAttribute('data-street') || '').toUpperCase();
+                const isInfant = tr.getAttribute('data-is-infant') === '1';
+
+                // 1. Name & Contact Search Match
+                const matchesSearch = searchInput === "" || nameText.includes(searchInput) || contactText.includes(searchInput) || areaText.includes(searchInput);
+
+                // 2. Location Category Match
+                let matchesLocation = true;
+                if (currentLocFilter === 'marick') {
+                    matchesLocation = (locType === 'marick');
+                    if (matchesLocation && streetVal !== '') {
+                        matchesLocation = trStreet.includes(streetVal) || areaText.includes(streetVal);
+                    }
+                } else if (currentLocFilter === 'outsider') {
+                    matchesLocation = (locType === 'outsider');
+                }
+
+                // 3. Age / Infant Filter Match (< 1 year old)
+                let matchesAge = true;
+                if (currentAgeFilter === 'infants') {
+                    matchesAge = isInfant;
+                }
+
+                const show = matchesSearch && matchesLocation && matchesAge;
+                tr.style.display = show ? "" : "none";
+                if (show) visibleCount++;
+            });
+
+            // Dynamic "No matching patients" row
+            let noResults = document.getElementById('noResultsRow');
+            if (visibleCount === 0) {
+                if (!noResults) {
+                    noResults = document.createElement('tr');
+                    noResults.id = 'noResultsRow';
+                    noResults.innerHTML = '<td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted,#64748b);"><em>No patients match the selected location, age, or search criteria.</em></td>';
+                    const tbody = document.querySelector("#patientsTable tbody");
+                    if (tbody) tbody.appendChild(noResults);
+                }
+                noResults.style.display = '';
+            } else if (noResults) {
+                noResults.style.display = 'none';
+            }
+        }
+
+        // URL parameters pre-filtering (e.g. ?tab=marick | ?tab=outsider | ?infants=1 | ?q=Santos)
         (function () {
-            var q = new URLSearchParams(window.location.search).get('q');
-            var box = document.getElementById('searchInput');
-            if (q && box) { box.value = q; filterTable(); }
+            const params = new URLSearchParams(window.location.search);
+            const tabParam = params.get('tab');
+            if (tabParam === 'marick' || tabParam === 'outsider') {
+                setLocationFilter(tabParam);
+            }
+            if (params.get('infants') === '1') {
+                setAgeFilter('infants');
+            }
+            const q = params.get('q');
+            const box = document.getElementById('searchInput');
+            if (q && box) {
+                box.value = q;
+                filterTable();
+            }
         })();
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

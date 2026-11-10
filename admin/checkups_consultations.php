@@ -179,34 +179,21 @@ $consultations = !$can_view_history ? false : $conn->query("
     ORDER BY c.visit_date DESC, c.created_at DESC
 ");
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>General Consultations - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'General Consultations', 'late_styles' => ['css/dept_ui.css']]);
+?>
     <style>
         .vitals-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: var(--bg-hover); padding: 15px; border-radius: 8px; border: 1px dashed var(--border-color, #cbd5e1); margin-bottom: 15px;}
         .vitals-grid label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
         .vitals-grid input { padding: 8px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 4px; width: 100%; font-size: 0.95rem; background: var(--bg-input); color: var(--text-main); }
         .clinical-notes { color: var(--text-main); font-size: 0.9rem; line-height: 1.5; }
         .clinical-notes strong { color: var(--heading-color, #0f172a); }
-        
         .filter-radios { display: flex; gap: 10px; align-items: center;}
         .filter-radios label { cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight: bold; color: var(--text-main); font-size: 0.9rem;}
         .filter-radios input[type="radio"] { accent-color: #4ca1af; cursor: pointer; width: 15px; height: 15px; margin: 0;}
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-    <link rel="stylesheet" href="../assets/css/dept_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/dept_ui.css'); ?>">
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container du-wrap">
             
@@ -274,7 +261,7 @@ $consultations = !$can_view_history ? false : $conn->query("
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <?php if($can_log): /* intake form, vitals inputs, OCR box and save button exist only with the Log permission */ ?>
     <div class="modal-overlay" id="addCheckupModal">
@@ -485,5 +472,4 @@ $consultations = !$can_view_history ? false : $conn->query("
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

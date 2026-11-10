@@ -74,17 +74,12 @@ $archived_inventory = $conn->query("SELECT * FROM inventory WHERE status = 0 ORD
 $active_tab = in_array(($_GET['tab'] ?? ''), ['inventory', 'staff'], true) ? $_GET['tab'] : 'patients';
 if ($active_tab === 'staff' && !$can_staff_tab) { $active_tab = 'patients'; }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Archives - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'System Archives']);
+?>
     <style>
         /* Page background comes from admin_theme.css (--bg-body) so the dark toggle applies here too. */
-        
         .archive-container { 
             width: 95%; 
             max-width: 1800px; 
@@ -92,29 +87,23 @@ if ($active_tab === 'staff' && !$can_staff_tab) { $active_tab = 'patients'; }
             padding: 0; 
             box-sizing: border-box;
         }
-        
         .archive-header {
             text-align: left !important;
             margin-bottom: 30px;
         }
         .archive-header h1 { margin: 0 0 10px 0; color: var(--heading-color, #1e293b); font-family: Georgia, serif; font-size: 2.2rem; display: flex; align-items: center; gap: 12px;}
         .archive-header p { margin: 0; color: var(--text-muted, #64748b); font-size: 1.1rem; }
-
         .tab-navigation { display: flex; gap: 5px; margin-bottom: 0; padding-left: 10px;}
         .tab-btn { background: var(--bg-hover); border: 1px solid var(--border-color, #cbd5e1); border-bottom: none; padding: 15px 35px; font-size: 1.1rem; font-weight: bold; color: var(--text-muted, #64748b); cursor: pointer; border-radius: 10px 10px 0 0; transition: 0.2s; }
         .tab-btn:hover { background: var(--bg-card); color: var(--heading-color, #1e293b); }
         .tab-btn.active { color: #0ea5e9; background: var(--bg-card, #ffffff); border-top: 3px solid #0ea5e9; box-shadow: 0 -4px 6px rgba(0,0,0,0.01); z-index: 2; position: relative;}
-        
         .tab-content { display: none; background: var(--bg-card, #ffffff); border-radius: 0 12px 12px 12px; border: 1px solid var(--border-color, #cbd5e1); box-shadow: 0 4px 10px rgba(0,0,0,0.03); overflow: hidden; padding: 0; width: 100%; position: relative; z-index: 1;}
         .tab-content.active { display: block; }
-        
         .data-table { width: 100%; border-collapse: collapse; font-size: 1rem; }
         .data-table th { background: var(--bg-hover, #f8fafc); color: var(--text-muted, #64748b); padding: 20px 25px; text-align: left; text-transform: uppercase; font-size: 0.85rem; border-bottom: 2px solid var(--border-color, #cbd5e1); font-weight: bold;}
         .data-table td { padding: 20px 25px; border-bottom: 1px solid var(--border-color, #e2e8f0); color: var(--text-main, #334155); }
-        
         .btn-restore { background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 0.95rem; display: inline-flex; align-items: center; gap: 8px;}
         .btn-restore:hover { background: #059669; transform: translateY(-2px); box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);}
-        
         html[data-theme="dark"] .btn-restore { background: rgba(16,185,129,0.18); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4); }
         html[data-theme="dark"] .btn-restore:hover { background: rgba(16,185,129,0.3); }
         html[data-theme="dark"] .tab-btn.active { color: #38bdf8; border-top-color: #38bdf8; }
@@ -123,14 +112,7 @@ if ($active_tab === 'staff' && !$can_staff_tab) { $active_tab = 'patients'; }
         .tab-content .data-table tbody tr:hover { background: var(--bg-hover); }
         .alert-box { padding: 20px 25px; border-radius: 10px; margin-bottom: 25px; font-size: 1.05rem; font-weight: bold; display: flex; align-items: center; gap: 10px;}
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="archive-container">
             <div class="archive-header">
@@ -258,7 +240,7 @@ if ($active_tab === 'staff' && !$can_staff_tab) { $active_tab = 'patients'; }
             <?php endif; ?>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <script>
         function switchTab(tabName) {
@@ -289,5 +271,4 @@ if ($active_tab === 'staff' && !$can_staff_tab) { $active_tab = 'patients'; }
             mhWireRestoreForm(form, 'Are you sure you want to restore this item to the active inventory?');
         });
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

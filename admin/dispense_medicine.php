@@ -401,17 +401,10 @@ $patients_list = $conn->query("SELECT id, first_name, last_name, birthdate FROM 
 
 $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dispense Medicine - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
-    
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css']]);
+?>
     <style>
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { 
@@ -421,7 +414,6 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
         input[type=number] {
             -moz-appearance: textfield;
         }
-
         .select2-container .select2-selection--single {
             height: 42px !important;
             border: 1px solid var(--border-color, #cbd5e1) !important;
@@ -454,7 +446,6 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
         html[data-theme="dark"] .select2-container--default .select2-results__option { background: var(--bg-card); color: var(--text-main); }
         html[data-theme="dark"] .select2-dropdown { background: var(--bg-card); }
         html[data-theme="dark"] .select2-search__field { background: var(--bg-hover); color: var(--text-main); }
-
         .batch-select-option { display: flex; flex-direction: column; gap: 2px; }
         #packagingCalcWrap { display: none; }
         #packagingCalcWrap.active { display: block; }
@@ -472,14 +463,7 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
             .dispense-grid > .unified-panel { position: static !important; }
         }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
             
@@ -612,7 +596,7 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
 
             </div>
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -658,7 +642,7 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
         function batchLabel(b) {
             let s = 'Lot ' + (b.batch_number || 'N/A') + ' \u2014 ' + b.quantity + ' ' + b.unit + ' available';
             s += b.expiry_date ? ' \u00b7 exp. ' + b.expiry_date + ' (' + daysText(b.days_to_expiry) + ')' : ' \u00b7 no expiry on file';
-            if (b.is_fefo) s += ' \u2605 expires first';
+            if (b.is_fefo) s += ' expires first';
             return s;
         }
         function expiredNoteHtml(n, medicineName) {
@@ -964,5 +948,4 @@ $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
         setInterval(function () { if (!document.hidden) loadLog(); }, 30000);
         <?php endif; ?>
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

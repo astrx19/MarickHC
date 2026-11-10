@@ -99,14 +99,10 @@ $res = $conn->query("SELECT v.*, p.first_name, p.middle_name, p.last_name, s.fir
 while ($res && ($r = $res->fetch_assoc())) { $recent[] = $r; }
 $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vital Signs - Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Vital Signs']);
+?>
     <style>
         .vs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 14px 0; }
         .vs-grid label, .vs-field label { display: block; font-size: .8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); margin-bottom: 4px; }
@@ -115,12 +111,7 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
         .vs-ok  { background: #dcfce7; color: #166534; }
         .vs-err { background: #fee2e2; color: #991b1b; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
         <div class="dashboard-container">
 
             <div class="unified-panel">
@@ -180,7 +171,7 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
                 </div>
             </div>
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
     <script>
         (function () {
             var f = document.getElementById('patientFilter'), s = document.getElementById('patientSelect');
@@ -192,5 +183,4 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
             });
         })();
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

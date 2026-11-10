@@ -134,14 +134,10 @@ $usage = [];
 $res = $conn->query("SELECT department, COUNT(*) AS c FROM appointments GROUP BY department");
 while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r['c']; }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Departments - Marick Health Center</title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Departments']);
+?>
     <style>
         .dp-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 600; }
         .dp-ok  { background: #dcfce7; color: #166534; } .dp-err { background: #fee2e2; color: #991b1b; }
@@ -153,12 +149,7 @@ while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r
         .dp-on { background: #dcfce7; color: #166534; } .dp-off { background: #e2e8f0; color: #475569; }
         .dp-small { font-size: .85rem; padding: 6px 12px; cursor: pointer; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
         <div class="dashboard-container">
 
             <div class="unified-panel">
@@ -247,6 +238,5 @@ while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r
                 </div>
             </div>
         </div>
-    </div>
-</body>
-</html>
+    <?php mh_layout_close(); ?>
+<?php mh_layout_end(); ?>

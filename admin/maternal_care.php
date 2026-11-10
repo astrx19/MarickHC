@@ -162,42 +162,23 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
     ORDER BY m.visit_date DESC, m.created_at DESC
 ");
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Maternal Care - <?php echo htmlspecialchars($system_name ?? ''); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
-    
-    
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Maternal Care', 'late_styles' => ['css/dept_ui.css']]);
+?>
     <style>
         .section-title { font-size: 0.85rem; color: #4ca1af; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; margin: 20px 0 10px 0; border-bottom: 2px solid var(--border-color, #cbd5e1); padding-bottom: 5px; }
-        
         .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
         .grid-5 label { font-size: 0.75rem; color: var(--text-muted, #64748b); text-transform: uppercase; }
         .grid-5 input { padding: 8px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 4px; width: 100%; font-size: 0.9rem; }
-        
         .tt-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; }
         .tt-grid label { font-size: 0.8rem; color: #b45309; font-weight: bold; }
         .tt-grid input { padding: 6px; border: 1px solid #fde68a; border-radius: 4px; width: 100%; font-size: 0.85rem; }
-
         .vitals-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #bbf7d0; }
         .vitals-grid label { font-size: 0.8rem; color: #166534; font-weight: bold; }
         .vitals-grid input { padding: 8px; border: 1px solid #bbf7d0; border-radius: 4px; width: 100%; font-size: 0.95rem; }
-
-
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-    <link rel="stylesheet" href="../assets/css/dept_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/dept_ui.css'); ?>">
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container du-wrap">
             
@@ -268,7 +249,7 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <?php if($can_log): /* intake form, vitals inputs, OCR box and save button exist only with the Log permission */ ?>
     <div class="modal-overlay" id="addPrenatalModal">
@@ -514,5 +495,4 @@ $prenatal_logs = !$can_view_history ? false : $conn->query("
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

@@ -210,15 +210,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['process_walkin'])) {
 }
 $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, birthdate, sex FROM patients WHERE status = 1 ORDER BY last_name ASC");   // active patients only
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Walk-In Registration - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Walk-In Registration', 'external_styles' => ['https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css']]);
+?>
     <style>
         .walkin-container { max-width: 800px; margin: 0 auto; }
         .type-selector { display: flex; gap: 15px; margin-bottom: 25px; }
@@ -231,14 +226,7 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
             .name-row { grid-template-columns: 1fr !important; }
         }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container walkin-container">
             
@@ -289,11 +277,11 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
                         <?php 
                         if($patients_list && $patients_list->num_rows > 0): 
                             while($p = $patients_list->fetch_assoc()): 
-                                $age = date_diff(date_create($p['birthdate']), date_create('today'))->y;
+                                $ageStr = function_exists('mh_format_patient_age') ? mh_format_patient_age($p['birthdate']) : (date_diff(date_create($p['birthdate']), date_create('today'))->y . ' yrs');
                         ?>
                                 <option value="<?php echo $p['id']; ?>">
                                     <?php echo htmlspecialchars(mh_format_patient_name($p['first_name'], $p['middle_name'] ?? '', $p['last_name'])); ?> 
-                                    (<?php echo $age; ?> yrs, <?php echo htmlspecialchars($p['sex']); ?>)
+                                    (<?php echo htmlspecialchars($ageStr); ?>, <?php echo htmlspecialchars($p['sex']); ?>)
                                 </option>
                         <?php 
                             endwhile; 
@@ -367,7 +355,7 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
             </form>
             
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -393,5 +381,4 @@ $patients_list = $conn->query("SELECT id, first_name, middle_name, last_name, bi
         });
     </script>
 
-</body>
-</html>
+<?php mh_layout_end(); ?>

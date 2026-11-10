@@ -27,7 +27,8 @@ if (!$patient) {
     echo "Patient not found."; exit();
 }
 $bdate = new DateTime($patient['birthdate']);
-$age = $bdate->diff(new DateTime('today'))->y;
+$age_calc = mh_calculate_patient_age($patient['birthdate']);
+$age = $age_calc['years'];
 
 /* ---------- additional contact numbers: add / remove (PRG: redirect after saving) ---------- */
 $flash_ok = ''; $flash_err = '';
@@ -65,35 +66,27 @@ $history    = mh_patient_history($conn, $patient_id);
 $dispensed  = mh_patient_dispense_history($conn, $patient_id);
 $HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show older records"
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patient Profile - <?php echo htmlspecialchars(mh_setting('system_name')); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Patient Profile']);
+?>
     <style>
         .profile-header { margin-bottom: 25px; }
         .profile-header h1 { margin: 0 0 5px 0; color: var(--heading-color, #1e293b); font-size: 2rem; font-family: Georgia, serif; text-transform: uppercase; }
         .profile-header p { margin: 0; color: var(--text-muted, #64748b); font-size: 0.95rem; }
-
         .patient-grid { display: grid; grid-template-columns: 350px 1fr; gap: 25px; align-items: start; }
         .patient-side { display: grid; gap: 25px; }
         @media (max-width: 1024px) { .patient-grid { grid-template-columns: 1fr; } }
-
         .detail-group { margin-bottom: 15px; border-bottom: 1px dashed var(--border-color, #e2e8f0); padding-bottom: 10px; }
         .detail-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .detail-label { display: block; color: var(--text-muted, #64748b); font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.5px; }
         .detail-value { color: var(--heading-color, #0f172a); font-size: 1.05rem; font-weight: 500; }
-
         /* contacts */
         .contact-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding: 10px 0; border-bottom: 1px dashed var(--border-color, #e2e8f0); }
         .contact-row:last-of-type { border-bottom: none; }
         .contact-row .who { font-weight: 600; color: var(--heading-color, #0f172a); }
         .contact-row .rel { font-size: .78rem; color: var(--text-muted, #64748b); }
         .contact-add { display:grid; gap:10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color, #e2e8f0); }
-
         /* timeline */
         .timeline { position: relative; padding-left: 30px; margin-top: 15px; }
         .timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--border-color, #e2e8f0); }
@@ -117,14 +110,7 @@ $HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show
         .empty-state { text-align: center; padding: 36px 20px; color: var(--text-muted, #64748b); }
         .empty-state h3 { margin: 0 0 5px 0; color: var(--heading-color, #334155); }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
 
@@ -160,7 +146,7 @@ $HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show
 
                         <div class="detail-group">
                             <span class="detail-label">Date of Birth / Age</span>
-                            <span class="detail-value"><?php echo date("F d, Y", strtotime($patient['birthdate'])); ?> <span style="color: var(--text-muted, #64748b); font-weight: normal;">(<?php echo (int) $age; ?> Years Old)</span></span>
+                            <span class="detail-value"><?php echo date("F d, Y", strtotime($patient['birthdate'])); ?> <span style="color: var(--text-muted, #64748b); font-weight: normal;">(<?php echo $age_calc['is_infant'] ? ($age_calc['months'] . ' Month' . ($age_calc['months'] === 1 ? '' : 's') . ' Old') : ($age . ' Years Old'); ?>)</span></span>
                         </div>
 
                         <div class="detail-group">
@@ -311,7 +297,7 @@ $HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show
 
             </div>
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <?php echo mh_flash_scripts($flash_ok, $flash_err); ?>
     <script>
@@ -332,5 +318,4 @@ $HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show
             }
         });
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

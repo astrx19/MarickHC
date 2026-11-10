@@ -473,21 +473,12 @@ if ($patient) {
 }
 $ver = @filemtime(__DIR__ . '/../assets/js/dental.js');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dental Records - <?php echo $h($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Dental Records']);
+?>
     <link rel="stylesheet" href="../assets/css/dept_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/dept_ui.css'); ?>">
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-<?php include __DIR__ . '/../includes/admin_sidebar.php'; ?>
-<div class="main-content">
-<?php include __DIR__ . '/../includes/admin_topbar.php'; ?>
+<?php mh_layout_open(); ?>
 <div class="dashboard-container du-wrap">
 
 <?php
@@ -1103,9 +1094,8 @@ echo mh_flash_scripts($success_msg, $error_msg);
 <?php endif; ?>
 
 </div><!-- /dashboard-container -->
-</div><!-- /main-content -->
+<?php mh_layout_close(); ?><!-- /main-content -->
 <script>window.DN_CFG = <?php echo json_encode(['scanUrl' => 'ocr/dental_scan.php', 'onChart' => (bool) $patient, 'canOcr' => (bool) $can_ocr]); ?>;</script>
 <script src="../assets/js/dental.js?v=<?php echo (int) $ver; ?>"></script>
 <?php if ($patient): ?><script src="../assets/js/dental_history.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/dental_history.js'); ?>"></script><?php endif; ?>
-</body>
-</html>
+<?php mh_layout_end(); ?>

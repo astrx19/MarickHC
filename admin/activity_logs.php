@@ -72,14 +72,10 @@ if ($print) {
         'Printed ' . count($logs) . ' log entr' . (count($logs) === 1 ? 'y' : 'ies') . ' (' . $range_label . ').');
 }
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $print ? 'System Logs - Print' : 'System Logs'; ?> - <?php echo $h($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => $print ? 'System Logs - Print' : 'System Logs']);
+?>
     <style>
         .role-badge {
             display: inline-block;
@@ -97,7 +93,6 @@ if ($print) {
         .role-dental { background: #fef3c7; color: #d97706; border-color: #fde68a; }
         .role-bhw { background: #f1f5f9; color: var(--text-main, #334155); border-color: var(--border-color, #cbd5e1); }
         .role-inventory { background: #ffedd5; color: #c2410c; border-color: #fed7aa; }
-
         .lg-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 14px 20px; border-bottom: 1px solid var(--border-color, #e2e8f0); }
         .lg-filters label { display: block; font-size: .74rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); margin-bottom: 4px; }
         .lg-presets { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 20px 0; }
@@ -117,10 +112,7 @@ if ($print) {
         .pr-foot { margin-top: 14px; font-size: .8rem; color: #475569; }
         @media print { .sidebar, .topbar, .lg-filters, .lg-presets, .lg-pager, .no-print { display: none !important; } .main-content { margin: 0 !important; padding: 0 !important; width: 100% !important; } body { background: #fff !important; } }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<?php if ($print): ?>
-<body style="background:#fff; color:#0f172a; display:block; padding:24px; font-family: system-ui, sans-serif;">
+<?php if ($print): mh_layout_open(['shell' => false, 'body_attr' => 'style="background:#fff; color:#0f172a; display:block; padding:24px; font-family: system-ui, sans-serif;"']); ?>
     <div class="pr-head">
         <h1><?php echo $h($system_name); ?> &mdash; System Logs (Audit Trail)</h1>
         <p><strong>Period:</strong> <?php echo $h($range_label); ?><?php if ($action !== ''): ?> &middot; <strong>Action:</strong> <?php echo $h($action); ?><?php endif; ?><?php if ($user_label !== ''): ?> &middot; <strong>User:</strong> <?php echo $h($user_label); ?><?php endif; ?><?php if ($q !== ''): ?> &middot; <strong>Search:</strong> &ldquo;<?php echo $h($q); ?>&rdquo;<?php endif; ?></p>
@@ -139,14 +131,7 @@ if ($print) {
     </table>
     <p class="pr-foot">Printed by <?php echo $h(trim(($_SESSION['first_name'] ?? '') . ' ' . ($_SESSION['last_name'] ?? '')) ?: ($_SESSION['role'] ?? 'staff')); ?> on <?php echo $h(date('M d, Y h:i A')); ?>.</p>
     <script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 250); });</script>
-</body>
-<?php else: ?>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_end(); else: mh_layout_open(); ?>
 
         <div class="dashboard-container">
 
@@ -216,7 +201,6 @@ if ($print) {
             </div>
 
         </div>
-    </div>
-</body>
+    <?php mh_layout_close(); mh_layout_end(); ?>
 <?php endif; ?>
-</html>
+

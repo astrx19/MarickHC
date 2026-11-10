@@ -97,21 +97,16 @@ $widget_ctx     = [
 // net) never reach the page, so the "+ Add Widget" list can only ever
 // offer widgets that are already in $widget_layout with visible=false.
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - <?php echo htmlspecialchars($system_name ?? mh_setting('system_name')); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Dashboard']);
+?>
     <style>
         /* body background now comes from admin_theme.css's var(--bg-body) -
            a hardcoded #f1f5f9 here used to win the cascade (same selector,
            declared later than the stylesheet) and pin the dashboard to a
            light background even with dark mode toggled on. */
         .dashboard-container { max-width: 1400px; margin: 40px auto; padding: 0 30px; }
-
         .welcome-banner {
             position: relative; overflow: hidden; isolation: isolate;
             background: linear-gradient(135deg, #0f172a 0%, #1e3a4f 55%, var(--primary, #4ca1af) 130%);
@@ -143,7 +138,6 @@ $widget_ctx     = [
             display: flex; align-items: center; justify-content: center; color: #fff;
         }
         .welcome-banner .welcome-icon .mh-icon { width: 28px; height: 28px; }
-
         /* ---------------------------------------------------------------
          * Dashboard toolbar (Customize / Add Widget / Save / Reset)
          * ------------------------------------------------------------- */
@@ -156,30 +150,25 @@ $widget_ctx     = [
         .dash-toolbar .edit-only { display: none; }
         body.dashboard-edit-mode .dash-toolbar .edit-only { display: inline-flex; }
         body.dashboard-edit-mode .dash-toolbar .view-only { display: none; }
-
         .dash-edit-banner { display: none; align-items: center; gap: 10px; background: rgba(59, 130, 246, 0.12); border: 1px dashed #93c5fd; color: var(--text-main); padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; font-weight: 500; }
         .dash-edit-banner .mh-icon { width: 15px; height: 15px; flex-shrink: 0; vertical-align: -2px; }
         body.dashboard-edit-mode .dash-edit-banner { display: flex; }
-
         /* ---------------------------------------------------------------
          * Widget grid
          * ------------------------------------------------------------- */
         .widget-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-flow: dense; gap: 20px; margin-bottom: 30px; }
         @media (max-width: 1024px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 640px) { .widget-grid { grid-template-columns: 1fr; } }
-
         .dash-widget { background: var(--bg-card); border-radius: var(--radius-lg); border: 1px solid var(--border-color, #e2e8f0); box-shadow: var(--shadow-md); overflow: hidden; display: flex; flex-direction: column; grid-column: span 1; transition: box-shadow 0.2s ease, transform 0.2s ease; }
         .dash-widget:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
         .widget-span-medium { grid-column: span 2; }
         .widget-span-large { grid-column: 1 / -1; }
         @media (max-width: 1024px) { .widget-span-medium, .widget-span-large { grid-column: span 2; } }
         @media (max-width: 640px) { .widget-span-medium, .widget-span-large { grid-column: span 1; } }
-
         .dash-widget.hidden-widget { display: none; }
         .dash-widget.dragging { opacity: 0.4; }
         body.dashboard-edit-mode .dash-widget { border: 1.5px dashed var(--text-muted); }
         body.dashboard-edit-mode .dash-widget:hover { border-color: #4ca1af; }
-
         .widget-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border-color, #e2e8f0); background: var(--bg-hover); }
         .widget-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
         .widget-title h3 { margin: 0; font-size: 1rem; color: var(--heading-color, #1e293b); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -189,12 +178,10 @@ $widget_ctx     = [
         .drag-handle .mh-icon { width: 16px; height: 16px; }
         body.dashboard-edit-mode .drag-handle { display: inline-flex; }
         .drag-handle:active { cursor: grabbing; }
-
         .widget-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .widget-link { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; color: #3b82f6; text-decoration: none; font-weight: bold; white-space: nowrap; }
         .widget-link .mh-icon { width: 13px; height: 13px; }
         body.dashboard-edit-mode .widget-link { display: none; }
-
         .widget-resize-btn, .widget-remove-btn { display: none; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0; }
         .widget-resize-btn .mh-icon, .widget-remove-btn .mh-icon { width: 14px; height: 14px; }
         .widget-resize-btn { background: rgba(14, 165, 233, 0.16); color: #0ea5e9; }
@@ -202,32 +189,25 @@ $widget_ctx     = [
         .widget-remove-btn { background: rgba(220, 38, 38, 0.14); color: #ef4444; }
         .widget-remove-btn:hover { background: rgba(220, 38, 38, 0.26); }
         body.dashboard-edit-mode .widget-resize-btn, body.dashboard-edit-mode .widget-remove-btn { display: flex; }
-
         .widget-body { padding: 18px; flex: 1; }
         .widget-table.data-table { margin: 0; }
         .widget-table.data-table th, .widget-table.data-table td { padding: 8px 4px; font-size: 0.85rem; }
-
         .widget-stat { text-align: center; padding: 6px 0 14px 0; }
         .widget-stat-number { font-size: 2.2rem; font-weight: bold; line-height: 1; color: var(--heading-color, #0f172a); }
         .widget-stat-label { margin-top: 6px; color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; font-weight: bold; letter-spacing: 0.3px; }
-
         .widget-chip-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         .widget-chip { padding: 5px 13px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; box-shadow: inset 0 0 0 1px rgba(15,23,42,0.06); }
-
         .widget-list { list-style: none; margin: 10px 0 0 0; padding: 0; }
         .widget-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border-color, #e2e8f0); font-size: 0.85rem; }
         .widget-list li:last-child { border-bottom: none; }
         .widget-list li a { color: var(--heading-color, #0f172a); font-weight: bold; text-decoration: none; }
         .widget-list li a:hover { color: #3b82f6; }
         .widget-list-meta { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
-
         .widget-empty { text-align: center; padding: 18px 5px; color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
-
         .data-table { font-size: 0.95rem; width: 100%; border-collapse: collapse; }
         .data-table th { background-color: var(--bg-hover); color: var(--text-muted); font-weight: bold; text-transform: uppercase; padding: 15px; text-align: left; }
         .data-table td { padding: 15px; border-bottom: 1px solid var(--border-subtle, #f1f5f9); }
         .data-table tr:hover { background-color: var(--bg-hover); }
-
         .activity-feed { list-style: none; padding: 0; margin: 0; }
         .activity-item { padding: 12px 0; border-bottom: 1px dashed var(--border-color, #cbd5e1); display: flex; gap: 12px; }
         .activity-item:last-child { border-bottom: none; padding-bottom: 0; }
@@ -236,7 +216,6 @@ $widget_ctx     = [
         .activity-details p { margin: 0 0 4px 0; color: var(--text-main); font-size: 0.88rem; line-height: 1.4; }
         .activity-meta { font-size: 0.72rem; color: var(--text-muted); }
         .activity-role { font-weight: bold; color: #0ea5e9; text-transform: uppercase; }
-
         /* ---------------------------------------------------------------
          * Dashboard two-column layout: main widgets (queues/stats) on the
          * left, the clinic calendar pinned in a dedicated right-hand
@@ -250,7 +229,6 @@ $widget_ctx     = [
             .dashboard-columns { grid-template-columns: 1fr; }
             .dashboard-side { position: static; }
         }
-
         .unified-panel { margin-bottom: 0; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color, #e2e8f0); box-shadow: var(--shadow-md); overflow: hidden;}
         .panel-controls { padding: 15px 25px; border-bottom: 1px solid var(--border-color, #e2e8f0);}
         .cal-panel-header {
@@ -259,10 +237,8 @@ $widget_ctx     = [
         }
         .cal-panel-header h3 { margin: 0; font-size: 1.05rem; color: var(--heading-color, #1e293b); }
         .cal-panel-header span { font-size: 0.78rem; color: var(--text-muted); }
-
         .cal-widget { background: var(--bg-card); color: var(--heading-color, #1e293b); border-radius: 12px; padding: 15px; font-family: 'Segoe UI', sans-serif; cursor: pointer; transition: 0.2s; border: 1px solid var(--border-color, #e2e8f0); box-shadow: var(--shadow-md); }
         .cal-widget:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); border-color: var(--primary, #4ca1af); }
-
         /* Appointment / "current day" chips drawn by renderCalendars() in
            the script below - classed so they follow the dark-mode tokens
            instead of a hardcoded light background + dark text pair. */
@@ -270,36 +246,28 @@ $widget_ctx     = [
         .appt-chip strong { color: var(--heading-color, #0f172a); }
         .today-chip { background: rgba(14, 165, 233, 0.16); color: #0369a1; padding: 4px 6px; border-radius: 4px; font-size: 0.75rem; margin-top: 5px; margin-bottom: 5px; border-left: 2px solid #0284c7; font-weight: bold; }
         html[data-theme="dark"] .today-chip { color: #7dd3fc; }
-        
         .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: bold; color: var(--heading-color, #1e293b); }
         .cal-header button { background: none; border: none; color: var(--text-muted); font-size: 1.1rem; cursor: pointer; transition: 0.2s; padding: 0 5px;}
         .cal-header button:hover { color: var(--heading-color, #1e293b); }
-        
         .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
         .cal-day-name { font-size: 0.7rem; font-weight: bold; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase;}
         .cal-day { font-size: 0.85rem; padding: 4px 0; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin: auto; transition: 0.2s; color: var(--text-main); position: relative;}
         .cal-day.empty { visibility: hidden; }
         .cal-day:not(.empty):not(.today):hover { background: var(--bg-hover); }
         .cal-day.today { background: #4ca1af; color: white; font-weight: bold; }
-        
         .appt-dot { display: block; width: 5px; height: 5px; background-color: #0ea5e9; border-radius: 50%; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); }
         .cal-day.today .appt-dot { background-color: white; }
-        
         .holiday-dot { background-color: #ef4444; }
-
         .universal-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
         .universal-modal.active { display: flex; }
         .universal-modal-content { background: var(--bg-card); width: 90%; max-width: 900px; height: 85vh; border-radius: 12px; padding: 0; position: relative; border: 1px solid var(--border-color, #cbd5e1); color: var(--text-main); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; overflow: hidden;}
-        
         .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color, #cbd5e1); padding: 15px 25px; background: var(--bg-hover); }
         .modal-header h2 { margin: 0; font-size: 1.2rem; color: var(--heading-color, #1e293b); display: flex; align-items: center; gap: 10px;}
         .modal-header h2 .mh-icon { width: 20px; height: 20px; }
         .modal-close { font-size: 1.5rem; color: var(--text-muted); cursor: pointer; background: none; border: none; line-height: 1; }
         .modal-close:hover { color: #b91c1c; }
-
         #calModal .universal-modal-content { height: auto; max-height: 90vh; padding: 30px; overflow-y: auto;}
         #calModal .modal-header { padding: 0 0 15px 0; background: transparent; border-bottom: 2px solid var(--border-color, #e2e8f0); margin-bottom: 20px;}
-
         .large-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;}
         .large-cal-day-name { text-align: center; padding: 10px; font-weight: bold; color: var(--text-muted); border-bottom: 2px solid var(--border-color, #e2e8f0); text-transform: uppercase; font-size: 0.85rem;}
         .large-cal-day { min-height: 100px; padding: 10px; border-radius: 8px; background: var(--bg-hover); border: 1px solid var(--border-color, #e2e8f0); transition: 0.2s; display: flex; flex-direction: column; }
@@ -307,14 +275,11 @@ $widget_ctx     = [
         .large-cal-day.today { border: 2px solid #4ca1af; background: var(--bg-card); }
         .large-cal-number { font-size: 1.1rem; font-weight: bold; margin-bottom: 5px; color: var(--text-main); }
         .large-cal-day.today .large-cal-number { color: #4ca1af; }
-
         .appt-block { cursor: pointer; transition: 0.2s; }
         .appt-block:hover { filter: brightness(0.9); transform: scale(1.02); }
-        
         .holiday-cell { background: rgba(239, 68, 68, 0.14) !important; border-color: #fca5a5 !important; }
         .holiday-label { background: #ef4444; color: white; padding: 4px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 5px; text-transform: uppercase; text-align: center;}
         .holiday-label .mh-icon { width: 11px; height: 11px; }
-
         /* ---------------------------------------------------------------
          * Add Widget modal (lists currently hidden widgets)
          * ------------------------------------------------------------- */
@@ -330,7 +295,6 @@ $widget_ctx     = [
         .add-widget-btn { padding: 8px 16px; border-radius: 6px; border: none; background: var(--primary, #4ca1af); color: white; font-weight: bold; font-size: 0.85rem; cursor: pointer; flex-shrink: 0; }
         .add-widget-btn:hover { background: var(--primary-hover, #3b828e); }
         #addWidgetEmpty { text-align: center; color: var(--text-muted); font-style: italic; padding: 30px 0; display: none; }
-
         .holiday-manage-panel { margin-top: 30px; border-top: 2px solid var(--border-color, #e2e8f0); padding-top: 20px; }
         .holiday-manage-panel .holiday-forms { display: flex; gap: 40px; background: var(--bg-hover); padding: 20px; border-radius: 8px; flex-wrap: wrap; }
         .holiday-manage-panel form { flex: 1; min-width: 240px; }
@@ -340,14 +304,7 @@ $widget_ctx     = [
             background: var(--bg-input); color: var(--text-main);
         }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
             
@@ -448,7 +405,7 @@ $widget_ctx     = [
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <div class="universal-modal cal-modal" id="calModal">
         <div class="universal-modal-content">
@@ -805,5 +762,4 @@ $widget_ctx     = [
     </script>
 <script>window.MH_LIVE = { url: 'api/queue_sync.php', interval: 5000, refreshAll: 60000 };</script>
 <script src="../assets/js/mh_live.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_live.js'); ?>" defer></script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

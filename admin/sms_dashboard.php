@@ -87,47 +87,37 @@ $recent_logs = $conn->query(
      LIMIT 50"
 );
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SMS Reminders - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'SMS Reminders']);
+?>
     <?php if (function_exists('mh_theme_style_tag')) { echo mh_theme_style_tag(); } ?>
     <style>
         body { background-color: #f1f5f9; }
         .sms-container { width: 95%; max-width: 1400px; margin: 40px auto; }
         .sms-header h1 { margin: 0 0 5px; color: #1e293b; font-family: Georgia, serif; font-size: 1.9rem; }
         .sms-header p { margin: 0; color: #64748b; }
-
         .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 24px 0; }
         .stat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; }
         .stat-card .num { font-size: 1.9rem; font-weight: 800; color: #1e293b; }
         .stat-card .lbl { font-size: 0.82rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-
         .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
         .card > header { padding: 16px 22px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px; }
         .card > header h3 { margin: 0; font-size: 1.05rem; color: #1e293b; }
         .card .body { padding: 22px; }
-
         .btn { padding: 10px 18px; border: 0; border-radius: 7px; font-weight: 700; font-size: 0.92rem; cursor: pointer; font-family: inherit; text-decoration:none; display:inline-block; }
         .btn-main { background: var(--button-bg, #4ca1af); color: var(--button-text, #fff); }
         .btn-soft { background: #e2e8f0; color: #334155; }
         .btn-lg { padding: 14px 26px; font-size: 1rem; }
-
         .alert { padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 0.92rem; line-height: 1.55; }
         .alert-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
         .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
         .alert-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
-
         table.sms-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
         table.sms-table th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; padding: 8px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
         table.sms-table td { padding: 9px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
         table.sms-table .msg-cell { max-width: 360px; color: #475569; }
         .table-scroll { overflow-x: auto; }
-
         .badge { display:inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
         .badge-sent { background:#dcfce7; color:#166534; }
         .badge-failed { background:#fee2e2; color:#991b1b; }
@@ -136,14 +126,7 @@ $recent_logs = $conn->query(
         .badge-cron { background:#ede9fe; color:#5b21b6; }
         code.inline { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-<?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-<div class="main-content">
-    <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
     <div class="sms-container">
 
@@ -187,7 +170,7 @@ $recent_logs = $conn->query(
             </header>
             <div class="body" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
                 <form method="POST" style="margin:0;">
-                    <button type="submit" name="run_queue_now" data-confirm="Send all pending SMS messages now?" data-confirm-title="Run SMS queue?" data-confirm-type="warning" data-confirm-ok="Send now" class="btn btn-main btn-lg">▶ Run Pending SMS Queue Now</button>
+                    <button type="submit" name="run_queue_now" data-confirm="Send all pending SMS messages now?" data-confirm-title="Run SMS queue?" data-confirm-type="warning" data-confirm-ok="Send now" class="btn btn-main btn-lg">Run Pending SMS Queue Now</button>
                 </form>
                 <a href="?probe=1" class="btn btn-soft">Check Semaphore Balance</a>
                 <p style="margin:0; color:#64748b; font-size:0.85rem; max-width: 480px;">
@@ -264,6 +247,5 @@ $recent_logs = $conn->query(
         </div>
 
     </div>
-</div>
-</body>
-</html>
+<?php mh_layout_close(); ?>
+<?php mh_layout_end(); ?>

@@ -235,14 +235,10 @@ $stmt_fetch->execute();
 $appointments = $stmt_fetch->get_result();
 $stmt_fetch->close();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patient Queueing - <?php echo htmlspecialchars($system_name ?? 'Health Center'); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Patient Queueing']);
+?>
     <style>
         .status-badge { padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; border: 1px solid; display: inline-block; }
         .status-pending { background: #fef3c7; color: #b45309; border-color: #fde68a; }
@@ -251,10 +247,8 @@ $stmt_fetch->close();
         .queue-no { display:inline-block; min-width:4.6em; white-space:nowrap; letter-spacing:.02em; text-align:center; background:#0ea5e9; color:#fff; border-radius:6px; padding:2px 7px; font-weight:bold; font-size:.85rem; margin-right:8px; }
         .status-approved { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
         .status-completed { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
-        
         .status-cancelled { background: #f1f5f9; color: var(--text-main, #334155); border-color: var(--border-color, #cbd5e1); }
         .status-rejected { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
-
         .btn-action { padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; cursor: pointer; border: 1px solid; margin-right: 5px; transition: 0.2s;}
         .btn-approve { background: #10b981; color: white; border-color: #059669; }
         .btn-approve:hover { background: #059669; }
@@ -263,14 +257,7 @@ $stmt_fetch->close();
         .btn-cancel { background: var(--bg-card, #ffffff); color: #ef4444; border-color: #ef4444; }
         .btn-cancel:hover { background: #fee2e2; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container">
             
@@ -389,7 +376,7 @@ $stmt_fetch->close();
             </div>
 
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <div class="modal-overlay" id="rescheduleModal">
         <div class="modal-content" style="max-width: 400px; border-top: 5px solid #3b82f6;">
@@ -462,5 +449,4 @@ $stmt_fetch->close();
     </script>
 <script>window.MH_LIVE = { url: 'api/queue_sync.php', interval: 5000 };</script>
 <script src="../assets/js/mh_live.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/mh_live.js'); ?>" defer></script>
-</body>
-</html>
+<?php mh_layout_end(); ?>

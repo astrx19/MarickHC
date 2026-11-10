@@ -274,39 +274,29 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
     ORDER BY c.created_at DESC
 ");
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../includes/theme_init.php'; ?>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Child Immunization Form - <?php echo htmlspecialchars($system_name); ?></title>
-    <link rel="stylesheet" href="../assets/css/admin_theme.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/admin_theme.css'); ?>">
-    
+<?php
+require_once __DIR__ . '/../includes/layout/layout.php';
+mh_layout_head(['title' => 'Child Immunization Form', 'late_styles' => ['css/dept_ui.css']]);
+?>
     <style>
         .form-section-title { font-size: 0.8rem; color: #0284c7; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; margin: 15px 0 8px 0; border-bottom: 2px solid #bae6fd; padding-bottom: 3px; }
         .paper-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
         .paper-grid label, .form-group label { font-size: 0.75rem; color: var(--text-main, #334155); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 3px; }
         .paper-grid input, .paper-grid select, .form-group input, .form-group select, .form-group textarea { padding: 6px 10px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 4px; width: 100%; font-size: 0.85rem; background: var(--bg-card, #ffffff); box-sizing: border-box; }
-        
         .imm-box { background: var(--bg-hover, #f8fafc); border: 1px solid var(--border-color, #cbd5e1); border-radius: 6px; padding: 10px; }
         .imm-table { width: 100%; border-collapse: collapse; margin-top: 5px; }
         .imm-table td { border: 1px solid var(--border-color, #cbd5e1); padding: 6px; font-size: 0.8rem; background: var(--bg-card, #ffffff); }
         .imm-table td label { font-size: 0.7rem; color: var(--text-main, #334155); font-weight: bold; display: block; }
         .imm-table td input { width: 100%; border: none; font-size: 0.8rem; padding: 2px; background: transparent; outline: none; box-sizing: border-box; }
-
         .consult-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
         .consult-table th { background: #f1f5f9; border: 1px solid var(--border-color, #cbd5e1); font-size: 0.75rem; padding: 6px; text-align: left; color: var(--text-main, #334155); }
         .consult-table td { border: 1px solid var(--border-color, #cbd5e1); padding: 4px; }
         .consult-table input { width: 100%; border: none; padding: 4px; font-size: 0.85rem; outline: none; box-sizing: border-box; }
-
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 9999; }
         .modal-overlay.active { display: flex; }
         .modal-content { background: var(--bg-card, #ffffff); border-radius: 10px; padding: 25px; width: 90%; max-width: 900px; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
         .close-btn { position: absolute; top: 15px; right: 20px; font-size: 24px; font-weight: bold; color: var(--text-muted, #64748b); cursor: pointer; }
         .close-btn:hover { color: var(--heading-color, #1e293b); }
-
-
         .ocr-box { border: 2px dashed #38bdf8; background: #f0f9ff; border-radius: 10px; padding: 20px; text-align: center; margin-bottom: 20px; }
         .ocr-title { color: #0284c7; font-weight: bold; font-size: 1.05rem; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .ocr-file-wrapper { display: flex; justify-content: center; align-items: center; margin-bottom: 12px; }
@@ -316,15 +306,7 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
         .ocr-status { margin-top: 10px; font-size: 0.85rem; font-weight: 600; color: #0369a1; }
         .btn-remove-row { background: #ef4444; color: #fff; border: none; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; cursor: pointer; }
     </style>
-    <?php include __DIR__ . '/../includes/modal_assets.php'; ?>
-    <link rel="stylesheet" href="../assets/css/dept_ui.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/dept_ui.css'); ?>">
-</head>
-<body>
-
-    <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
-
-    <div class="main-content">
-        <?php include(__DIR__ . '/../includes/admin_topbar.php'); ?>
+<?php mh_layout_open(); ?>
 
         <div class="dashboard-container du-wrap">
             <?php echo mh_flash_scripts($success_msg ?? '', $error_msg ?? ''); ?>
@@ -389,7 +371,7 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
                 <?php endif; ?>
             </div>
         </div>
-    </div>
+    <?php mh_layout_close(); ?>
 
     <!-- Add Child Record Modal -->
     <?php if($can_log): /* intake form, vitals inputs, OCR box and save button exist only with the Log permission */ ?>
@@ -718,5 +700,4 @@ $immunization_logs = !$can_view_history ? false : $conn->query("
             <?php endif; ?>
         });
     </script>
-</body>
-</html>
+<?php mh_layout_end(); ?>
