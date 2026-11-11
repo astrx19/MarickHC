@@ -235,6 +235,10 @@ $marick_streets = mh_streets($conn);
                     triggerCustomModal('Session Expired', 'Your form expired. Please reload the page and try again.', MH_ICON_WARN, 'alert');
                 <?php elseif($_GET['reg_status'] == 'error_address'): ?>
                     triggerCustomModal('Check Your Address', 'Please complete your address. Residents need a house number and a street from the list; everyone else can type their full address.', MH_ICON_WARN, 'alert');
+                <?php elseif($_GET['reg_status'] == 'error_phone'): ?>
+                    triggerCustomModal('Check Your Mobile Number', 'Enter a valid Philippine mobile number, e.g. 09XXXXXXXXX.', MH_ICON_WARN, 'alert');
+                <?php elseif($_GET['reg_status'] == 'error_phone_taken'): ?>
+                    triggerCustomModal('Mobile Number Already Registered', 'This mobile number is already linked to a patient record. If it is yours, please log in or use Forgot Password. Otherwise, contact the health center.', MH_ICON_WARN, 'alert');
                 <?php elseif($_GET['reg_status'] == 'error_db'): ?>
                     triggerCustomModal('Registration Failed', 'Something went wrong. Please try again later.', MH_ICON_WARN, 'alert');
                 <?php endif; ?>

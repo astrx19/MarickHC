@@ -31,7 +31,7 @@
                 u.searchParams.delete('apt_id');
                 window.history.replaceState(null, '', u.pathname + (u.search || ''));
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     window.openModal = openModal;
@@ -289,6 +289,40 @@
         if (form && form.closest && form.closest('.cf-modal')) { form.setAttribute('data-cf-dirty', '1'); }
     });
 
+    /* Age from birthdate: any input with data-cf-age-from="<birthdate field name>" is filled automatically
+       (typing, OCR auto-fill and restored values all fire an 'input' event on the birthdate). The age stays
+       editable for parents whose birthdate is unknown; clearing the birthdate only clears an auto-filled age. */
+    function ageFromIso(iso) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+        if (!m || +m[1] < 1900) { return null; }
+        var now = new Date();
+        var age = now.getFullYear() - +m[1];
+        var mo = now.getMonth() + 1;
+        if (mo < +m[2] || (mo === +m[2] && now.getDate() < +m[3])) { age--; }
+        return age >= 0 ? age : null;
+    }
+
+    function syncAges(src) {
+        if (!src.form || !src.name) { return; }
+        var age = ageFromIso(src.value);
+        Array.prototype.forEach.call(src.form.querySelectorAll('[data-cf-age-from="' + src.name + '"]'), function (out) {
+            if (age !== null) {
+                out.value = age;
+                out.setAttribute('data-cf-age-auto', '1');
+            } else if (out.getAttribute('data-cf-age-auto') === '1') {
+                out.value = '';
+                out.removeAttribute('data-cf-age-auto');
+            }
+        });
+    }
+
+    document.addEventListener('input', function (e) {
+        var t = e.target;
+        if (!t || !t.tagName) { return; }
+        if (t.type === 'date') { syncAges(t); }
+        else if (t.hasAttribute('data-cf-age-from')) { t.removeAttribute('data-cf-age-auto'); }   // staff typed it: keep their value
+    });
+
     function init() {
         if (state.modal && state.open) {
             openModal(state.modal);
@@ -300,7 +334,7 @@
             }
         }
         if (state.success) {
-            try { window.history.replaceState(null, '', window.location.pathname); } catch (e) {}
+            try { window.history.replaceState(null, '', window.location.pathname); } catch (e) { }
         }
     }
 

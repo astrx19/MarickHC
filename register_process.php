@@ -21,6 +21,7 @@ session_start();
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/settings_helper.php';   // mh_csrf_check(), mh_setting()
 require_once __DIR__ . '/includes/auth_helpers.php';      // mh_username_available()
+require_once __DIR__ . '/includes/sms_helper.php';        // mh_normalize_ph_mobile() - needed by the NEW-patient path too, not only the OTP path
 
 const CLAIM_OTP_TTL_SECONDS    = 600;   // OTP valid for 10 minutes
 const CLAIM_OTP_MAX_ATTEMPTS   = 5;     // wrong guesses before the code is burned
@@ -28,6 +29,9 @@ const CLAIM_RESEND_COOLDOWN    = 60;    // seconds between SMS for one claim
 const CLAIM_MAX_SMS_PER_CLAIM  = 3;     // SMS per claim session
 const CLAIM_MAX_SMS_PER_RECORD = 3;     // SMS per patient record per hour (stops SMS-bombing a victim from new sessions)
 const CLAIM_MAX_SMS_PER_IP     = 10;    // SMS per IP per hour
+// true  = one mobile number can belong to only one ACTIVE patient record (strict).
+// false = families may share a number (common in the Philippines); only email/username/name+birthdate are blocked.
+const REG_PHONE_MUST_BE_UNIQUE = true;
 
 /* ---------------------------------------------------------------------
  * Helpers
@@ -89,6 +93,22 @@ function claim_log_sms(mysqli $conn, $patientId, $ip) {
     $stmt->bind_param('is', $patientId, $ip);
     $stmt->execute();
     $stmt->close();
+}
+
+/** True when an ACTIVE patient already has this mobile number (any stored format). Exits with error_db if the query itself fails. */
+function reg_phone_in_use(mysqli $conn, $normalized09) {
+    $tail = substr($normalized09, 1);                    // 9XXXXXXXXX
+    $a = $normalized09; $b = '63' . $tail; $c = '+63' . $tail;
+    $stmt = $conn->prepare("SELECT id FROM patients WHERE status = 1 AND contact_number IN (?, ?, ?) LIMIT 1");
+    if (!$stmt) {
+        error_log('Registration phone check prepare failed: ' . $conn->error);
+        claim_go('index.php?reg_status=error_db');
+    }
+    $stmt->bind_param('sss', $a, $b, $c);
+    $stmt->execute();
+    $found = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (bool) $found;
 }
 
 /** Load the clinic record being claimed (fresh from the database, never from the session). */
@@ -347,18 +367,20 @@ if (isset($_POST['register_patient'])) {
     }
 
     // ---- Brand-new patient: plain registration ---------------------------------------
-    $contact_raw = trim($_POST['contact_number'] ?? '');
-    $contact = mh_normalize_ph_mobile($contact_raw);
+    // Reaching this point means: no record matched this email, and no record matched name + birthdate.
+    $contact = mh_normalize_ph_mobile(trim($_POST['contact_number'] ?? ''));   // 09XXXXXXXXX or ''
     if ($contact === '') {
         claim_go('index.php?reg_status=error_phone');
     }
-    $sex      = trim($_POST['sex'] ?? '');
+    $sex = trim($_POST['sex'] ?? '');
+    if (!in_array($sex, ['Male', 'Female'], true)) {          // column is NOT NULL; never insert a blank
+        claim_go('index.php?reg_status=error_input');
+    }
     $philhealth = $philhealth_clean;   // validated above: '' or exactly 12 digits
-    $family   = trim($_POST['family_no'] ?? '');
-    $password = password_hash($password_plain, PASSWORD_DEFAULT);
+    $family     = trim($_POST['family_no'] ?? '');
+    $password   = password_hash($password_plain, PASSWORD_DEFAULT);
+
     // Address: validated on the server too (the browser check can be bypassed or stale).
-    //   home type (Marick resident) -> house number + a street that exists in the Streets masterlist
-    //   any other type (Outsider ...) -> free-text full address, no street dropdown involved
     $address_type = trim($_POST['address_type'] ?? '');
     if (!mh_masterlist_has($conn, 'address_types', $address_type)) { claim_go('index.php?reg_status=error_address'); }
     if (mh_is_marick_resident($address_type)) {
@@ -371,22 +393,43 @@ if (isset($_POST['register_patient'])) {
         if ($address_detail === '' || mb_strlen($address_detail) > 255) { claim_go('index.php?reg_status=error_address'); }
     }
 
+    // Duplicate mobile number (email, username and name+birthdate were already checked above).
+    if (REG_PHONE_MUST_BE_UNIQUE && reg_phone_in_use($conn, $contact)) {
+        claim_go('index.php?reg_status=error_phone_taken');
+    }
+
     $stmt = $conn->prepare(
         "INSERT INTO patients
             (first_name, last_name, middle_name, suffix, birthdate, sex, contact_number,
              email, username, password, address_type, address, philhealth_no, family_no)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
+    if (!$stmt) {   // mysqli does not throw here (MYSQLI_REPORT_OFF): a missing column returns false and used to crash on bind_param()
+        error_log('Patient registration: prepare failed: ' . $conn->error);
+        claim_go('index.php?reg_status=error_db');
+    }
     $stmt->bind_param(
         "ssssssssssssss",
         $fname, $lname, $mname, $suffix, $bdate, $sex, $contact,
         $email, $username, $password, $address_type, $address_detail, $philhealth, $family
     );
     $registered = $stmt->execute();
+    $dbErrno    = (int) $stmt->errno;
+    $dbError    = (string) $stmt->error;
+    $newId      = (int) $conn->insert_id;
     $stmt->close();
 
-    if ($registered) { claim_go('index.php?reg_status=success'); }
-    error_log("Patient registration failed: " . $conn->error);   // never echo DB errors to the browser
+    if ($registered) {
+        logActivity($conn, $newId, 'patient', 'Patient Registered', 'Patient #' . $newId . ' registered a portal account.');
+        claim_go('index.php?reg_status=success');
+    }
+
+    // 1062 = duplicate key: two people raced past the checks above and the UNIQUE index caught the loser.
+    if ($dbErrno === 1062) {
+        if (stripos($dbError, 'username') !== false) { claim_go('index.php?reg_status=error_username'); }
+        claim_go('index.php?reg_status=error_email');
+    }
+    error_log('Patient registration INSERT failed (' . $dbErrno . '): ' . $dbError);   // never echo DB errors to the browser
     claim_go('index.php?reg_status=error_db');
 }
 

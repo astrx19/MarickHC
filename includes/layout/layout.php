@@ -12,7 +12,7 @@ require_once __DIR__ . '/patient_nav.php';
 if (!function_exists('mh_layout_state')) {
     function mh_layout_state(?array $set = null): array
     {
-        static $state = ['portal' => 'staff', 'title' => '', 'system_name' => ''];
+        static $state = ['portal' => 'staff', 'title' => '', 'system_name' => '', 'late_styles' => []];
         if ($set !== null) {
             $state = array_merge($state, $set);
         }
@@ -35,7 +35,7 @@ if (!function_exists('mh_layout_head')) {
         $portal = (($o['portal'] ?? 'staff') === 'patient') ? 'patient' : 'staff';
         $name   = (string) ($o['system_name'] ?? ($system_name ?: mh_setting('system_name')));
         $title  = trim((string) ($o['title'] ?? ''));
-        mh_layout_state(['portal' => $portal, 'title' => $title, 'system_name' => $name]);
+        mh_layout_state(['portal' => $portal, 'title' => $title, 'system_name' => $name, 'late_styles' => (array) ($o['late_styles'] ?? [])]);
 
         $styles = array_merge(['css/admin_theme.css', 'css/shell.css'], (array) ($o['styles'] ?? []));
 
@@ -61,7 +61,9 @@ if (!function_exists('mh_layout_open')) {
 
         include __DIR__ . '/../modal_assets.php';
 
-        foreach ((array) ($o['late_styles'] ?? []) as $href) {
+        // Pages pass 'late_styles' to mh_layout_head(); accept it there (stored in the state) or here, without duplicates.
+        $late = array_values(array_unique(array_merge((array) ($state['late_styles'] ?? []), (array) ($o['late_styles'] ?? []))));
+        foreach ($late as $href) {
             echo '<link rel="stylesheet" href="../assets/' . mh_h($href) . '?v=' . mh_layout_version($href) . "\">\n";
         }
 
