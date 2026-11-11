@@ -1,20 +1,11 @@
-/* ==============================================================
-   DENTAL - "New Dental Record" form  (Part 1)   assets/js/dental_visit.js
-   Config comes from window.DN_VISIT (see admin/dental.php).
-   - open / close the modal (also auto-opens from the queue's "Record visit" link)
-   - registered-patient search (assets/js/mh_patient_search.js fires mh:patient-picked)
-   - after a patient is picked: medical alerts + the "first visit -> complete the initial profile" check
-   - tooth picker (FDI numbers), service ticks, validation with the shared red-field helpers
-   - records table: search + "Details" rows
-   ============================================================== */
+
 (function () {
     'use strict';
     var CFG = window.DN_VISIT || {};
     var $ = function (s, r) { return (r || document).querySelector(s); };
     var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    var esc = function (v) { return window.mhEsc(v); };
 
-    /* ---------- records table ---------- */
     var search = $('#dvSearch');
     if (search) {
         search.addEventListener('input', function () {
@@ -38,7 +29,6 @@
         }
     });
 
-    /* ---------- the form ---------- */
     var modal = $('#dvModal'), form = $('#dvForm');
     if (!modal || !form) { return; }
     var teethSet = {}, toothSel = {}, currentSet = 'permanent', activePatient = 0, profileOk = false;
@@ -61,7 +51,6 @@
         if (e.key === 'Escape' && modal.classList.contains('active') && !document.querySelector('.mh-modal-backdrop') && !document.querySelector('.mh-ps-list:not([hidden])')) { closeModal(); }
     });
 
-    /* ---------- tooth picker ---------- */
     function renderTeeth() {
         var host = $('#dvTeeth'), set = (CFG.teeth || {})[currentSet] || { upper: [], lower: [] };
         var cols = currentSet === 'permanent' ? 16 : 10;
@@ -76,7 +65,7 @@
         Object.keys(map || {}).forEach(function (k) { h += '<option value="' + esc(k) + '"' + (current === k ? ' selected' : '') + '>' + esc(map[k]) + '</option>'; });
         return h + '<option value="-"' + (current === '-' ? ' selected' : '') + '>Remove (clear)</option>';
     }
-    // One row per selected tooth: what it looks like AFTER this visit (updates the tooth chart + saves a history snapshot).
+
     function renderToothRows(keys) {
         var host = $('#dvToothRows');
         if (!keys.length) { host.hidden = true; host.innerHTML = ''; return; }
@@ -121,7 +110,6 @@
     $('#dvTeethClear').addEventListener('click', function () { teethSet = {}; renderTeeth(); syncTeeth(); });
     renderTeeth();
 
-    /* ---------- patient: alerts + first-visit gate ---------- */
     function setBody(on) { $('#dvBody').hidden = !on; }
     function loadSummary(id) {
         activePatient = id; profileOk = false;
@@ -144,12 +132,12 @@
                     $('#dvGate').hidden = false; setBody(false);
                 }
             })
-            .catch(function () { /* the server re-checks the profile on save, so a failed lookup is not fatal */ });
+            .catch(function () {  });
     }
     document.addEventListener('mh:patient-picked', function (e) { if (e.detail && e.detail.id) { loadSummary(parseInt(e.detail.id, 10)); } });
     document.addEventListener('mh:patient-unlinked', function () { activePatient = 0; $('#dvAlerts').hidden = true; $('#dvGate').hidden = true; setBody(true); });
 
-    function showPicked(p) {   // same badge the search box draws, so its "x" still unlinks
+    function showPicked(p) {
         $('#pnPickedId').value = p.id;
         var badge = $('.mh-ps-badge', form);
         badge.hidden = false;
@@ -157,7 +145,6 @@
         loadSummary(parseInt(p.id, 10));
     }
 
-    /* ---------- OCR: scan the paper record, review the rows, import / use them ---------- */
     var scanRows = [];
     function names(codes, map) { return (codes || []).map(function (c) { return (map && map[c]) || c; }); }
     function fillFormFromRow(r) {
@@ -227,15 +214,14 @@
         scanBtn.addEventListener('click', function () {
             var opener = document.getElementById('dnOpenOcr');
             if (!opener) { return; }
-            modal.classList.remove('active');                       // the scanner window needs the screen
+            modal.classList.remove('active');
             window.DN_ocrHandler = onScanned;
-            window.DN_ocrClosed = function () { openModal(); };      // closing the scanner brings the form back
+            window.DN_ocrClosed = function () { openModal(); };
             opener.click();
         });
     }
     var gateScan = $('#dvGateScan');
 
-    /* ---------- validation ---------- */
     form.addEventListener('submit', function (e) {
         window.mhClearErrors && window.mhClearErrors(form);
         var errs = [];
@@ -256,7 +242,6 @@
         if (errs.length) { e.preventDefault(); window.mhReport && window.mhReport(errs, 'Please check this dental record'); }
     });
 
-    /* ---------- start-up: restore what was typed after a server-side error, or open for a queued patient ---------- */
     var old = CFG.old;
     if (old) {
         var set = function (id, v) { var el = $(id); if (el && v != null) { el.value = v; } };

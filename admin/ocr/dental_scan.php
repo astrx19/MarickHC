@@ -1,6 +1,6 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', 0); // never leak PHP errors into a JSON response
+ini_set('display_errors', 0);
 header('Content-Type: application/json');
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
@@ -18,8 +18,8 @@ require_once __DIR__ . '/../../includes/settings_helper.php';
 require_once __DIR__ . '/../../includes/dental_helper.php';
 require_once __DIR__ . '/../../includes/vision_ocr_helper.php';
 
-mh_require_ocr_access_json('dental');          // module switch + 'use_ocr_scanner' toggle
-if (!mh_has_capability('can_log_dental')) {    // scanning pre-fills a record, so it needs the Log permission
+mh_require_ocr_access_json('dental');
+if (!mh_has_capability('can_log_dental')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Your account can view dental records but not create them.']);
     exit;
@@ -44,7 +44,6 @@ try {
         exit;
     }
 
-    // Route through the unified OCR engine dispatcher (Vision or Gemini per System Settings)
     $ocrResult = call_ocr_engine($upload['path']);
     if (!$ocrResult['success']) {
         http_response_code(503);
@@ -59,7 +58,7 @@ try {
     }
 
     $catalog = mh_dental_ocr_catalog();
-    // Engines that return key-value pairs (Groq, Textract) refine the regex parse of the raw text
+
     if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
         $parsed = mh_textract_map_fields($ocrResult['kv'], $rawText, 'dental', $catalog);
     } else {
@@ -74,7 +73,6 @@ try {
     $cariesDate  = $parsed['caries_date'];
     $treatments  = $parsed['treatments'];
 
-    // Dynamic patient matching safely
     $matched = null;
     $first = $fields['patient.first_name'] ?? '';
     $last  = $fields['patient.last_name'] ?? '';
@@ -96,7 +94,6 @@ try {
         }
     }
 
-    // Log successful scan in the audit trail (System Logs)
     try {
         if (function_exists('logActivity')) {
             $engine = $ocrResult['engine'] ?? 'vision';
@@ -104,10 +101,9 @@ try {
                 'Dental scan (' . ($pt !== '' ? $pt : 'unknown page') . ') via ' . $engine . ': ' . count($fields) . ' fields, ' . count($odo) . ' teeth, ' . count($caries) . ' caries answers, ' . count($treatments) . ' treatment rows.');
         }
     } catch (Throwable $le) {
-        // Logging should not break the response
+
     }
 
-    // Ensure valid UTF-8 strings before json_encode
     $safeFields = [];
     foreach ($fields as $k => $v) {
         $safeFields[$k] = is_string($v) ? mb_convert_encoding($v, 'UTF-8', 'UTF-8') : $v;

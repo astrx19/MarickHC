@@ -1,14 +1,8 @@
 <?php
-/**
- * Dental module: tables, form definitions (taken from the RHU dental forms), tooth legend,
- * caries-risk rules and POST validation. Shared by admin/dental.php and admin/ocr/dental_scan.php.
- */
+
 if (!defined('MH_LOADED_INCLUDES_DENTAL_HELPER')) {
 define('MH_LOADED_INCLUDES_DENTAL_HELPER', true);
 
-/* =====================================================================
- * TABLES
- * ================================================================== */
 function mh_dental_ensure_tables(mysqli $conn)
 {
     static $done = false;
@@ -77,11 +71,6 @@ function mh_dental_ensure_tables(mysqli $conn)
     mh_dental_ensure_snapshot_table($conn);
 }
 
-/**
- * Part 1 (visit-based dental records): extra columns on dental_records for the quick visit form, and
- * dental_charts.profile_completed_at (the "first visit profile is done" flag). Idempotent; mirrors
- * database/dental_part1_migration.sql so the page works even if that file was never run.
- */
 function mh_dental_ensure_visit_columns(mysqli $conn)
 {
     if (!empty($_SESSION['mh_dn_cols_v1'])) { return; }
@@ -108,19 +97,18 @@ function mh_dental_ensure_visit_columns(mysqli $conn)
             $has = (int) ($st->get_result()->fetch_assoc()['n'] ?? 0) > 0;
             $st->close();
             if ($has) { continue; }
-            if (!@$conn->query("ALTER TABLE `$table` ADD COLUMN `$col` $def")) {   // fixed names from the array above
+            if (!@$conn->query("ALTER TABLE `$table` ADD COLUMN `$col` $def")) {
                 error_log("mh_dental_ensure_visit_columns($table.$col): " . $conn->error);
                 $ok = false;
             }
         }
     }
-    // Charts that were already filled in before this feature count as "profile completed".
+
     @$conn->query("UPDATE dental_charts SET profile_completed_at = COALESCE(updated_at, created_at)
                     WHERE profile_completed_at IS NULL AND medical_history IS NOT NULL AND medical_history <> ''");
     if ($ok) { $_SESSION['mh_dn_cols_v1'] = true; }
 }
 
-/** Has this patient's initial dental profile (the paper chart, filled once at the first visit) been completed? */
 function mh_dental_profile_completed(mysqli $conn, $patientId)
 {
     $patientId = (int) $patientId;
@@ -133,7 +121,6 @@ function mh_dental_profile_completed(mysqli $conn, $patientId)
     return $row && !empty($row['profile_completed_at']);
 }
 
-/** "OP,Exo" style code lists -> readable names ("Oral Prophylaxis, Tooth Extraction"). Unknown codes are kept as they are. */
 function mh_dental_code_names($routineCsv, $otherCsv = '')
 {
     $all = mh_dental_routine_codes() + mh_dental_other_codes();
@@ -144,11 +131,6 @@ function mh_dental_code_names($routineCsv, $otherCsv = '')
     return $out;
 }
 
-/**
- * Saves ONE dental visit atomically: dental_records (what the profile / dashboard / portal read) + dental_treatments
- * (the chart's treatment list). Returns [ok(bool), dentalRecordId(int), error(string|null)].
- * $v: date, complaint, diagnosis, routine[], other[], teeth (csv), referral, notes, bp, temp, next (Y-m-d|null)
- */
 function mh_dental_save_visit(mysqli $conn, $patientId, $dentistId, array $v)
 {
     $patientId = (int) $patientId; $dentistId = (int) $dentistId;
@@ -200,11 +182,6 @@ function mh_dental_save_visit(mysqli $conn, $patientId, $dentistId, array $v)
     }
 }
 
-/* =====================================================================
- * FORM DEFINITIONS
- * ================================================================== */
-
-/** Vulnerable-sector indicators (Individual Treatment Record). */
 function mh_dental_sectors()
 {
     return [
@@ -217,7 +194,6 @@ function mh_dental_sectors()
     ];
 }
 
-/** Medical history questions 1-6: key => [question, label for the "if so" detail or null]. */
 function mh_dental_medical_questions()
 {
     return [
@@ -250,7 +226,6 @@ function mh_dental_women_questions()
     ];
 }
 
-/** Question 9: "Do you have or have you had any of the following?" */
 function mh_dental_conditions()
 {
     return [
@@ -265,10 +240,6 @@ function mh_dental_conditions()
     ];
 }
 
-/**
- * Field specs for the plain sections. type: text | date | number | textarea | select | yn | check.
- * Form input name = section[key]; the OCR key is "section.key".
- */
 function mh_dental_specs($section)
 {
     $specs = [
@@ -323,9 +294,6 @@ function mh_dental_specs($section)
     return $specs[$section] ?? [];
 }
 
-/* =====================================================================
- * TOOTH CHART
- * ================================================================== */
 function mh_dental_teeth()
 {
     return [
@@ -347,7 +315,6 @@ function mh_dental_all_teeth()
     return $out;
 }
 
-/** key => [label, permanent code, primary code, colour] - the official legend. */
 function mh_dental_tooth_conditions()
 {
     return [
@@ -372,7 +339,6 @@ function mh_dental_tooth_statuses()
     ];
 }
 
-/** Maps a handwritten code (any case) to a condition / status key. */
 function mh_dental_code_to_condition($code)
 {
     $c = strtolower(trim((string) $code));
@@ -388,9 +354,6 @@ function mh_dental_code_to_status($code)
     return $map[$c] ?? '';
 }
 
-/* =====================================================================
- * TREATMENT CODES (Treatment Record legend)
- * ================================================================== */
 function mh_dental_routine_codes()
 {
     return ['OE' => 'Oral Examination', 'RA' => 'Risk Assessment', 'OP' => 'Oral Prophylaxis',
@@ -401,19 +364,11 @@ function mh_dental_other_codes()
     return ['ART' => 'GIC ART', 'S' => 'GIC Sealants', 'Exo' => 'Tooth Extraction', 'RSP' => 'Root Surface Protection'];
 }
 
-/* =====================================================================
- * CARIES RISK ASSESSMENT
- * ================================================================== */
-/** 'child' = ages 5 and below, 'adult' = ages 6 and above. */
 function mh_dental_age_group($ageYears)
 {
     return ((int) $ageYears <= 5) ? 'child' : 'adult';
 }
 
-/**
- * @return array<string,array{title:string,items:array<int,array{q:string,text:string,high:string}>}>
- * 'high' = the answer (yes/no) that counts as a HIGH-risk answer.
- */
 function mh_dental_caries_questions($group)
 {
     $isChild = ($group === 'child');
@@ -487,17 +442,12 @@ function mh_dental_caries_questions($group)
     ];
 }
 
-/** Section rule: HIGH when high-risk answers are at least as many as low-risk ones (and there is at least one). */
 function mh_dental_section_result($high, $low)
 {
     if ($high + $low === 0) { return null; }
     return ($high >= $low && $high > 0) ? 'high' : 'low';
 }
 
-/**
- * Overall rule from the form: HIGH when high-risk factors exceed low-risk factors by at least one OR the two are equal;
- * LOW when low-risk factors exceed high-risk factors by five or more; anything in between needs clinical judgment.
- */
 function mh_dental_overall_result($high, $low)
 {
     if ($high + $low === 0) { return null; }
@@ -505,7 +455,6 @@ function mh_dental_overall_result($high, $low)
     return ($low - $high >= 5) ? 'low' : 'moderate';
 }
 
-/** @param array<string,string> $answers  q => 'yes'|'no' */
 function mh_dental_caries_evaluate($group, array $answers)
 {
     $sections = []; $H = 0; $L = 0;
@@ -522,9 +471,6 @@ function mh_dental_caries_evaluate($group, array $answers)
     return ['sections' => $sections, 'high' => $H, 'low' => $L, 'overall' => mh_dental_overall_result($H, $L)];
 }
 
-/* =====================================================================
- * JSON + VALIDATION HELPERS
- * ================================================================== */
 function mh_dental_json_decode($s)
 {
     if (!is_string($s) || $s === '') { return []; }
@@ -545,7 +491,6 @@ function mh_dental_yn($v)
     return '';
 }
 
-/** Cleans one value according to its spec. */
 function mh_dental_clean_value(array $spec, $raw)
 {
     switch ($spec[0]) {
@@ -599,7 +544,6 @@ function mh_dental_clean_sectors($src)
     return $out;
 }
 
-/** @return array<string,array{c:string,s:string}> only valid teeth with a valid condition and/or status */
 function mh_dental_clean_odontogram($json)
 {
     $in = mh_dental_json_decode((string) $json);
@@ -617,7 +561,6 @@ function mh_dental_clean_odontogram($json)
     return $out;
 }
 
-/** @return array<string,string> q => yes|no, restricted to the questions of $group */
 function mh_dental_clean_caries($group, $src)
 {
     $src = is_array($src) ? $src : [];
@@ -631,7 +574,6 @@ function mh_dental_clean_caries($group, $src)
     return $out;
 }
 
-/** Short alert chips from a cleaned medical-history array (sensitive diagnoses are not spelled out). */
 function mh_dental_medical_alerts(array $mh)
 {
     $alerts = [];
@@ -653,9 +595,6 @@ function mh_dental_medical_alerts(array $mh)
     return $alerts;
 }
 
-/* =====================================================================
- * FORM FIELD RENDERING
- * ================================================================== */
 function mh_dental_field($name, array $spec, $value, $disabled = false, $showWhen = '')
 {
     $e = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
@@ -696,10 +635,6 @@ function mh_dental_field($name, array $spec, $value, $disabled = false, $showWhe
     return $out . '</div>';
 }
 
-/* =====================================================================
- * OCR KEY CATALOG (what the scanner may return; same names as the form inputs, dot notation)
- * ================================================================== */
-/** @return array<string,array{0:string,1:string,2?:array}> key => spec */
 function mh_dental_ocr_catalog()
 {
     $c = [];
@@ -725,14 +660,8 @@ function mh_dental_ocr_catalog()
     return $c;
 }
 
-} // MH_LOADED_INCLUDES_DENTAL_HELPER
+}
 
-
-/* =====================================================================
- * PART 2 - TOOTH CHART HISTORY (a snapshot of the odontogram whenever it changes)
- * ================================================================== */
-
-/** Same as database/dental_part2_migration.sql - the page creates it by itself when it is missing. */
 function mh_dental_ensure_snapshot_table(mysqli $conn)
 {
     if (!empty($_SESSION['mh_dn_snap_v1'])) { return; }
@@ -752,17 +681,12 @@ function mh_dental_ensure_snapshot_table(mysqli $conn)
     if ($ok) { $_SESSION['mh_dn_snap_v1'] = true; } else { error_log('mh_dental_ensure_snapshot_table: ' . $conn->error); }
 }
 
-/** Stable JSON for an odontogram (tooth order fixed) so equal charts always hash equal. */
 function mh_dental_odontogram_canonical(array $odo)
 {
     ksort($odo, SORT_NUMERIC);
     return json_encode((object) $odo, JSON_UNESCAPED_UNICODE);
 }
 
-/**
- * Stores a snapshot unless the chart is identical to the latest one. $source: 'profile' (chart saved) | 'visit'.
- * @return bool true when a new snapshot row was written
- */
 function mh_dental_snapshot_save(mysqli $conn, $patientId, $chartId, array $odo, $source, $recordId, $userId, $takenAt = null)
 {
     $patientId = (int) $patientId; $chartId = $chartId ? (int) $chartId : null; $userId = (int) $userId;
@@ -774,8 +698,8 @@ function mh_dental_snapshot_save(mysqli $conn, $patientId, $chartId, array $odo,
     if (!$st) { return false; }
     $st->bind_param('i', $patientId); $st->execute();
     $last = $st->get_result()->fetch_assoc(); $st->close();
-    if ($last && $last['content_hash'] === $hash) { return false; }   // nothing changed on the chart
-    if (!$last && !$odo) { return false; }                             // an empty first chart is not worth a snapshot
+    if ($last && $last['content_hash'] === $hash) { return false; }
+    if (!$last && !$odo) { return false; }
 
     $when = $takenAt ?: date('Y-m-d H:i:s');
     $st = $conn->prepare("INSERT INTO dental_odontogram_snapshots (patient_id, chart_id, dental_record_id, source, content_hash, odontogram, taken_by, taken_at)
@@ -788,11 +712,6 @@ function mh_dental_snapshot_save(mysqli $conn, $patientId, $chartId, array $odo,
     return $ok;
 }
 
-/**
- * The visit form lets the dentist set what the teeth they worked on look like afterwards.
- * $teeth = the visit's valid tooth numbers; $condPost / $statPost = tooth => key ('' = no change, '-' = remove).
- * @return int number of teeth whose chart entry changed (the chart + a new snapshot are saved when > 0)
- */
 function mh_dental_apply_tooth_updates(mysqli $conn, $patientId, array $teeth, $condPost, $statPost, $recordId, $userId)
 {
     $patientId = (int) $patientId;
@@ -832,7 +751,6 @@ function mh_dental_apply_tooth_updates(mysqli $conn, $patientId, array $teeth, $
     return $changed;
 }
 
-/** All snapshots of a patient, newest first. Charts that predate this feature get their current chart as a baseline snapshot. */
 function mh_dental_snapshots(mysqli $conn, $patientId)
 {
     $patientId = (int) $patientId;

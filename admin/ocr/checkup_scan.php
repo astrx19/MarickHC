@@ -1,10 +1,5 @@
 <?php
-/**
- * Consultation note / referral slip OCR scan — dual-engine aware.
- * Page contract: upload field "document";
- * Success -> clinical fields as FLAT top-level keys + extracted_fields, extracted_identity, matched_patient, raw_text, engine;
- * Failure -> {error: "..."}
- */
+
 require_once __DIR__ . '/../../includes/ocr/ocr_endpoint.php';
 mh_ocr_preflight('bare');
 
@@ -20,7 +15,6 @@ try {
         'field'  => 'document',
     ]);
 
-    // Route through the unified OCR engine dispatcher (Vision or Gemini per System Settings)
     $ocrResult = call_ocr_engine($upload['path']);
     if (!$ocrResult['success']) {
         mh_ocr_json_error($ocrResult['error'] ?? 'OCR scan failed. Please check the document or try again.');
@@ -31,14 +25,12 @@ try {
         mh_ocr_json_error('No readable text could be detected on this document. Please ensure the photo is clear, upright, and well-lit.');
     }
 
-    // Parse clinical and identity fields from the extracted text (enhances with Textract key-value pairs if available)
     if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
         $fields = mh_textract_map_fields($ocrResult['kv'], $rawText, 'checkup');
     } else {
         $fields = vision_parse_checkup_text($rawText);
     }
 
-    // Normalize identity fields and perform dynamic patient matching safely
     $extracted_identity = mh_ocr_take_identity($fields);
     $matched_patient    = null;
     try {
@@ -47,7 +39,6 @@ try {
         vision_ocr_log_error($ocrResult['engine'] ?? 'vision', 'Match', 'Patient lookup failed: ' . $pe->getMessage());
     }
 
-    // Log successful scan in the audit trail (System Logs)
     try {
         if (isset($conn) && $conn instanceof mysqli && function_exists('logActivity') && !empty($_SESSION['user_id'])) {
             $nonEmptyCount = 0;
@@ -56,17 +47,15 @@ try {
             logActivity($conn, (int) $_SESSION['user_id'], (string) ($_SESSION['role'] ?? 'staff'), 'OCR Scan', 'General Consultation OCR (' . $engine . '): ' . $nonEmptyCount . ' fields read.');
         }
     } catch (Throwable $le) {
-        // Logging should not break the response
+
     }
 
-    // Ensure valid UTF-8 strings before json_encode
     $safeFields = [];
     foreach ($fields as $k => $v) {
         $safeFields[$k] = is_string($v) ? mb_convert_encoding($v, 'UTF-8', 'UTF-8') : $v;
     }
     $safeRawText = mb_convert_encoding($rawText, 'UTF-8', 'UTF-8');
 
-    // The checkups page reads the clinical fields directly at the top level
     $payload = $safeFields + [
         'success'            => true,
         'raw_text'           => $safeRawText,

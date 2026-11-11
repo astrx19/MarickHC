@@ -3,12 +3,11 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
-require_once __DIR__ . '/../includes/ui_helpers.php';   // mh_clean_temperature / mh_clean_vitals are used by the save handler below
+require_once __DIR__ . '/../includes/ui_helpers.php';
 require_once __DIR__ . '/../config/database.php';
 
 $system_name = $system_name ?? mh_setting('system_name');
 
-// Granular: saving charts and reading them are separate permissions.
 require_capability(['can_log_dental', 'can_view_dental_history']);
 
 require_once __DIR__ . '/../includes/settings_helper.php';
@@ -25,9 +24,7 @@ $can_ocr          = $can_log && mh_has_permission('use_ocr_scanner') && mh_modul
 $user_id = (int) $_SESSION['user_id'];
 $role    = (string) ($_SESSION['role'] ?? '');
 if (empty($_SESSION['dn_csrf'])) { $_SESSION['dn_csrf'] = bin2hex(random_bytes(16)); }
-$h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
 
-// Quick facts for the New Dental Record form once a patient is picked: JSON only, never HTML.
 if (($_GET['ajax'] ?? '') === 'summary') {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, private');
@@ -77,9 +74,6 @@ function dn_age($birthdate)
     try { return (new DateTime($birthdate))->diff(new DateTime('today'))->y; } catch (Exception $e) { return null; }
 }
 
-/* =====================================================================
- * SAVE HANDLERS
- * ================================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$can_log) { mh_deny_access(); }
     $pid = (int) ($_POST['patient_id'] ?? 0);
@@ -94,7 +88,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pat = $st->get_result()->fetch_assoc(); $st->close();
     if (!$pat) { dn_back(0, 'A', false, 'That patient could not be found.'); }
 
-    /* ---------- save chart (tabs A-D) ---------- */
     if (isset($_POST['save_chart'])) {
         $extra   = mh_dental_clean_section('extra', $_POST['extra'] ?? []);
         $sectors = json_encode(mh_dental_clean_sectors($_POST['sectors'] ?? []));
@@ -128,7 +121,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $st->bind_param('i', $pid); $st->execute();
         $chart_id = (int) ($st->get_result()->fetch_assoc()['id'] ?? 0); $st->close();
 
-        // Caries risk assessment (only when at least one question was answered)
         $group = in_array(($_POST['caries_group'] ?? ''), ['child', 'adult'], true) ? $_POST['caries_group'] : mh_dental_age_group((int) dn_age($pat['birthdate']));
         $answers = mh_dental_clean_caries($group, $_POST['caries'] ?? []);
         if ($answers) {
@@ -155,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         mh_dental_snapshot_save($conn, $pid, $chart_id, mh_dental_clean_odontogram($_POST['odontogram'] ?? ''), 'profile', null, $user_id);
         logActivity($conn, $user_id, $role, 'Dental Chart Saved', "Saved the dental chart of Patient ID #$pid.");
-        if (!empty($_POST['return_visit'])) {   // first visit: profile done -> straight back to the visit form
+        if (!empty($_POST['return_visit'])) {
             $_SESSION['dn_ok'] = 'Initial dental profile saved. You can now record this visit.';
             header('Location: dental.php?visit=1&patient=' . $pid . ($apt > 0 ? '&apt_id=' . $apt : ''));
             exit();
@@ -163,7 +155,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         dn_back($pid, $tab, true, 'Dental chart saved.', $apt);
     }
 
-    /* ---------- add a treatment row (tab E) ---------- */
     if (isset($_POST['add_treatment'])) {
         $date = (string) ($_POST['treatment_date'] ?? '');
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { dn_back($pid, 'E', false, 'Enter the treatment date.', $apt); }
@@ -187,7 +178,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $st->bind_param('i', $pid); $st->execute();
         $chart_id = (int) ($st->get_result()->fetch_assoc()['id'] ?? 0); $st->close();
 
-        // Keep the older "dental_records" summary in step: the patient profile, patient portal and dashboard read it.
         $codes = implode(', ', array_merge($routine, $other));
         $proc  = $codes !== '' ? $codes : 'Dental visit';
         $tooth = $teeth !== '' ? $teeth : null;
@@ -206,7 +196,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!$ok) { dn_back($pid, 'E', false, 'The treatment could not be saved. Please try again.', $apt); }
 
-        // Finish the queue entry (same behaviour as the previous dental page)
         if ($apt > 0) {
             $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ? AND patient_id = ?");
             $st->bind_param('ii', $apt, $pid);
@@ -221,7 +210,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         dn_back($pid, 'E', true, 'Treatment recorded.');
     }
 
-    /* ---------- NEW: quick visit record (one minute, replaces filling the whole paper chart every time) ---------- */
     if (isset($_POST['add_visit'])) {
         $old = [
             'date' => (string) ($_POST['visit_date'] ?? ''), 'complaint' => mh_dental_str($_POST['chief_complaint'] ?? '', 255),
@@ -231,7 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'next' => (string) ($_POST['next_visit_date'] ?? ''),
             'tooth_c' => (array) ($_POST['tooth_c'] ?? []), 'tooth_s' => (array) ($_POST['tooth_s'] ?? []),
         ];
-        // On any problem the form re-opens with everything the dentist typed still in it.
+
         $visit_fail = function ($msg) use ($pid, $apt, $old) {
             $_SESSION['dn_visit_old'] = $old;
             $_SESSION['dn_err'] = $msg;
@@ -272,10 +260,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$ok) { $visit_fail($err); }
 
         $msg = 'Dental record saved.';
-        // Tooth chart: what the worked-on teeth look like after this visit (also stored as a snapshot for the history view).
+
         $tooth_changes = mh_dental_apply_tooth_updates($conn, $pid, $teeth, $old['tooth_c'], $old['tooth_s'], $rec_id, $user_id);
         if ($tooth_changes > 0) { $msg .= ' Tooth chart updated (' . $tooth_changes . ($tooth_changes === 1 ? ' tooth' : ' teeth') . ').'; }
-        // Finish the queue entry (same behaviour as before).
+
         if ($apt > 0) {
             if (mh_queue_complete($conn, $apt, $pid)) { $msg .= ' Queue entry marked as Completed.'; }
         } else {
@@ -295,7 +283,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit();
     }
 
-    /* ---------- NEW: import the treatment rows scanned from the paper record as dental records ---------- */
     if (isset($_POST['import_scanned_visits'])) {
         $import_fail = function ($msg) use ($pid) {
             $_SESSION['dn_err'] = $msg;
@@ -324,7 +311,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $remarks = mh_dental_str($r['remarks'] ?? '', 1000);
             if (!$routine && !$other && $ref === '' && $remarks === '') { $skipped[] = "row $n (nothing recorded)"; continue; }
 
-            // Importing the same scan twice must not double the history.
             $names = mh_dental_code_names(implode(',', $routine), implode(',', $other));
             $proc  = $names ? mb_substr(implode(', ', $names), 0, 255) : 'Dental visit';
             $toothCsv = implode(',', $teeth);
@@ -350,9 +336,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-/* =====================================================================
- * PAGE DATA
- * ================================================================== */
 $pid = (int) ($_GET['patient'] ?? ($_GET['walkin_id'] ?? ($_GET['patient_id'] ?? 0)));
 $apt_id = (int) ($_GET['apt_id'] ?? 0);
 $tab = in_array(($_GET['tab'] ?? ''), ['A', 'B', 'C', 'D', 'E'], true) ? $_GET['tab'] : 'A';
@@ -364,13 +347,12 @@ if ($pid > 0) {
     if (!$patient) { $pid = 0; $error_msg = $error_msg ?: 'That patient could not be found.'; }
 }
 
-// ?visit=1&patient=ID (from the queue or after saving the initial profile): stay on the records page and open the visit form.
 $visit_prefill = null;
-if ($patient && isset($_GET['visit']) && $can_log) { $visit_prefill = $patient; $patient = null; }
+if ($patient && (isset($_GET['visit']) || (isset($_GET['walkin_id']) && !isset($_GET['patient']))) && $can_log) { $visit_prefill = $patient; $patient = null; }
 $dn_old = $_SESSION['dn_visit_old'] ?? null; unset($_SESSION['dn_visit_old']);
 
 if ($patient) {
-    /* ---------------- chart view ---------------- */
+
     $st = $conn->prepare("SELECT * FROM dental_charts WHERE patient_id = ?");
     $st->bind_param('i', $pid); $st->execute();
     $chart = $st->get_result()->fetch_assoc(); $st->close();
@@ -405,7 +387,7 @@ if ($patient) {
     while ($r = $res->fetch_assoc()) { $treatments[] = $r; }
     $st->close();
 
-    $legacy = [];   // visits logged with the old dental page (before charts existed)
+    $legacy = [];
     $st = $conn->prepare("SELECT d.*, s.first_name AS s_first, s.last_name AS s_last FROM dental_records d LEFT JOIN staff s ON s.id = d.dentist_id
                           WHERE d.patient_id = ? AND d.id NOT IN (SELECT dental_record_id FROM dental_treatments WHERE dental_record_id IS NOT NULL)
                           ORDER BY d.visit_date DESC, d.id DESC");
@@ -424,7 +406,7 @@ if ($patient) {
         'patientLast' => (string) $patient['last_name'], 'patientFirst' => (string) $patient['first_name'],
     ];
 } else {
-    /* ---------------- list view ---------------- */
+
     $dentalDepts = [];
     foreach (mh_options($conn, 'clinic_departments', true) as $o) {
         if (mh_department_module($o['option_value']) === 'dental') { $dentalDepts[] = $o['option_value']; }
@@ -457,7 +439,6 @@ if ($patient) {
         while ($res && ($r = $res->fetch_assoc())) { $charts[] = $r; }
     }
 
-    // Visit records (newest first) in ONE query - no per-row lookups.
     $visits = [];
     if ($can_view_history) {
         $res = $conn->query("SELECT r.id, r.patient_id, r.visit_date, r.procedure_done, r.chief_complaint, r.diagnosis, r.tooth_number, r.notes, r.referral,
@@ -485,11 +466,11 @@ mh_layout_head(['title' => 'Dental Records']);
 echo mh_flash_scripts($success_msg, $error_msg);
 ?>
 
-<?php if (!$patient): /* ===================== LIST VIEW ===================== */ ?>
+<?php if (!$patient):  ?>
 
     <div class="du-pagehead">
         <div>
-            <h1><?php echo $h(mh_module_label('dental')); ?></h1>
+            <h1><?php echo mh_h(mh_module_label('dental')); ?></h1>
             <p>Record dental visits, and keep each patient's dental profile.</p>
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -513,10 +494,10 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 <tbody>
                 <?php foreach ($queue as $q): $qa = dn_age($q['birthdate']); ?>
                     <tr>
-                        <td><strong><?php echo $h($q['queue_number'] ? mh_queue_label('Dental Clinic', $q['queue_number']) : '-'); ?></strong></td>
+                        <td><strong><?php echo mh_h($q['queue_number'] ? mh_queue_label('Dental Clinic', $q['queue_number']) : '-'); ?></strong></td>
                         <td class="du-person"><?php echo mh_avatar_html(mh_initials($q['first_name'], $q['last_name']), 32, $q['first_name'] . ' ' . $q['last_name']); ?>
-                            <span><?php echo $h(mh_format_patient_name($q['first_name'], $q['middle_name'], $q['last_name'])); ?></span></td>
-                        <td><?php echo $qa === null ? '-' : (int) $qa . ' yrs'; ?> &middot; <?php echo $h($q['sex']); ?></td>
+                            <span><?php echo mh_h(mh_format_patient_name($q['first_name'], $q['middle_name'], $q['last_name'])); ?></span></td>
+                        <td><?php echo $qa === null ? '-' : (int) $qa . ' yrs'; ?> &middot; <?php echo mh_h($q['sex']); ?></td>
                         <td style="text-align:right; white-space:nowrap;">
                             <?php if ($can_log): ?><a class="du-btn du-btn-primary du-btn-sm" href="dental.php?visit=1&patient=<?php echo (int) $q['id']; ?>&apt_id=<?php echo (int) $q['apt_id']; ?>">Record visit</a><?php endif; ?>
                             <a class="du-btn du-btn-ghost du-btn-sm" href="dental.php?patient=<?php echo (int) $q['id']; ?>&apt_id=<?php echo (int) $q['apt_id']; ?>">Profile</a></td>
@@ -549,22 +530,22 @@ echo mh_flash_scripts($success_msg, $error_msg);
                     if (!empty($v[$col])) { $det[$lbl] = $v[$col] . ($col === 'temp' ? ' °C' : ''); }
                 }
             ?>
-                <tr class="dv-row" data-hay="<?php echo $h($hay); ?>">
-                    <td style="white-space:nowrap;"><?php echo $h(date('M d, Y', strtotime($v['visit_date']))); ?></td>
+                <tr class="dv-row" data-hay="<?php echo mh_h($hay); ?>">
+                    <td style="white-space:nowrap;"><?php echo mh_h(date('M d, Y', strtotime($v['visit_date']))); ?></td>
                     <td class="du-person"><?php if ($v['last_name']): echo mh_avatar_html(mh_initials($v['first_name'], $v['last_name']), 30, $v['first_name'] . ' ' . $v['last_name']); endif; ?>
-                        <span><?php echo $h($pname); ?></span></td>
-                    <td><?php echo !empty($v['tooth_number']) ? $h(str_replace(',', ', ', $v['tooth_number'])) : '&mdash;'; ?></td>
-                    <td><?php echo $svc ? $h(implode(', ', $svc)) : '&mdash;'; ?></td>
-                    <td><?php echo !empty($v['diagnosis']) ? $h($v['diagnosis']) : '&mdash;'; ?></td>
-                    <td><?php echo $dent !== '' ? $h($dent) : '&mdash;'; ?></td>
-                    <td><?php echo !empty($v['next_visit_date']) ? $h(date('M d, Y', strtotime($v['next_visit_date']))) : '&mdash;'; ?></td>
+                        <span><?php echo mh_h($pname); ?></span></td>
+                    <td><?php echo !empty($v['tooth_number']) ? mh_h(str_replace(',', ', ', $v['tooth_number'])) : '&mdash;'; ?></td>
+                    <td><?php echo $svc ? mh_h(implode(', ', $svc)) : '&mdash;'; ?></td>
+                    <td><?php echo !empty($v['diagnosis']) ? mh_h($v['diagnosis']) : '&mdash;'; ?></td>
+                    <td><?php echo $dent !== '' ? mh_h($dent) : '&mdash;'; ?></td>
+                    <td><?php echo !empty($v['next_visit_date']) ? mh_h(date('M d, Y', strtotime($v['next_visit_date']))) : '&mdash;'; ?></td>
                     <td style="text-align:right; white-space:nowrap;">
                         <?php if ($det): ?><button type="button" class="du-btn du-btn-ghost du-btn-sm dv-more" aria-expanded="false">Details</button><?php endif; ?>
                         <?php if ($v['patient_id']): ?><a class="du-btn du-btn-ghost du-btn-sm" href="dental.php?patient=<?php echo (int) $v['patient_id']; ?>">Profile</a><?php endif; ?></td>
                 </tr>
                 <?php if ($det): ?>
                 <tr class="dv-detail" hidden><td colspan="8"><dl class="dv-dl">
-                    <?php foreach ($det as $lbl => $val): ?><div><dt><?php echo $h($lbl); ?></dt><dd><?php echo nl2br($h($val)); ?></dd></div><?php endforeach; ?>
+                    <?php foreach ($det as $lbl => $val): ?><div><dt><?php echo mh_h($lbl); ?></dt><dd><?php echo nl2br(mh_h($val)); ?></dd></div><?php endforeach; ?>
                 </dl></td></tr>
                 <?php endif; ?>
             <?php endforeach; ?>
@@ -573,7 +554,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
     </div>
     <?php endif; ?>
 
-    <?php if ($can_log): /* ===== New Dental Record form (modal) ===== */ ?>
+    <?php if ($can_log):  ?>
     <div class="modal-overlay" id="dvModal" data-static="true">
         <div class="modal-content" style="max-width: 860px; width: 100%; max-height: 92vh; overflow-y: auto;">
             <button type="button" class="close-btn" id="dvClose" aria-label="Close">&times;</button>
@@ -588,7 +569,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
             <?php endif; ?>
 
             <form method="POST" action="dental.php" id="dvForm" autocomplete="off" novalidate>
-                <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dn_csrf']); ?>">
+                <input type="hidden" name="csrf" value="<?php echo mh_h($_SESSION['dn_csrf']); ?>">
                 <input type="hidden" name="apt_id" value="<?php echo (int) $apt_id; ?>">
                 <input type="hidden" name="tooth_numbers" id="dvTeethInput" value="">
 
@@ -638,12 +619,12 @@ echo mh_flash_scripts($success_msg, $error_msg);
                     <div class="form-group"><label>Routine preventive oral care</label>
                         <div class="dv-checks">
                         <?php foreach (mh_dental_routine_codes() as $code => $label): ?>
-                            <label class="dv-check"><input type="checkbox" name="routine[]" value="<?php echo $h($code); ?>"><span><?php echo $h($label); ?></span></label>
+                            <label class="dv-check"><input type="checkbox" name="routine[]" value="<?php echo mh_h($code); ?>"><span><?php echo mh_h($label); ?></span></label>
                         <?php endforeach; ?></div></div>
                     <div class="form-group"><label>Other oral health services</label>
                         <div class="dv-checks">
                         <?php foreach (mh_dental_other_codes() as $code => $label): ?>
-                            <label class="dv-check"><input type="checkbox" name="other[]" value="<?php echo $h($code); ?>"><span><?php echo $h($label); ?></span></label>
+                            <label class="dv-check"><input type="checkbox" name="other[]" value="<?php echo mh_h($code); ?>"><span><?php echo mh_h($label); ?></span></label>
                         <?php endforeach; ?></div></div>
                 </div>
 
@@ -662,7 +643,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 </div>
             </form>
             <form method="POST" action="dental.php" id="dvImportForm" hidden>
-                <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dn_csrf']); ?>">
+                <input type="hidden" name="csrf" value="<?php echo mh_h($_SESSION['dn_csrf']); ?>">
                 <input type="hidden" name="patient_id" id="dvImportPid" value="">
                 <input type="hidden" name="rows" id="dvImportRows" value="">
                 <input type="hidden" name="import_scanned_visits" value="1">
@@ -682,7 +663,6 @@ echo mh_flash_scripts($success_msg, $error_msg);
     <script src="../assets/js/dental_visit.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/dental_visit.js'); ?>" defer></script>
     <?php endif; ?>
 
-
     <?php if ($can_view_history): ?>
     <div class="du-card">
         <div class="du-card-head">
@@ -694,12 +674,12 @@ echo mh_flash_scripts($success_msg, $error_msg);
             <tbody>
             <?php if (!$charts): ?><tr><td colspan="6" class="du-empty">No dental charts yet.</td></tr><?php endif; ?>
             <?php foreach ($charts as $c): $ca = dn_age($c['birthdate']); ?>
-                <tr data-name="<?php echo $h(strtolower($c['last_name'] . ' ' . $c['first_name'])); ?>">
+                <tr data-name="<?php echo mh_h(strtolower($c['last_name'] . ' ' . $c['first_name'])); ?>">
                     <td class="du-person"><?php echo mh_avatar_html(mh_initials($c['first_name'], $c['last_name']), 32, $c['first_name'] . ' ' . $c['last_name']); ?>
-                        <span><?php echo $h(mh_format_patient_name($c['first_name'], $c['middle_name'], $c['last_name'])); ?></span></td>
-                    <td><?php echo $ca === null ? '-' : (int) $ca . ' yrs'; ?> &middot; <?php echo $h($c['sex']); ?></td>
-                    <td><?php echo $c['last_visit'] ? $h(date('M d, Y', strtotime($c['last_visit']))) : '&mdash;'; ?></td>
-                    <td><?php if ($c['risk']): ?><span class="du-pill du-risk-<?php echo $h($c['risk']); ?>"><?php echo strtoupper($h($c['risk'])); ?></span><?php else: ?>&mdash;<?php endif; ?></td>
+                        <span><?php echo mh_h(mh_format_patient_name($c['first_name'], $c['middle_name'], $c['last_name'])); ?></span></td>
+                    <td><?php echo $ca === null ? '-' : (int) $ca . ' yrs'; ?> &middot; <?php echo mh_h($c['sex']); ?></td>
+                    <td><?php echo $c['last_visit'] ? mh_h(date('M d, Y', strtotime($c['last_visit']))) : '&mdash;'; ?></td>
+                    <td><?php if ($c['risk']): ?><span class="du-pill du-risk-<?php echo mh_h($c['risk']); ?>"><?php echo strtoupper(mh_h($c['risk'])); ?></span><?php else: ?>&mdash;<?php endif; ?></td>
                     <td><?php echo $c['chart_id'] ? '<span class="du-pill du-pill-ok">Chart on file</span>' : '<span class="du-pill du-pill-muted">Visits only</span>'; ?></td>
                     <td style="text-align:right;"><a class="du-btn du-btn-ghost du-btn-sm" href="dental.php?patient=<?php echo (int) $c['id']; ?>">Open</a></td>
                 </tr>
@@ -709,7 +689,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
     </div>
     <?php endif; ?>
 
-<?php else: /* ===================== CHART VIEW ===================== */
+<?php else:
     $fullName = mh_format_patient_name($patient['first_name'], $patient['middle_name'], $patient['last_name']);
     $isResident = function_exists('mh_is_marick_resident') ? mh_is_marick_resident($patient['address_type'] ?? '') : true;
     $dis = !$can_log;
@@ -719,21 +699,21 @@ echo mh_flash_scripts($success_msg, $error_msg);
         <div class="du-patient-main">
             <?php echo mh_avatar_html(mh_initials($patient['first_name'], $patient['last_name']), 56, $patient['first_name'] . ' ' . $patient['last_name']); ?>
             <div>
-                <h1><?php echo $h($fullName); ?></h1>
-                <p><?php echo $age === null ? 'Age unknown' : (int) $age . ' years old'; ?> &middot; <?php echo $h($sex); ?> &middot; Born <?php echo $h(date('M d, Y', strtotime($patient['birthdate']))); ?></p>
+                <h1><?php echo mh_h($fullName); ?></h1>
+                <p><?php echo $age === null ? 'Age unknown' : (int) $age . ' years old'; ?> &middot; <?php echo mh_h($sex); ?> &middot; Born <?php echo mh_h(date('M d, Y', strtotime($patient['birthdate']))); ?></p>
             </div>
         </div>
         <div class="du-patient-actions">
             <?php $profile_done = !empty($chart['profile_completed_at']); ?>
-            <span class="du-pill <?php echo $profile_done ? 'du-pill-ok' : 'du-pill-muted'; ?>" title="<?php echo $profile_done ? 'Initial profile completed ' . $h(date('M d, Y', strtotime($chart['profile_completed_at']))) : 'Save this chart once to complete the initial profile'; ?>"><?php echo $profile_done ? 'Initial profile completed' : 'Initial profile not completed'; ?></span>
+            <span class="du-pill <?php echo $profile_done ? 'du-pill-ok' : 'du-pill-muted'; ?>" title="<?php echo $profile_done ? 'Initial profile completed ' . mh_h(date('M d, Y', strtotime($chart['profile_completed_at']))) : 'Save this chart once to complete the initial profile'; ?>"><?php echo $profile_done ? 'Initial profile completed' : 'Initial profile not completed'; ?></span>
             <?php if ($can_log && $profile_done): ?><a class="du-btn du-btn-primary" href="dental.php?visit=1&patient=<?php echo (int) $pid; ?><?php echo $apt_id > 0 ? '&apt_id=' . (int) $apt_id : ''; ?>"><?php echo mh_icon('plus'); ?> Record visit</a><?php endif; ?>
             <?php if ($can_ocr): ?><button type="button" class="du-btn du-btn-primary" id="dnOpenOcr"><?php echo mh_icon('camera'); ?> Scan / Upload Records</button><?php endif; ?>
                         <a class="du-btn du-btn-ghost" href="dental.php">&larr; Dental Records</a>
         </div>
     </div>
 
-    <div class="du-alerts" id="dnAlerts" data-initial="<?php echo $h(json_encode($alerts)); ?>">
-        <?php foreach ($alerts as $a): ?><span class="du-alert-chip">&#9888; <?php echo $h($a); ?></span><?php endforeach; ?>
+    <div class="du-alerts" id="dnAlerts" data-initial="<?php echo mh_h(json_encode($alerts)); ?>">
+        <?php foreach ($alerts as $a): ?><span class="du-alert-chip"><?php echo mh_h($a); ?></span><?php endforeach; ?>
         <?php if (!$alerts): ?><span class="du-muted" id="dnNoAlerts">No medical alerts recorded.</span><?php endif; ?>
     </div>
 
@@ -749,24 +729,24 @@ echo mh_flash_scripts($success_msg, $error_msg);
 
     <form method="POST" id="dnForm" action="dental.php?patient=<?php echo (int) $pid; ?>" autocomplete="off">
     <fieldset class="du-fieldset" <?php echo $dis ? 'disabled' : ''; ?>>
-        <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dn_csrf']); ?>">
+        <input type="hidden" name="csrf" value="<?php echo mh_h($_SESSION['dn_csrf']); ?>">
         <input type="hidden" name="patient_id" value="<?php echo (int) $pid; ?>">
         <input type="hidden" name="apt_id" value="<?php echo (int) $apt_id; ?>">
-        <input type="hidden" name="active_tab" id="dnActiveTab" value="<?php echo $h($tab); ?>">
+        <input type="hidden" name="active_tab" id="dnActiveTab" value="<?php echo mh_h($tab); ?>">
         <?php if (($_GET['return'] ?? '') === 'visit'): ?><input type="hidden" name="return_visit" value="1"><?php endif; ?>
-        <input type="hidden" name="odontogram" id="dnOdoInput" value="<?php echo $h(json_encode((object) $odo)); ?>">
+        <input type="hidden" name="odontogram" id="dnOdoInput" value="<?php echo mh_h(json_encode((object) $odo)); ?>">
 
-        <!-- ================= TAB A ================= -->
+        
         <section class="du-panel" data-panel="A">
             <div class="du-card">
                 <h2 class="du-card-title">Patient information</h2>
                 <div class="du-grid du-grid-3">
-                    <div class="du-ro"><span>Name</span><strong><?php echo $h($fullName); ?></strong></div>
-                    <div class="du-ro"><span>Date of birth</span><strong><?php echo $h(date('F d, Y', strtotime($patient['birthdate']))); ?></strong></div>
-                    <div class="du-ro"><span>Age / Sex</span><strong><?php echo $age === null ? '-' : (int) $age . ' yrs'; ?> / <?php echo $h($sex); ?></strong></div>
+                    <div class="du-ro"><span>Name</span><strong><?php echo mh_h($fullName); ?></strong></div>
+                    <div class="du-ro"><span>Date of birth</span><strong><?php echo mh_h(date('F d, Y', strtotime($patient['birthdate']))); ?></strong></div>
+                    <div class="du-ro"><span>Age / Sex</span><strong><?php echo $age === null ? '-' : (int) $age . ' yrs'; ?> / <?php echo mh_h($sex); ?></strong></div>
                     <div class="du-ro"><span>Barangay</span><strong><?php echo $isResident ? 'Sto. Domingo (resident)' : 'Outside the barangay'; ?></strong></div>
-                    <div class="du-ro du-span2"><span>Address</span><strong><?php echo $h($patient['address'] ?: '-'); ?></strong></div>
-                    <div class="du-ro"><span>Contact no.</span><strong><?php echo $h($patient['contact_number'] ?: '-'); ?></strong></div>
+                    <div class="du-ro du-span2"><span>Address</span><strong><?php echo mh_h($patient['address'] ?: '-'); ?></strong></div>
+                    <div class="du-ro"><span>Contact no.</span><strong><?php echo mh_h($patient['contact_number'] ?: '-'); ?></strong></div>
                 </div>
                 <p class="du-hint">These come from the patient's registration. Correct them in the Patient Masterlist.</p>
                 <div class="du-grid du-grid-3" style="margin-top:14px;">
@@ -785,7 +765,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 <h2 class="du-card-title">Medical history</h2>
                 <?php $n = 0; foreach (mh_dental_medical_questions() as $k => $def): $n++; ?>
                     <div class="du-qrow">
-                        <div class="du-q"><span class="du-qn"><?php echo $n; ?>.</span> <?php echo $h($def[0]); ?></div>
+                        <div class="du-q"><span class="du-qn"><?php echo $n; ?>.</span> <?php echo mh_h($def[0]); ?></div>
                         <?php echo mh_dental_field("mh[q][$k]", ['yn', 'Answer'], $mh['q'][$k], $dis); ?>
                         <?php if ($def[1] !== null): echo mh_dental_field("mh[detail][$k]", ['text', $def[1]], $mh['detail'][$k], $dis, "mh[q][$k]=y"); endif; ?>
                     </div>
@@ -842,7 +822,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
             </div>
         </section>
 
-        <!-- ================= TAB B ================= -->
+        
         <section class="du-panel" data-panel="B">
             <div class="du-card">
                 <h2 class="du-card-title">Dental history</h2>
@@ -891,7 +871,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
             </div>
         </section>
 
-        <!-- ================= TAB C ================= -->
+        
         <section class="du-panel" data-panel="C">
             <div class="du-card">
                 <div class="du-card-head">
@@ -931,11 +911,11 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 <div class="du-legend">
                     <div><h4 class="du-sub">Tooth condition</h4>
                         <table class="du-table du-table-sm"><thead><tr><th>Permanent</th><th>Condition</th><th>Primary</th></tr></thead><tbody>
-                        <?php foreach (mh_dental_tooth_conditions() as $k => $c): ?><tr><td><b><?php echo $h($c[1]); ?></b></td><td><span class="du-dot" style="background:<?php echo $h($c[3]); ?>"></span> <?php echo $h($c[0]); ?></td><td><b><?php echo $h($c[2]); ?></b></td></tr><?php endforeach; ?>
+                        <?php foreach (mh_dental_tooth_conditions() as $k => $c): ?><tr><td><b><?php echo mh_h($c[1]); ?></b></td><td><span class="du-dot" style="background:<?php echo mh_h($c[3]); ?>"></span> <?php echo mh_h($c[0]); ?></td><td><b><?php echo mh_h($c[2]); ?></b></td></tr><?php endforeach; ?>
                         </tbody></table></div>
                     <div><h4 class="du-sub">Tooth status</h4>
                         <table class="du-table du-table-sm"><thead><tr><th>Permanent</th><th>Status</th><th>Primary</th></tr></thead><tbody>
-                        <?php foreach (mh_dental_tooth_statuses() as $k => $s): ?><tr><td><b><?php echo $h($s[1]); ?></b></td><td><?php echo $h($s[0]); ?></td><td><b><?php echo $h($s[2]); ?></b></td></tr><?php endforeach; ?>
+                        <?php foreach (mh_dental_tooth_statuses() as $k => $s): ?><tr><td><b><?php echo mh_h($s[1]); ?></b></td><td><?php echo mh_h($s[0]); ?></td><td><b><?php echo mh_h($s[2]); ?></b></td></tr><?php endforeach; ?>
                         </tbody></table></div>
                 </div>
             </div>
@@ -947,7 +927,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
             </div>
         </section>
 
-        <!-- ================= TAB D ================= -->
+        
         <section class="du-panel" data-panel="D">
             <div class="du-card">
                 <div class="du-card-head">
@@ -957,7 +937,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                         <button type="button" data-group="adult">Ages 6 and above</button>
                     </span>
                 </div>
-                <input type="hidden" name="caries_group" id="dnCariesGroupInput" value="<?php echo $h($c_group); ?>">
+                <input type="hidden" name="caries_group" id="dnCariesGroupInput" value="<?php echo mh_h($c_group); ?>">
                 <p class="du-hint" id="dnCariesAuto">The form shown follows the patient's age (<?php echo $age === null ? 'unknown' : (int) $age . ' years'; ?>). You can switch it.</p>
                 <div id="dnCaries"></div>
             </div>
@@ -969,7 +949,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                     <div class="du-field"><span class="du-label">Overall assessment (final)</span>
                         <select name="caries_final" id="dnFinal"><option value="">-- Use clinical judgment --</option><option value="low">LOW risk</option><option value="high">HIGH risk</option></select></div>
                     <div class="du-field"><span class="du-label">Date of assessment</span>
-                        <input type="date" name="caries_date" id="dnCariesDate" value="<?php echo $h($latest['assessed_on'] ?? date('Y-m-d')); ?>"></div>
+                        <input type="date" name="caries_date" id="dnCariesDate" value="<?php echo mh_h($latest['assessed_on'] ?? date('Y-m-d')); ?>"></div>
                 </div>
                 <p class="du-hint">Rule from the form: HIGH when high-risk factors outnumber or equal low-risk factors; LOW when low-risk factors outnumber them by at least five; in between needs clinical judgment. Section results show whichever side has more answers.</p>
             </div>
@@ -978,8 +958,8 @@ echo mh_flash_scripts($success_msg, $error_msg);
             <div class="du-card">
                 <h2 class="du-card-title">Previous assessments</h2>
                 <table class="du-table du-table-sm"><thead><tr><th>Date</th><th>Form</th><th>Disease</th><th>Socio-economic</th><th>Protective</th><th>Overall</th></tr></thead><tbody>
-                <?php foreach ($caries_hist as $r): $rs = function ($v) use ($h) { return $v ? '<span class="du-pill du-risk-' . $h($v) . '">' . strtoupper($h($v)) . '</span>' : '&mdash;'; }; ?>
-                    <tr><td><?php echo $h(date('M d, Y', strtotime($r['assessed_on']))); ?></td><td><?php echo $r['age_group'] === 'child' ? '5 &amp; below' : '6 &amp; above'; ?></td>
+                <?php foreach ($caries_hist as $r): $rs = function ($v) { return $v ? '<span class="du-pill du-risk-' . mh_h($v) . '">' . strtoupper(mh_h($v)) . '</span>' : '&mdash;'; }; ?>
+                    <tr><td><?php echo mh_h(date('M d, Y', strtotime($r['assessed_on']))); ?></td><td><?php echo $r['age_group'] === 'child' ? '5 &amp; below' : '6 &amp; above'; ?></td>
                         <td><?php echo $rs($r['disease_result']); ?></td><td><?php echo $rs($r['socio_result']); ?></td><td><?php echo $rs($r['protective_result']); ?></td>
                         <td><?php echo $rs($r['overall_final'] ?: $r['overall_computed']); ?></td></tr>
                 <?php endforeach; ?>
@@ -990,27 +970,27 @@ echo mh_flash_scripts($success_msg, $error_msg);
     </fieldset>
     </form>
 
-    <!-- ================= TAB E (own form) ================= -->
+    
     <section class="du-panel" data-panel="E">
         <?php if ($can_log): ?>
         <div class="du-card">
             <h2 class="du-card-title">Record a treatment</h2>
             <form method="POST" action="dental.php?patient=<?php echo (int) $pid; ?>" id="dnTreatForm" autocomplete="off">
-                <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dn_csrf']); ?>">
+                <input type="hidden" name="csrf" value="<?php echo mh_h($_SESSION['dn_csrf']); ?>">
                 <input type="hidden" name="patient_id" value="<?php echo (int) $pid; ?>">
                 <input type="hidden" name="apt_id" value="<?php echo (int) $apt_id; ?>">
                 <input type="hidden" name="active_tab" value="E">
                 <div class="du-grid du-grid-3">
-                    <div class="du-field"><span class="du-label">Date</span><input type="date" name="treatment_date" id="dnTDate" value="<?php echo $h(date('Y-m-d')); ?>" required></div>
+                    <div class="du-field"><span class="du-label">Date</span><input type="date" name="treatment_date" id="dnTDate" value="<?php echo mh_h(date('Y-m-d')); ?>" required></div>
                     <div class="du-field"><span class="du-label">Tooth number(s)</span><input type="text" name="tooth_numbers" id="dnTTeeth" maxlength="100" placeholder="e.g. 16, 26"></div>
                     <div class="du-field"><span class="du-label">Referrals</span><input type="text" name="referrals" id="dnTRefer" maxlength="255"></div>
                 </div>
                 <div class="du-grid du-grid-2" style="margin-top:12px;">
                     <div><h4 class="du-sub">Routine preventive oral care</h4><div class="du-checks">
-                        <?php foreach (mh_dental_routine_codes() as $code => $label): ?><label class="du-check"><input type="checkbox" name="routine[]" value="<?php echo $h($code); ?>" data-code="<?php echo $h($code); ?>"><span><b><?php echo $h($code); ?></b> &middot; <?php echo $h($label); ?></span></label><?php endforeach; ?>
+                        <?php foreach (mh_dental_routine_codes() as $code => $label): ?><label class="du-check"><input type="checkbox" name="routine[]" value="<?php echo mh_h($code); ?>" data-code="<?php echo mh_h($code); ?>"><span><b><?php echo mh_h($code); ?></b> &middot; <?php echo mh_h($label); ?></span></label><?php endforeach; ?>
                     </div></div>
                     <div><h4 class="du-sub">Other oral health services</h4><div class="du-checks">
-                        <?php foreach (mh_dental_other_codes() as $code => $label): ?><label class="du-check"><input type="checkbox" name="other[]" value="<?php echo $h($code); ?>" data-code="<?php echo $h($code); ?>"><span><b><?php echo $h($code); ?></b> &middot; <?php echo $h($label); ?></span></label><?php endforeach; ?>
+                        <?php foreach (mh_dental_other_codes() as $code => $label): ?><label class="du-check"><input type="checkbox" name="other[]" value="<?php echo mh_h($code); ?>" data-code="<?php echo mh_h($code); ?>"><span><b><?php echo mh_h($code); ?></b> &middot; <?php echo mh_h($label); ?></span></label><?php endforeach; ?>
                     </div></div>
                 </div>
                 <div class="du-field" style="margin-top:12px;"><span class="du-label">Remarks</span><textarea name="remarks" id="dnTRemarks" rows="2" maxlength="1000" placeholder="Procedure with no code goes here"></textarea></div>
@@ -1029,20 +1009,20 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 <?php if (!$treatments && !$legacy): ?><tr><td colspan="6" class="du-empty">No treatments recorded yet.</td></tr><?php endif; ?>
                 <?php foreach ($treatments as $t): ?>
                     <tr>
-                        <td><?php echo $h(date('M d, Y', strtotime($t['treatment_date']))); ?></td>
-                        <td><?php echo $h(str_replace(',', ', ', (string) $t['routine_codes'])) ?: '&mdash;'; ?></td>
-                        <td><?php echo $h(str_replace(',', ', ', (string) $t['other_codes'])); ?><?php echo $t['tooth_numbers'] ? ' <small>(tooth ' . $h($t['tooth_numbers']) . ')</small>' : ''; ?></td>
-                        <td><?php echo $h($t['referrals']) ?: '&mdash;'; ?></td>
-                        <td><?php echo $h($t['remarks']) ?: '&mdash;'; ?></td>
-                        <td><?php echo $h(trim(($t['s_first'] ?? '') . ' ' . ($t['s_last'] ?? ''))); ?><div class="du-sigline"></div></td>
+                        <td><?php echo mh_h(date('M d, Y', strtotime($t['treatment_date']))); ?></td>
+                        <td><?php echo mh_h(str_replace(',', ', ', (string) $t['routine_codes'])) ?: '&mdash;'; ?></td>
+                        <td><?php echo mh_h(str_replace(',', ', ', (string) $t['other_codes'])); ?><?php echo $t['tooth_numbers'] ? ' <small>(tooth ' . mh_h($t['tooth_numbers']) . ')</small>' : ''; ?></td>
+                        <td><?php echo mh_h($t['referrals']) ?: '&mdash;'; ?></td>
+                        <td><?php echo mh_h($t['remarks']) ?: '&mdash;'; ?></td>
+                        <td><?php echo mh_h(trim(($t['s_first'] ?? '') . ' ' . ($t['s_last'] ?? ''))); ?><div class="du-sigline"></div></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php foreach ($legacy as $t): ?>
                     <tr class="du-legacy">
-                        <td><?php echo $h(date('M d, Y', strtotime($t['visit_date']))); ?></td>
-                        <td colspan="3"><?php echo $h($t['procedure_done']); ?><?php echo $t['tooth_number'] ? ' <small>(tooth ' . $h($t['tooth_number']) . ')</small>' : ''; ?> <span class="du-pill du-pill-muted">earlier record</span></td>
-                        <td><?php echo $h($t['notes']) ?: '&mdash;'; ?></td>
-                        <td><?php echo $h(trim(($t['s_first'] ?? '') . ' ' . ($t['s_last'] ?? ''))); ?><div class="du-sigline"></div></td>
+                        <td><?php echo mh_h(date('M d, Y', strtotime($t['visit_date']))); ?></td>
+                        <td colspan="3"><?php echo mh_h($t['procedure_done']); ?><?php echo $t['tooth_number'] ? ' <small>(tooth ' . mh_h($t['tooth_number']) . ')</small>' : ''; ?> <span class="du-pill du-pill-muted">earlier record</span></td>
+                        <td><?php echo mh_h($t['notes']) ?: '&mdash;'; ?></td>
+                        <td><?php echo mh_h(trim(($t['s_first'] ?? '') . ' ' . ($t['s_last'] ?? ''))); ?><div class="du-sigline"></div></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -1054,9 +1034,9 @@ echo mh_flash_scripts($success_msg, $error_msg);
             <h2 class="du-card-title">Legend</h2>
             <div class="du-legend">
                 <table class="du-table du-table-sm"><thead><tr><th colspan="2">Routine preventive care</th></tr></thead><tbody>
-                    <?php foreach (mh_dental_routine_codes() as $code => $label): ?><tr><td><?php echo $h($label); ?></td><td><b><?php echo $h($code); ?></b></td></tr><?php endforeach; ?></tbody></table>
+                    <?php foreach (mh_dental_routine_codes() as $code => $label): ?><tr><td><?php echo mh_h($label); ?></td><td><b><?php echo mh_h($code); ?></b></td></tr><?php endforeach; ?></tbody></table>
                 <table class="du-table du-table-sm"><thead><tr><th colspan="2">Other dental procedure</th></tr></thead><tbody>
-                    <?php foreach (mh_dental_other_codes() as $code => $label): ?><tr><td><?php echo $h($label); ?></td><td><b><?php echo $h($code); ?></b></td></tr><?php endforeach; ?></tbody></table>
+                    <?php foreach (mh_dental_other_codes() as $code => $label): ?><tr><td><?php echo mh_h($label); ?></td><td><b><?php echo mh_h($code); ?></b></td></tr><?php endforeach; ?></tbody></table>
             </div>
         </div>
     </section>
@@ -1074,7 +1054,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
 <?php endif; ?>
 
 <?php if ($can_ocr): ?>
-    <!-- ================= OCR MODAL ================= -->
+    
     <div class="du-modal" id="dnOcrModal" hidden>
         <div class="du-modal-box" role="dialog" aria-modal="true" aria-labelledby="dnOcrTitle">
             <div class="du-modal-head"><h2 id="dnOcrTitle">Scan / Upload Physical Dental Records</h2><button type="button" class="du-x" id="dnOcrClose" aria-label="Close">&times;</button></div>
@@ -1093,8 +1073,8 @@ echo mh_flash_scripts($success_msg, $error_msg);
     </div>
 <?php endif; ?>
 
-</div><!-- /dashboard-container -->
-<?php mh_layout_close(); ?><!-- /main-content -->
+</div>
+<?php mh_layout_close(); ?>
 <script>window.DN_CFG = <?php echo json_encode(['scanUrl' => 'ocr/dental_scan.php', 'onChart' => (bool) $patient, 'canOcr' => (bool) $can_ocr]); ?>;</script>
 <script src="../assets/js/dental.js?v=<?php echo (int) $ver; ?>"></script>
 <?php if ($patient): ?><script src="../assets/js/dental_history.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/dental_history.js'); ?>"></script><?php endif; ?>

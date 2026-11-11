@@ -1,13 +1,7 @@
 <?php
-/**
- * Patient profile data (Step 5): additional contact numbers, dispense-medicine history and the
- * complete medical-history timeline. Plain prepared mysqli statements (the site's proven driver).
- * Compatible with PHP 7.2+.
- */
 
 if (!function_exists('mh_ensure_patient_contacts_schema')) {
 
-    /** Creates `patient_contacts` when the Step 5 migration was not run (same safety net as the queue schema). */
     function mh_ensure_patient_contacts_schema(mysqli $conn)
     {
         static $done = false;
@@ -30,7 +24,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         }
     }
 
-    /** @return array[] id, contact_name, relationship, contact_number */
     function mh_patient_contacts(mysqli $conn, $patientId)
     {
         mh_ensure_patient_contacts_schema($conn);
@@ -44,7 +37,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return $rows;
     }
 
-    /** "0912 345 6789", "+63 912..." or "09123456789" -> "09123456789"; null when it is not a PH mobile number. */
     function mh_pc_normalize_mobile($raw)
     {
         if (function_exists('mh_normalize_ph_mobile')) {
@@ -58,7 +50,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return null;
     }
 
-    /** @return string|null error message, null on success */
     function mh_patient_contact_add(mysqli $conn, $patientId, $name, $relationship, $number, $staffId)
     {
         mh_ensure_patient_contacts_schema($conn);
@@ -106,7 +97,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return $deleted;
     }
 
-    /** Medicines given to this patient, newest first (joined in ONE query - no per-row lookups). */
     function mh_patient_dispense_history(mysqli $conn, $patientId)
     {
         $patientId = (int) $patientId;
@@ -129,14 +119,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return $rows;
     }
 
-    /**
-     * Child Immunization records are filed by typed name. A baby who is not a registered patient yet used to
-     * be saved with patient_id = NULL and therefore never appeared in the Patient Masterlist.
-     * This registers the child (or links to the SAME child if name + birthdate already exist).
-     *
-     * @param array $pn  result of mh_read_patient_name_post()  (first, last, mi)
-     * @return array [patient_id|null, error|null, created(bool)]
-     */
     function mh_register_child_patient(mysqli $conn, array $pn, $birthdate, $sex, $mobile, $familyNo)
     {
         $birthdate = trim((string) $birthdate);
@@ -149,7 +131,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
             return [null, "Choose the child's sex so the child can be added to the Patient Masterlist.", false];
         }
 
-        // Same name + birthdate already registered? Then this IS that child: link, do not duplicate.
         $st = $conn->prepare("SELECT id FROM patients WHERE status = 1 AND birthdate = ? AND LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?) LIMIT 1");
         $st->bind_param('sss', $birthdate, $pn['first'], $pn['last']);
         $st->execute();
@@ -161,8 +142,8 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         $contact = mh_pc_normalize_mobile($mobile);
         $contact = $contact !== null ? $contact : '';
         $email = preg_replace('/[^a-z0-9]/', '', strtolower($pn['first'])) . '.' . preg_replace('/[^a-z0-9]/', '', strtolower($pn['last']))
-               . '.' . bin2hex(random_bytes(4)) . '@walkin.local';          // placeholder (NOT NULL UNIQUE), never mailed
-        $password = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);   // no one can log in as this record
+               . '.' . bin2hex(random_bytes(4)) . '@walkin.local';
+        $password = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
         $family = trim((string) $familyNo) === '' ? null : trim((string) $familyNo);
         $address = '';
 
@@ -180,7 +161,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return [$id, null, true];
     }
 
-    /** Small helper: run a prepared SELECT by patient id and return all rows. */
     function mh_ph_rows(mysqli $conn, $sql, $patientId)
     {
         $patientId = (int) $patientId;
@@ -193,7 +173,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return $rows;
     }
 
-    /** Only non-empty values, labelled: ['Weight' => '12 kg', ...]. Dates that are 0000-00-00 are dropped. */
     function mh_ph_fields(array $row, array $map)
     {
         $out = [];
@@ -213,12 +192,6 @@ if (!function_exists('mh_ensure_patient_contacts_schema')) {
         return $n === '' ? 'Not recorded' : trim($prefix . ' ' . $n);
     }
 
-    /**
-     * The complete timeline: every consultation, vital-signs reading, dental visit, prenatal visit,
-     * child-immunization card and child check-up of ONE patient, newest first.
-     * Each item: type, date (Y-m-d), color [r,g,b], attending, fields [label => value] (the first
-     * three are the summary; the rest sit behind "See more").
-     */
     function mh_patient_history(mysqli $conn, $patientId)
     {
         $items = [];

@@ -1,10 +1,5 @@
 <?php
-/**
- * Maternal care (prenatal card) OCR scan — dual-engine aware.
- * Page contract: upload field "ocr_image";
- * Success -> {success:true, fields:{...}, raw_text, engine, extracted_fields, extracted_identity, matched_patient};
- * Failure -> {success:false, message: "..."}
- */
+
 require_once __DIR__ . '/../../includes/ocr/ocr_endpoint.php';
 mh_ocr_preflight('message');
 
@@ -20,7 +15,6 @@ try {
         'field'  => 'ocr_image',
     ]);
 
-    // Route through the unified OCR engine dispatcher (Vision or Gemini per System Settings)
     $ocrResult = call_ocr_engine($upload['path']);
     if (!$ocrResult['success']) {
         mh_ocr_json_error($ocrResult['error'] ?? 'OCR scan failed. Please check the document or try again.');
@@ -31,7 +25,6 @@ try {
         mh_ocr_json_error('No readable text could be detected on this prenatal document. Please ensure the image is clear and well-lit.');
     }
 
-    // Parse clinical and mother identity fields from the extracted text (enhances with Textract key-value pairs if available)
     if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
         $fields = mh_textract_map_fields($ocrResult['kv'], $rawText, 'maternal');
     } else {
@@ -39,7 +32,6 @@ try {
     }
     $fields = mh_ocr_normalize_dates($fields, ['lmp', 'edc']);
 
-    // The mother's name/birthdate are used to look her up safely
     $extracted_identity = mh_ocr_take_identity($fields);
     $matched_patient    = null;
     try {
@@ -48,7 +40,6 @@ try {
         vision_ocr_log_error($ocrResult['engine'] ?? 'vision', 'Match', 'Patient lookup failed: ' . $pe->getMessage());
     }
 
-    // Log successful scan in the audit trail (System Logs)
     try {
         if (isset($conn) && $conn instanceof mysqli && function_exists('logActivity') && !empty($_SESSION['user_id'])) {
             $nonEmptyCount = 0;
@@ -57,10 +48,9 @@ try {
             logActivity($conn, (int) $_SESSION['user_id'], (string) ($_SESSION['role'] ?? 'staff'), 'OCR Scan', 'Maternal Care OCR (' . $engine . '): ' . $nonEmptyCount . ' fields read.');
         }
     } catch (Throwable $le) {
-        // Logging should not break the response
+
     }
 
-    // Ensure valid UTF-8 strings before json_encode
     $safeFields = [];
     foreach ($fields as $k => $v) {
         $safeFields[$k] = is_string($v) ? mb_convert_encoding($v, 'UTF-8', 'UTF-8') : $v;
@@ -69,12 +59,12 @@ try {
 
     $payload = [
         'success'            => true,
-        'fields'             => $safeFields,             // clinical fields - auto-fills admin/maternal_care.php inputs
+        'fields'             => $safeFields,
         'raw_text'           => $safeRawText,
         'engine'             => $ocrResult['engine'] ?? 'vision',
         'extracted_fields'   => $safeFields,
-        'extracted_identity' => $extracted_identity,     // mother's name/birthdate as read from the card
-        'matched_patient'    => $matched_patient,        // matched patient in database or null
+        'extracted_identity' => $extracted_identity,
+        'matched_patient'    => $matched_patient,
     ];
 
     $encoded = json_encode($payload);

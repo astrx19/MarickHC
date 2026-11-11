@@ -1,13 +1,4 @@
-/* ==============================================================
-   MARICK HEALTH CENTER - "FIND A REGISTERED PATIENT" PICKER  (Step 6)
-   assets/js/mh_patient_search.js
 
-   Enhances every <div class="mh-ps"> rendered by mh_render_patient_name_fields():
-   type 2+ letters of a name -> pick the registered patient -> the Last / First / MI boxes are filled,
-   the exact patient id is remembered (hidden #pnPickedId) and the event "mh:patient-picked" fires
-   with {id, first_name, middle_name, last_name, birthdate, age, sex} so each page can react.
-   Editing the name afterwards un-links the patient (the name no longer matches the pick).
-   ============================================================== */
 (function (window, document) {
     'use strict';
     if (window.mhPatientSearchReady) { return; }
@@ -67,7 +58,7 @@
             fetch(url + '?q=' + encodeURIComponent(q), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
                 .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
                 .then(function (res) {
-                    if (mine !== seq) { return; }   // a newer keystroke already replaced this answer
+                    if (mine !== seq) { return; }
                     if (!res.ok) { list.innerHTML = '<li class="mh-ps-empty">' + esc(res.j.error || 'Search is unavailable.') + '</li>'; show(); return; }
                     render(res.j.results || [], q);
                 })
@@ -82,14 +73,13 @@
             else if (e.key === 'Enter') { if (active >= 0 && items[active]) { e.preventDefault(); pick(items[active]); } else if (items.length === 1) { e.preventDefault(); pick(items[0]); } else { e.preventDefault(); } }
             else if (e.key === 'Escape') { e.stopPropagation(); hide(); }
         });
-        list.addEventListener('mousedown', function (e) {   // mousedown: fires before the input's blur hides the list
+        list.addEventListener('mousedown', function (e) {
             var li = e.target.closest ? e.target.closest('li[data-i]') : null;
             if (li) { e.preventDefault(); pick(items[parseInt(li.getAttribute('data-i'), 10)]); }
         });
         input.addEventListener('blur', function () { setTimeout(hide, 120); });
         if (badge) { badge.addEventListener('click', function (e) { if (e.target.classList.contains('mh-ps-clear')) { unlink(); } }); }
 
-        // Typing over the filled-in name means it is no longer the picked patient.
         ['pnLast', 'pnFirst', 'pnMI'].forEach(function (id) {
             var el = document.getElementById(id);
             if (el) { el.addEventListener('input', function () {

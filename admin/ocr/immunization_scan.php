@@ -1,10 +1,5 @@
 <?php
-/**
- * Child immunization card OCR scan — dual-engine aware.
- * Page contract: upload field "ocr_file";
- * Success -> {success:true, fields:{...}, raw_text, engine, extracted_fields, extracted_identity, matched_patient};
- * Failure -> {success:false, error: "..."}
- */
+
 require_once __DIR__ . '/../../includes/ocr/ocr_endpoint.php';
 mh_ocr_preflight('error');
 
@@ -20,7 +15,6 @@ try {
         'field'  => 'ocr_file',
     ]);
 
-    // Route through the unified OCR engine dispatcher (Vision or Gemini per System Settings)
     $ocrResult = call_ocr_engine($upload['path']);
     if (!$ocrResult['success']) {
         mh_ocr_json_error($ocrResult['error'] ?? 'OCR scan failed. Please check the card or try again.');
@@ -31,21 +25,18 @@ try {
         mh_ocr_json_error('No readable text could be detected on this immunization card. Please ensure the photo is clear, upright, and well-lit.');
     }
 
-    // Parse structured immunization fields from the extracted text (enhances with Textract key-value pairs if available)
     if (!empty($ocrResult['kv']) && function_exists('mh_textract_map_fields')) {
         $fields = mh_textract_map_fields($ocrResult['kv'], $rawText, 'immunization');
     } else {
         $fields = vision_parse_immunization_text($rawText);
     }
 
-    // Every *_date field -> yyyy-mm-dd for the <input type="date"> fields
     $fields = mh_ocr_normalize_dates($fields, [
         'newborn_screening_date', 'tt_of_mother_date', 'mother_bday', 'father_bday',
         'bcg_date', 'hep_b_24hrs_date', 'penta_1_opv_1_date', 'penta_2_opv_2_date',
         'penta_opv_3_date', 'pcv_1_date', 'pcv_2_date', 'pcv_3_date', 'mr_date', 'mmr_date',
     ]);
 
-    // The child's name/birthdate are only used to look the child up safely
     $extracted_identity = mh_ocr_take_identity($fields);
     $matched_patient    = null;
     try {
@@ -54,7 +45,6 @@ try {
         vision_ocr_log_error($ocrResult['engine'] ?? 'vision', 'Match', 'Patient lookup failed: ' . $pe->getMessage());
     }
 
-    // Log successful scan in the audit trail (System Logs)
     try {
         if (isset($conn) && $conn instanceof mysqli && function_exists('logActivity') && !empty($_SESSION['user_id'])) {
             $nonEmptyCount = 0;
@@ -63,10 +53,9 @@ try {
             logActivity($conn, (int) $_SESSION['user_id'], (string) ($_SESSION['role'] ?? 'staff'), 'OCR Scan', 'Child Immunization OCR (' . $engine . '): ' . $nonEmptyCount . ' fields read.');
         }
     } catch (Throwable $le) {
-        // Logging should not break the response
+
     }
 
-    // Ensure valid UTF-8 strings before json_encode
     $safeFields = [];
     foreach ($fields as $k => $v) {
         $safeFields[$k] = is_string($v) ? mb_convert_encoding($v, 'UTF-8', 'UTF-8') : $v;
@@ -75,12 +64,12 @@ try {
 
     $payload = [
         'success'            => true,
-        'fields'             => $safeFields,             // clinical fields - auto-fills admin/immunization.php form
+        'fields'             => $safeFields,
         'raw_text'           => $safeRawText,
         'engine'             => $ocrResult['engine'] ?? 'vision',
         'extracted_fields'   => $safeFields,
-        'extracted_identity' => $extracted_identity,     // child's name/birthdate as read from the card
-        'matched_patient'    => $matched_patient,        // matched patient in database or null
+        'extracted_identity' => $extracted_identity,
+        'matched_patient'    => $matched_patient,
     ];
 
     $encoded = json_encode($payload);

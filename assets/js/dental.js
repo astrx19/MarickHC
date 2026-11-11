@@ -1,4 +1,4 @@
-/* Dental module front-end: tabs, odontogram, caries risk, multi-page OCR. No external libraries. */
+
 (function () {
     'use strict';
     var CFG = window.DN_CFG || {};
@@ -6,15 +6,13 @@
     var $ = function (s, r) { return (r || document).querySelector(s); };
     var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
     var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+    window.mhEsc = esc;
     var dirty = false, submitting = false;
-    // Unified confirm dialog (assets/js/custom_modal.js) with a native fallback if that script failed to load.
+
     var ask = function (msg, title, type, okText) {
         return window.mh_confirm ? window.mh_confirm(msg, title, type, okText) : Promise.resolve(window.confirm(msg));
     };
 
-    /* ------------------------------------------------------------------
-     * LIST PAGE helpers
-     * ---------------------------------------------------------------- */
     var pf = $('#dnPatientFilter'), ps = $('#dnPatientSelect');
     if (pf && ps) {
         pf.addEventListener('input', function () {
@@ -30,9 +28,6 @@
         });
     }
 
-    /* ------------------------------------------------------------------
-     * CHART PAGE
-     * ---------------------------------------------------------------- */
     var form = $('#dnForm');
     var odo = {}, sel = {}, view = 'both', multi = false;
     var group = 'adult', answersBy = { child: {}, adult: {} }, finalTouched = false;
@@ -45,7 +40,7 @@
     if (D && form) { initChart(); }
 
     function initChart() {
-        /* ---- tabs ---- */
+
         var TABS = ['A', 'B', 'C', 'D', 'E'];
         var current = D.tab || 'A';
         function showTab(t, noScroll) {
@@ -58,7 +53,7 @@
             $('#dnPrev').disabled = i === 0; $('#dnNext').disabled = i === TABS.length - 1;
             var sv = $('#dnSave'); if (sv) { sv.style.display = (t === 'E') ? 'none' : ''; }
             var dd = $('#dnDirty'); if (dd && t === 'E') { dd.hidden = true; } else if (dd && dirty) { dd.hidden = false; }
-            try { history.replaceState(null, '', location.pathname + '?patient=' + D.patientId + '&tab=' + t); } catch (e) { /* ignore */ }
+            try { history.replaceState(null, '', location.pathname + '?patient=' + D.patientId + '&tab=' + t); } catch (e) {  }
             if (!noScroll) { window.scrollTo({ top: 0, behavior: 'smooth' }); }
         }
         $$('.du-tab').forEach(function (b) { b.addEventListener('click', function () { showTab(b.dataset.tab); }); });
@@ -66,7 +61,6 @@
         $('#dnNext').addEventListener('click', function () { showTab(TABS[Math.min(TABS.length - 1, TABS.indexOf(current) + 1)]); });
         showTab(current, true);
 
-        /* ---- conditional fields + medical alerts ---- */
         function updateConditionals() {
             $$('[data-dn-when]').forEach(function (el) {
                 var parts = el.dataset.dnWhen.split('=');
@@ -86,7 +80,7 @@
             if (pg && pg.value === 'y') { var pm = form.querySelector('input[name="mh[pregnant_months]"]'); out.push('Pregnant' + (pm && pm.value.trim() ? ' (' + pm.value.trim() + ' mo)' : '')); }
             var med = form.querySelector('input[name="mh[q][medicine]"]:checked'); if (med && med.value === 'y') { out.push('Taking medicine'); }
             var box = $('#dnAlerts');
-            box.innerHTML = out.length ? out.map(function (a) { return '<span class="du-alert-chip">&#9888; ' + esc(a) + '</span>'; }).join('') : '<span class="du-muted">No medical alerts recorded.</span>';
+            box.innerHTML = out.length ? out.map(function (a) { return '<span class="du-alert-chip">' + esc(a) + '</span>'; }).join('') : '<span class="du-muted">No medical alerts recorded.</span>';
         }
         form.addEventListener('change', function (e) { updateConditionals(); if (e.target.name && e.target.name.indexOf('mh[') === 0) { updateAlerts(); } });
         form.addEventListener('input', function () { markDirty(); });
@@ -95,7 +89,6 @@
         window.addEventListener('beforeunload', function (e) { if (dirty && !submitting) { e.preventDefault(); e.returnValue = ''; } });
         updateConditionals(); updateAlerts();
 
-        /* ---- odontogram ---- */
         odo = JSON.parse(JSON.stringify(D.odontogram || {}));
         var cond = D.conditions, stat = D.statuses;
         function kindOf(t) { return Number(t) < 50 ? 'permanent' : 'primary'; }
@@ -210,7 +203,6 @@
         });
         renderChart();
 
-        /* ---- caries risk ---- */
         group = D.cariesGroup === 'child' ? 'child' : 'adult';
         answersBy[group] = JSON.parse(JSON.stringify(D.cariesAnswers || {}));
         finalTouched = !!D.cariesFinal;
@@ -289,7 +281,6 @@
         });
         renderCaries();
 
-        /* ---- treatment: use a scanned row ---- */
         window.DN_useScannedTreatment = function (t) {
             var set = function (id, v) { var el = document.getElementById(id); if (el) { el.value = v || ''; } };
             if (t.date) { set('dnTDate', t.date); }
@@ -313,16 +304,12 @@
             finalTouched = false; renderCaries();
         };
 
-        // A scan started on the list page is waiting for this chart
         try {
             var pending = sessionStorage.getItem('dnOcr');
             if (pending) { sessionStorage.removeItem('dnOcr'); applyOcr(JSON.parse(pending)); }
-        } catch (e) { /* ignore */ }
+        } catch (e) {  }
     }
 
-    /* ------------------------------------------------------------------
-     * Apply merged OCR output to the open chart
-     * ---------------------------------------------------------------- */
     function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z\u00f1]/g, ''); }
     function dotToName(key) { var p = key.split('.'); return p[0] + p.slice(1).map(function (x) { return '[' + x + ']'; }).join(''); }
     function setByName(name, val) {
@@ -380,9 +367,6 @@
         box.onclick = function (e) { var b = e.target.closest('[data-use]'); if (b && window.DN_useScannedTreatment) { window.DN_useScannedTreatment(window.DN_scanRows[Number(b.dataset.use)]); } };
     }
 
-    /* ------------------------------------------------------------------
-     * OCR MODAL (list + chart pages)
-     * ---------------------------------------------------------------- */
     var modal = $('#dnOcrModal');
     if (modal && CFG.canOcr) {
         var files = [], running = false;
@@ -391,7 +375,7 @@
         function openModal() { modal.hidden = false; document.body.style.overflow = 'hidden'; }
         function hideModal() {
             modal.hidden = true; document.body.style.overflow = '';
-            // Opened from the New Dental Record form? Give the form back (it keeps everything that was typed).
+
             var back = window.DN_ocrClosed; window.DN_ocrClosed = null; window.DN_ocrHandler = null;
             if (back) { back(); }
         }
@@ -400,7 +384,7 @@
             ask('A scan is still running. Close anyway?', 'Scan in progress', 'warning', 'Close anyway').then(function (ok) { if (ok) { hideModal(); } });
         }
         openers.forEach(function (b) { b.addEventListener('click', openModal); });
-        // "Scan the paper forms instead" on the first-visit message lands here with ?scan=1
+
         if (/[?&]scan=1\b/.test(window.location.search) && openers[0]) { setTimeout(function () { openModal(); }, 150); }
         $('#dnOcrClose').addEventListener('click', closeModal); $('#dnOcrCancel').addEventListener('click', closeModal);
         modal.addEventListener('click', function (e) { if (e.target === modal) { closeModal(); } });
@@ -408,7 +392,7 @@
 
         function renderFiles() {
             listEl.innerHTML = files.map(function (f, i) {
-                var thumb = (f.file.type.indexOf('image/') === 0 && f.file.type !== 'image/heic' && f.file.type !== 'image/heif') ? '<img alt="" src="' + f.url + '">' : '<span style="width:44px;text-align:center;">&#128196;</span>';
+                var thumb = (f.file.type.indexOf('image/') === 0 && f.file.type !== 'image/heic' && f.file.type !== 'image/heif') ? '<img alt="" src="' + f.url + '">' : '<span style="width:44px;text-align:center;"></span>';
                 return '<li data-i="' + i + '">' + thumb + '<span class="du-fname">' + esc((i + 1) + '. ' + f.file.name) + '</span><span class="du-fstat ' + f.cls + '">' + esc(f.status) + '</span>' +
                        (running ? '' : '<button type="button" class="du-frm" data-rm="' + i + '" aria-label="Remove">&times;</button>') + '</li>';
             }).join('');
@@ -426,10 +410,9 @@
         ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('is-over'); }); });
         ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('is-over'); }); });
         drop.addEventListener('drop', function (e) { addFiles(e.dataTransfer.files); });
-        // The <label> opens the file picker natively; no click handler (a preventDefault here blocked the picker).
+
         listEl.addEventListener('click', function (e) { var b = e.target.closest('[data-rm]'); if (b && !running) { files.splice(Number(b.dataset.rm), 1); renderFiles(); } });
 
-        // Big phone photos are shrunk in the browser first: faster upload, same legibility.
         function shrink(file) {
             return new Promise(function (resolve) {
                 if (file.type.indexOf('image/') !== 0 || file.size < 1500000 || file.type === 'image/heic' || file.type === 'image/heif') { return resolve(file); }
@@ -493,7 +476,7 @@
                 resEl.innerHTML = '<strong>Nothing could be read.</strong> Check the photos are sharp, well lit and show the whole page, then try again. Some pages may also have failed (see the list above).';
                 return;
             }
-            if (window.DN_ocrHandler) {   // started from the New Dental Record form: hand the rows over for review instead of opening a chart
+            if (window.DN_ocrHandler) {
                 var handler = window.DN_ocrHandler;
                 resEl.innerHTML = '<strong>Done.</strong> ' + total + ' item(s) read from ' + okPages + ' page(s). Opening the review...';
                 setTimeout(function () { var h = handler; hideModal(); window.DN_ocrHandler = null; h(merged); }, 700);
@@ -505,8 +488,8 @@
                 setTimeout(function () { modal.hidden = true; document.body.style.overflow = ''; }, 900);
                 return;
             }
-            // List page: go to the matching patient's chart (or let the user choose)
-            var go = function (id) { try { sessionStorage.setItem('dnOcr', JSON.stringify(merged)); } catch (e) { /* ignore */ } location.href = 'dental.php?patient=' + id; };
+
+            var go = function (id) { try { sessionStorage.setItem('dnOcr', JSON.stringify(merged)); } catch (e) {  } location.href = 'dental.php?patient=' + id; };
             if (merged.matched) {
                 resEl.innerHTML = '<strong>Done.</strong> ' + total + ' item(s) read. These forms match <b>' + esc(merged.matched.full_name) + '</b>.<div style="margin-top:10px;"><button type="button" class="du-btn du-btn-primary" id="dnGoMatched">Open ' + esc(merged.matched.first_name) + '\'s chart and review</button></div>';
                 $('#dnGoMatched').addEventListener('click', function () { go(merged.matched.id); });

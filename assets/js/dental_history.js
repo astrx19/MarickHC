@@ -1,14 +1,11 @@
-/* ==============================================================
-   DENTAL - Tooth chart history (Part 2)    assets/js/dental_history.js
-   Reads dental.php?ajax=snapshots and shows what changed between two dates.
-   ============================================================== */
+
 (function () {
     'use strict';
     var host = document.getElementById('dnHistory');
     if (!host) { return; }
     var body = document.getElementById('dnHistoryBody');
     var pid = host.getAttribute('data-patient');
-    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    var esc = function (v) { return window.mhEsc(v); };
     function fmt(d) { var t = new Date(String(d).replace(' ', 'T')); return isNaN(t) ? d : t.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
 
     var data = null;
