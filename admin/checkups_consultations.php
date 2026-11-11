@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/queue_helper.php';
 require_once __DIR__ . '/../includes/sms_helper.php';
 require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
 require_once __DIR__ . '/../includes/clinical_module_helper.php';
+require_once __DIR__ . '/../includes/pagination_helper.php';
 mh_sms_install($conn);
 
 require_capability(['can_log_consultations', 'can_view_consultation_history']);
@@ -106,13 +107,14 @@ $queue   = mh_cm_queue_prefill($conn, 'checkups', function (mysqli $conn, $pid, 
     return $pf;
 }, $can_log && $flash['success'] === '');
 
-$consultations = !$can_view_history ? false : $conn->query("
-    SELECT c.*, p.first_name, p.middle_name, p.last_name, s.last_name AS doc_name
-    FROM consultations c
-    LEFT JOIN patients p ON c.patient_id = p.id
-    LEFT JOIN staff s ON c.doctor_id = s.id
-    ORDER BY c.visit_date DESC, c.created_at DESC
-");
+$search = mh_pg_search(['p.first_name', 'p.last_name', 'c.patient_name', "CONCAT_WS(' ', p.first_name, p.last_name)", 'c.diagnosis', 'c.chief_complaints'], $_GET['q'] ?? '');
+$list = $can_view_history ? mh_pg_fetch(
+    $conn,
+    'c.*, p.first_name, p.middle_name, p.last_name, s.last_name AS doc_name',
+    'consultations c LEFT JOIN patients p ON c.patient_id = p.id LEFT JOIN staff s ON c.doctor_id = s.id' . ($search['sql'] ? ' WHERE ' . $search['sql'] : ''),
+    'c.visit_date DESC, c.created_at DESC, c.id DESC',
+    $search['types'], $search['params']
+) : ['rows' => [], 'pg' => mh_pg_state(0)];
 
 require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'General Consultations', 'late_styles' => ['css/dept_ui.css']]);
@@ -120,7 +122,7 @@ mh_layout_open();
 echo mh_notify_script($flash['success'], 'success');
 ?>
         <div class="dashboard-container du-wrap">
-            <?php mh_cm_header('General Consultation Records', 'General consultations, vitals and clinical notes.', 'searchCheckup', 'Search patient...', 'checkupTable', 1, $can_view_history, $can_log, 'addCheckupModal', 'New Consultation Record'); ?>
+            <?php mh_cm_header('General Consultation Records', 'General consultations, vitals and clinical notes.', 'Search patient or diagnosis...', $can_view_history, $can_log, 'addCheckupModal', 'New Consultation Record'); ?>
 
             <div class="du-card">
                 <?php if ($can_view_history): ?>
@@ -130,8 +132,8 @@ echo mh_notify_script($flash['success'], 'success');
                         <tr><th>Date</th><th>Patient Name</th><th>Vitals</th><th>Clinical Notes</th><th>Attending</th></tr>
                     </thead>
                     <tbody>
-                        <?php if ($consultations && $consultations->num_rows > 0): ?>
-                            <?php while ($row = $consultations->fetch_assoc()): ?>
+                        <?php if ($list['rows']): ?>
+                            <?php foreach ($list['rows'] as $row): ?>
                             <tr>
                                 <td data-label="Date" class="cf-nowrap"><strong class="cf-tone-info"><?php echo mh_h(date('M d, Y', strtotime($row['visit_date']))); ?></strong></td>
                                 <td data-label="Patient"><span class="cf-cell-main"><?php echo mh_h(mh_record_patient_label($row)); ?></span></td>
@@ -150,13 +152,14 @@ echo mh_notify_script($flash['success'], 'success');
                                 </td>
                                 <td data-label="Attending"><strong>Dr. <?php echo mh_h($row['doc_name'] ?? 'Unknown'); ?></strong></td>
                             </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
-                            <tr class="empty-state"><td colspan="5">No consultations recorded yet.</td></tr>
+                            <tr class="empty-state"><td colspan="5"><?php echo ($_GET['q'] ?? '') !== '' ? 'No consultations match your search.' : 'No consultations recorded yet.'; ?></td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
                 </div>
+                <?php mh_pg_render($list['pg'], ['noun' => 'consultations']); ?>
                 <?php else: ?>
                 <div class="cf-notice">You can log new consultations here, but your account does not include permission to view the history.</div>
                 <?php endif; ?>

@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/queue_helper.php';
 require_once __DIR__ . '/../includes/sms_helper.php';
 require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
 require_once __DIR__ . '/../includes/clinical_module_helper.php';
+require_once __DIR__ . '/../includes/pagination_helper.php';
 mh_sms_install($conn);
 
 require_capability(['can_log_maternal', 'can_view_maternal_history']);
@@ -121,13 +122,14 @@ $queue = mh_cm_queue_prefill($conn, 'maternal_care', function (mysqli $conn, $pi
     return $pf;
 }, $can_log && $flash['success'] === '');
 
-$prenatal_logs = !$can_view_history ? false : $conn->query("
-    SELECT m.*, p.first_name, p.middle_name, p.last_name, s.last_name AS mw_name
-    FROM maternal_records m
-    LEFT JOIN patients p ON m.patient_id = p.id
-    LEFT JOIN staff s ON m.midwife_id = s.id
-    ORDER BY m.visit_date DESC, m.created_at DESC
-");
+$search = mh_pg_search(['p.first_name', 'p.last_name', 'm.patient_name', "CONCAT_WS(' ', p.first_name, p.last_name)"], $_GET['q'] ?? '');
+$list = $can_view_history ? mh_pg_fetch(
+    $conn,
+    'm.*, p.first_name, p.middle_name, p.last_name, s.last_name AS mw_name',
+    'maternal_records m LEFT JOIN patients p ON m.patient_id = p.id LEFT JOIN staff s ON m.midwife_id = s.id' . ($search['sql'] ? ' WHERE ' . $search['sql'] : ''),
+    'm.visit_date DESC, m.created_at DESC, m.id DESC',
+    $search['types'], $search['params']
+) : ['rows' => [], 'pg' => mh_pg_state(0)];
 
 require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'Maternal Care', 'late_styles' => ['css/dept_ui.css']]);
@@ -136,7 +138,7 @@ echo mh_notify_script($flash['success'], 'success');
 $today = date('Y-m-d');
 ?>
         <div class="dashboard-container du-wrap">
-            <?php mh_cm_header('Prenatal Care Records', 'Prenatal visits and maternal health records.', 'searchPrenatal', "Search mother's name...", 'prenatalTable', 1, $can_view_history, $can_log, 'addPrenatalModal', 'New Prenatal Record'); ?>
+            <?php mh_cm_header('Prenatal Care Records', 'Prenatal visits and maternal health records.', "Search mother's name...", $can_view_history, $can_log, 'addPrenatalModal', 'New Prenatal Record'); ?>
 
             <div class="du-card">
                 <?php if ($can_view_history): ?>
@@ -146,8 +148,8 @@ $today = date('Y-m-d');
                         <tr><th>Date &amp; AOG</th><th>Mother's Name</th><th>Vitals</th><th>FH / FHT</th><th>Attending Midwife</th></tr>
                     </thead>
                     <tbody>
-                        <?php if ($prenatal_logs && $prenatal_logs->num_rows > 0): ?>
-                            <?php while ($row = $prenatal_logs->fetch_assoc()): ?>
+                        <?php if ($list['rows']): ?>
+                            <?php foreach ($list['rows'] as $row): ?>
                             <tr>
                                 <td data-label="Date" class="cf-nowrap">
                                     <strong><?php echo mh_h(date('M d, Y', strtotime($row['visit_date']))); ?></strong>
@@ -168,13 +170,14 @@ $today = date('Y-m-d');
                                     <?php if (!empty($row['notes'])): ?><span class="cf-cell-sub"><?php echo mh_h($row['notes']); ?></span><?php endif; ?>
                                 </td>
                             </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
-                            <tr class="empty-state"><td colspan="5">No prenatal visits recorded yet.</td></tr>
+                            <tr class="empty-state"><td colspan="5"><?php echo ($_GET['q'] ?? '') !== '' ? 'No prenatal visits match your search.' : 'No prenatal visits recorded yet.'; ?></td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
                 </div>
+                <?php mh_pg_render($list['pg'], ['noun' => 'prenatal visits']); ?>
                 <?php else: ?>
                 <div class="cf-notice">You can log new prenatal visits here, but your account does not include permission to view the history.</div>
                 <?php endif; ?>

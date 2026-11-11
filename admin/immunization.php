@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/queue_helper.php';
 require_once __DIR__ . '/../includes/sms_helper.php';
 require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
 require_once __DIR__ . '/../includes/clinical_module_helper.php';
+require_once __DIR__ . '/../includes/pagination_helper.php';
 mh_sms_install($conn);
 
 require_capability(['can_log_immunization', 'can_view_immunization_records']);
@@ -174,13 +175,14 @@ $queue = mh_cm_queue_prefill($conn, 'immunization', function (mysqli $conn, $pid
     return $pf;
 }, $can_log && $flash['success'] === '');
 
-$immunization_logs = !$can_view_history ? false : $conn->query("
-    SELECT c.*, p.first_name, p.middle_name, p.last_name, p.birthdate, p.sex, s.last_name AS staff_name
-    FROM child_immunization_records c
-    LEFT JOIN patients p ON c.patient_id = p.id
-    LEFT JOIN staff s ON c.attending_staff_id = s.id
-    ORDER BY c.created_at DESC
-");
+$search = mh_pg_search(['p.first_name', 'p.last_name', 'c.patient_name', "CONCAT_WS(' ', p.first_name, p.last_name)", 'c.mother_name'], $_GET['q'] ?? '');
+$list = $can_view_history ? mh_pg_fetch(
+    $conn,
+    'c.*, p.first_name, p.middle_name, p.last_name, p.birthdate, p.sex, s.last_name AS staff_name',
+    'child_immunization_records c LEFT JOIN patients p ON c.patient_id = p.id LEFT JOIN staff s ON c.attending_staff_id = s.id' . ($search['sql'] ? ' WHERE ' . $search['sql'] : ''),
+    'c.created_at DESC, c.id DESC',
+    $search['types'], $search['params']
+) : ['rows' => [], 'pg' => mh_pg_state(0)];
 
 require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'Child Immunization Form', 'late_styles' => ['css/dept_ui.css']]);
@@ -203,7 +205,7 @@ $vaccine = function ($label, $name, $type = 'date', $ph = '') {
 };
 ?>
         <div class="dashboard-container du-wrap">
-            <?php mh_cm_header('Child Immunization Records', 'Child immunization records, vaccines and visit history.', 'searchChild', 'Search child name...', 'childTable', 0, $can_view_history, $can_log, 'addChildModal', 'New Immunization Form'); ?>
+            <?php mh_cm_header('Child Immunization Records', 'Child immunization records, vaccines and visit history.', 'Search child or mother...', $can_view_history, $can_log, 'addChildModal', 'New Immunization Form'); ?>
 
             <div class="du-card">
                 <?php if ($can_view_history): ?>
@@ -213,8 +215,8 @@ $vaccine = function ($label, $name, $type = 'date', $ph = '') {
                         <tr><th>Child Name</th><th>Birthdate &amp; Sex</th><th>Parents / Contact</th><th>Birth Info</th><th>Attending Staff</th></tr>
                     </thead>
                     <tbody>
-                        <?php if ($immunization_logs && $immunization_logs->num_rows > 0): ?>
-                            <?php while ($row = $immunization_logs->fetch_assoc()): ?>
+                        <?php if ($list['rows']): ?>
+                            <?php foreach ($list['rows'] as $row): ?>
                             <tr>
                                 <td data-label="Child">
                                     <span class="cf-cell-main"><?php echo mh_h(mh_record_patient_label($row)); ?></span>
@@ -228,13 +230,14 @@ $vaccine = function ($label, $name, $type = 'date', $ph = '') {
                                 <td data-label="Birth" class="cf-cell-lines"><div><strong>Wt:</strong> <?php echo mh_h($row['birth_weight'] ?? '--'); ?> | <strong>Ht:</strong> <?php echo mh_h($row['birth_height'] ?? '--'); ?></div><div><strong>Place:</strong> <?php echo mh_h($row['birth_place'] ?? '--'); ?></div></td>
                                 <td data-label="Staff"><strong><?php echo mh_h($row['staff_name'] ?? 'System'); ?></strong></td>
                             </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
-                            <tr class="empty-state"><td colspan="5">No child immunization records found.</td></tr>
+                            <tr class="empty-state"><td colspan="5"><?php echo ($_GET['q'] ?? '') !== '' ? 'No records match your search.' : 'No child immunization records found.'; ?></td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
                 </div>
+                <?php mh_pg_render($list['pg'], ['noun' => 'records']); ?>
                 <?php else: ?>
                 <div class="cf-notice">You can log new immunization forms here, but your account does not include permission to view the history.</div>
                 <?php endif; ?>

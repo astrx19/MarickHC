@@ -145,18 +145,6 @@
         }
     });
 
-    function filterTable(input) {
-        var table = document.getElementById(input.getAttribute('data-cf-search'));
-        if (!table) { return; }
-        var col = parseInt(input.getAttribute('data-cf-col') || '0', 10);
-        var q = input.value.trim().toUpperCase();
-        Array.prototype.forEach.call(table.tBodies[0].rows, function (tr) {
-            if (tr.classList.contains('empty-state')) { return; }
-            var cell = tr.cells[col];
-            tr.style.display = !cell || cell.textContent.toUpperCase().indexOf(q) > -1 ? '' : 'none';
-        });
-    }
-
     function recalcBmi(form) {
         var w = form.querySelector('[data-cf-bmi-w]');
         var h = form.querySelector('[data-cf-bmi-h]');
@@ -258,7 +246,6 @@
 
     document.addEventListener('input', function (e) {
         var t = e.target;
-        if (t.matches && t.matches('[data-cf-search]')) { filterTable(t); return; }
         var form = t.form;
         if (form && form.hasAttribute('data-cf-bmi') && t.matches('[data-cf-bmi-w],[data-cf-bmi-h]')) { recalcBmi(form); }
     });

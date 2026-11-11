@@ -261,14 +261,16 @@ if (!function_exists('mh_cm_save_button')) {
 
 if (!function_exists('mh_cm_header')) {
 
-    function mh_cm_header($title, $subtitle, $searchId, $searchPlaceholder, $tableId, $col, $canView, $canLog, $modalId, $newLabel)
+    function mh_cm_header($title, $subtitle, $searchPlaceholder, $canView, $canLog, $modalId, $newLabel)
     {
         ?>
             <div class="du-pagehead">
                 <div><h1><?php echo mh_h($title); ?></h1><p><?php echo mh_h($subtitle); ?></p></div>
                 <div class="du-actions">
                     <?php if ($canView): ?>
-                    <input type="search" id="<?php echo mh_h($searchId); ?>" class="search-box" placeholder="<?php echo mh_h($searchPlaceholder); ?>" data-cf-search="<?php echo mh_h($tableId); ?>" data-cf-col="<?php echo (int) $col; ?>" aria-label="<?php echo mh_h($searchPlaceholder); ?>">
+                    <form method="get" class="du-actions" role="search">
+                        <input type="search" name="q" class="search-box" value="<?php echo mh_h($_GET['q'] ?? ''); ?>" placeholder="<?php echo mh_h($searchPlaceholder); ?>" aria-label="<?php echo mh_h($searchPlaceholder); ?>">
+                    </form>
                     <?php endif; ?>
                     <?php if ($canLog): ?>
                     <button type="button" class="du-btn du-btn-primary" data-cf-open="<?php echo mh_h($modalId); ?>"><?php echo mh_icon('plus'); ?> <?php echo mh_h($newLabel); ?></button>
@@ -276,5 +278,6 @@ if (!function_exists('mh_cm_header')) {
                 </div>
             </div>
         <?php
+
     }
 }

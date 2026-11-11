@@ -1,0 +1,21 @@
+.mh-pg { display: flex; align-items: center; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; padding: 14px 4px 2px; margin-top: 8px; border-top: 1px solid var(--border-color, #e2e8f0); color: var(--text-muted, #64748b); font-size: .88rem; }
+.mh-pg-info strong { color: var(--text-color, #1e293b); }
+.mh-pg-list { display: flex; align-items: center; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.mh-pg-link { display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 38px; padding: 0 12px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; background: var(--card-bg, #fff); color: var(--text-color, #1e293b); font-weight: 600; font-size: .88rem; text-decoration: none; box-sizing: border-box; transition: background .15s, border-color .15s, color .15s; }
+a.mh-pg-link:hover { background: var(--bg-hover, #f1f5f9); border-color: var(--button-bg, #4ca1af); color: var(--button-bg, #4ca1af); }
+a.mh-pg-link:focus-visible, .mh-pg-size select:focus-visible { outline: 2px solid var(--button-bg, #4ca1af); outline-offset: 2px; }
+.mh-pg-link.is-current { background: var(--button-bg, #4ca1af); border-color: var(--button-bg, #4ca1af); color: var(--button-text, #fff); cursor: default; }
+.mh-pg-link.is-disabled { opacity: .45; cursor: not-allowed; }
+.mh-pg-link.is-gap { border-color: transparent; background: transparent; min-width: 22px; padding: 0 2px; }
+.mh-pg-pos { display: none; }
+.mh-pg-size label { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.mh-pg-size select { height: 38px; padding: 0 10px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 10px; background: var(--card-bg, #fff); color: var(--text-color, #1e293b); font: inherit; }
+
+@media (max-width: 720px) {
+    .mh-pg { flex-direction: column; align-items: stretch; text-align: center; }
+    .mh-pg-list { justify-content: center; }
+    .mh-pg-num, .mh-pg-gap { display: none; }
+    .mh-pg-pos { display: block; }
+    .mh-pg-step { min-width: 96px; height: 44px; }
+    .mh-pg-size { align-self: center; }
+}
