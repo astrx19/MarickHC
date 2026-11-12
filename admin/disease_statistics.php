@@ -94,7 +94,7 @@ $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
-mh_layout_head(['title' => 'Disease Statistics']);
+mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Statistics Report']);
 ?>
     <style>
         .ds-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 600; }
@@ -123,7 +123,6 @@ mh_layout_head(['title' => 'Disease Statistics']);
         .ds-drawer summary:hover { background: var(--border-color, #f1f5f9); }
         .ds-drawer-hint { font-size: 0.8rem; font-weight: 600; color: var(--text-muted, #64748b); }
         .ds-drawer-content { padding: 20px; border-top: 1px solid var(--border-color, #e2e8f0); }
-        @media print { .ds-drawer { display: block !important; } .ds-drawer summary { display: none !important; } .ds-drawer-content { padding: 0 !important; border-top: none !important; } }
         /* AI Health Insights Card */
         .ds-ai-card {
             background: linear-gradient(135deg, rgba(76, 161, 175, 0.08) 0%, rgba(14, 165, 233, 0.05) 100%);
@@ -210,7 +209,6 @@ mh_layout_head(['title' => 'Disease Statistics']);
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        @media print { .no-print, .sidebar, .topbar, .ds-ai-header button { display: none !important; } }
     </style>
 <?php mh_layout_open(); ?>
         <div class="dashboard-container">
@@ -336,7 +334,7 @@ mh_layout_head(['title' => 'Disease Statistics']);
                 ?>
 
                 <!-- Collapsible Demographic & Department Breakdown Drawer -->
-                <details class="ds-drawer no-print">
+                <details class="ds-drawer">
                     <summary>
                         <span>Demographic &amp; Department Breakdowns (Sex, Age, Area, Department)</span>
                         <span class="ds-drawer-hint">Click to expand / collapse</span>
@@ -354,7 +352,7 @@ mh_layout_head(['title' => 'Disease Statistics']);
                     <?php foreach ($ov['by_week'] as $wk => $n): ?>
                         <div style="flex:1; min-width:34px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="Week of <?php echo $h(date('M d', strtotime($wk))); ?>: <?php echo (int) $n; ?> case(s)">
                             <small style="font-weight:700;"><?php echo (int) $n; ?></small>
-                            <div style="width:100%; background:#4ca1af; border-radius:5px 5px 0 0; height:<?php echo max(2, round($n / $wmax * 80)); ?>%;"></div>
+                            <div class="print-bar" style="width:100%; background:#4ca1af; border-radius:5px 5px 0 0; height:<?php echo max(2, round($n / $wmax * 80)); ?>%;"></div>
                             <small style="color:var(--text-muted,#64748b); font-size:.68rem;"><?php echo $h(date('M j', strtotime($wk))); ?></small>
                         </div>
                     <?php endforeach; ?>

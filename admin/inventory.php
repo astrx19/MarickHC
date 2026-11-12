@@ -236,7 +236,7 @@ $js_categories = json_encode(array_values($inv_categories), JSON_HEX_TAG | JSON_
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
-mh_layout_head(['title' => 'Supply Masterlist']);
+mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inventory Report']);
 ?>
     <style>
         .stats-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 25px; }
@@ -384,6 +384,7 @@ mh_layout_head(['title' => 'Supply Masterlist']);
                             <option value="90">Expiring in 90 days</option>
                             <option value="expired">Expired</option>
                         </select>
+                        <button type="button" class="btn-secondary no-print" onclick="window.print()"><?php echo mh_icon('file-text'); ?> Print</button>
                         <?php if ($can_edit_stock): ?>
                         <button class="btn-add" onclick="openAddItemModalBlank()"><?php echo mh_icon('plus'); ?> Add New Batch</button>
                         <?php endif; ?>
@@ -401,7 +402,7 @@ mh_layout_head(['title' => 'Supply Masterlist']);
                             <th>Earliest Expiration</th>
                             <th>Category &amp; Form</th>
                             <th>Status</th>
-                            <th>Action</th>
+                            <th class="no-print">Action</th>
                         </tr>
                     </thead>
                     <tbody id="inventoryTbody">
@@ -984,7 +985,7 @@ mh_layout_head(['title' => 'Supply Masterlist']);
                         ${packagingBreakdown(b) ? `<div style="font-size:0.72rem;color:var(--primary);font-weight:bold;margin-top:2px;">${packagingBreakdown(b)}</div>` : ''}
                     </td>
                     <td><span class="status-pill ${b.statusClass}">${b.label}</span></td>
-                    <td>
+                    <td class="no-print">
                         <div class="action-btn-group">
                             ${MH_CAN_EDIT_STOCK ? `${b.isExpired && b.quantity > 0 ? `<button class="btn-manage" style="background:#b91c1c;color:#fff;" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id], 'dispose')">${mhIconSvg('archive')} Dispose</button>` : `<button class="btn-manage" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('package')} Manage</button>`}
                             <button class="btn-icon icon-edit" data-id="${b.id}" title="Edit Batch" onclick="openEditBatchModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('edit')}</button>
@@ -1039,7 +1040,7 @@ mh_layout_head(['title' => 'Supply Masterlist']);
                     </td>
                     <td>${escapeHtml(group.category)}<div style="font-size:0.8rem;color:var(--text-muted);">${escapeHtml(group.unit)}</div></td>
                     <td><span class="status-pill ${group.statusClass}">${group.label}</span></td>
-                    <td onclick="event.stopPropagation();">
+                    <td class="no-print" onclick="event.stopPropagation();">
                         <div class="action-btn-group">
                             ${MH_CAN_EDIT_STOCK ? `<button class="btn-add-batch"
                                 data-item-name="${escapeHtml(group.generic_name)}"
@@ -1066,7 +1067,7 @@ mh_layout_head(['title' => 'Supply Masterlist']);
                                         <th>Expiry Date</th>
                                         <th>Stock Level</th>
                                         <th>Status</th>
-                                        <th>Action</th>
+                                        <th class="no-print">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>

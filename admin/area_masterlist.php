@@ -25,7 +25,7 @@ $st->close();
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
-mh_layout_head(['title' => 'Area Masterlist']);
+mh_layout_head(['title' => 'Area Masterlist', 'print_title' => 'Area Masterlist Report']);
 ?>
 <?php mh_layout_open(); ?>
 
@@ -49,7 +49,10 @@ mh_layout_head(['title' => 'Area Masterlist']);
             <div class="unified-panel">
                 <div class="panel-controls">
                     <h2 style="margin:0; font-size:1.3rem; color:var(--heading-color, #1e293b);">Area Demographics</h2>
-                    <input type="text" id="searchInput" class="search-box" onkeyup="filterTable()" placeholder="Search street or area...">
+                    <div class="no-print" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="searchInput" class="search-box" onkeyup="filterTable()" placeholder="Search street or area...">
+                        <button type="button" class="btn-secondary" onclick="window.print()"><?php echo mh_icon('file-text'); ?> Print</button>
+                    </div>
                 </div>
 
                 <table id="areaTable" class="unified-table">

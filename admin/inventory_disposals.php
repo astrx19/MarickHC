@@ -46,7 +46,7 @@ $filtered = ($f['from'] !== '' || $f['to'] !== '' || $f['reason'] !== '' || $f['
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
-mh_layout_head(['title' => 'Disposal History']);
+mh_layout_head(['title' => 'Disposal History', 'print_title' => 'Disposal History Report']);
 ?>
     <style>
         .dh-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 20px; }
@@ -56,11 +56,6 @@ mh_layout_head(['title' => 'Disposal History']);
         .dh-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 14px 20px; border-bottom: 1px solid var(--border-color, #e2e8f0); }
         .dh-filters label { display: block; font-size: .74rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); margin-bottom: 4px; }
         .dh-sub { display: block; font-size: .78rem; color: var(--text-muted, #64748b); }
-        @media print {
-            .sidebar, .topbar, .mh-tabs, .dh-filters, .no-print, #mhToastStack { display: none !important; }
-            .main-content { margin: 0 !important; padding: 0 !important; width: 100% !important; }
-            body { background: #fff !important; }
-        }
     </style>
 <?php mh_layout_open(); ?>
 

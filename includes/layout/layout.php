@@ -6,13 +6,14 @@ if (session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/../icons.php';
 require_once __DIR__ . '/../settings_helper.php';
 require_once __DIR__ . '/../ui_helpers.php';
+require_once __DIR__ . '/../print_header.php';
 require_once __DIR__ . '/staff_nav.php';
 require_once __DIR__ . '/patient_nav.php';
 
 if (!function_exists('mh_layout_state')) {
     function mh_layout_state(?array $set = null): array
     {
-        static $state = ['portal' => 'staff', 'title' => '', 'system_name' => '', 'late_styles' => []];
+        static $state = ['portal' => 'staff', 'title' => '', 'system_name' => '', 'late_styles' => [], 'print_title' => '', 'print_note' => ''];
         if ($set !== null) {
             $state = array_merge($state, $set);
         }
@@ -35,7 +36,8 @@ if (!function_exists('mh_layout_head')) {
         $portal = (($o['portal'] ?? 'staff') === 'patient') ? 'patient' : 'staff';
         $name   = (string) ($o['system_name'] ?? ($system_name ?: mh_setting('system_name')));
         $title  = trim((string) ($o['title'] ?? ''));
-        mh_layout_state(['portal' => $portal, 'title' => $title, 'system_name' => $name, 'late_styles' => (array) ($o['late_styles'] ?? [])]);
+        mh_layout_state(['portal' => $portal, 'title' => $title, 'system_name' => $name, 'late_styles' => (array) ($o['late_styles'] ?? []),
+            'print_title' => (string) ($o['print_title'] ?? ''), 'print_note' => (string) ($o['print_note'] ?? '')]);
 
         $styles = array_merge(['css/admin_theme.css', 'css/shell.css'], (array) ($o['styles'] ?? []));
 
@@ -67,6 +69,9 @@ if (!function_exists('mh_layout_open')) {
             echo '<link rel="stylesheet" href="../assets/' . mh_h($href) . '?v=' . mh_layout_version($href) . "\">\n";
         }
 
+        // Universal print stylesheet (screen is untouched): black-and-white report layout for every module.
+        echo '<link rel="stylesheet" media="print" href="../assets/css/print.css?v=' . mh_layout_version('css/print.css') . "\">\n";
+
         echo '<script src="../assets/js/shell.js?v=' . mh_layout_version('js/shell.js') . "\" defer></script>\n";
         $scope = $portal === 'patient'
             ? 'patient-' . (int) ($_SESSION['patient_id'] ?? 0)
@@ -97,6 +102,9 @@ if (!function_exists('mh_layout_open')) {
         echo "<div class=\"sidebar-backdrop\" id=\"sidebarBackdrop\" aria-hidden=\"true\"></div>\n";
         echo "<div class=\"main-content\">\n";
         include __DIR__ . '/topbar.php';
+
+        // Official report header: hidden on screen, printed at the top of every page that uses this layout.
+        mh_print_header();
     }
 }
 

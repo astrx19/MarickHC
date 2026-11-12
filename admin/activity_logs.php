@@ -74,7 +74,7 @@ if ($print) {
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
-mh_layout_head(['title' => $print ? 'System Logs - Print' : 'System Logs']);
+mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']);
 ?>
     <style>
         .role-badge {
@@ -110,14 +110,18 @@ mh_layout_head(['title' => $print ? 'System Logs - Print' : 'System Logs']);
         .pr-table th, .pr-table td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
         .pr-table th { background: #f1f5f9; }
         .pr-foot { margin-top: 14px; font-size: .8rem; color: #475569; }
-        @media print { .sidebar, .topbar, .lg-filters, .lg-presets, .lg-pager, .no-print { display: none !important; } .main-content { margin: 0 !important; padding: 0 !important; width: 100% !important; } body { background: #fff !important; } }
     </style>
-<?php if ($print): mh_layout_open(['shell' => false, 'body_attr' => 'style="background:#fff; color:#0f172a; display:block; padding:24px; font-family: system-ui, sans-serif;"']); ?>
-    <div class="pr-head">
-        <h1><?php echo $h($system_name); ?> &mdash; System Logs (Audit Trail)</h1>
-        <p><strong>Period:</strong> <?php echo $h($range_label); ?><?php if ($action !== ''): ?> &middot; <strong>Action:</strong> <?php echo $h($action); ?><?php endif; ?><?php if ($user_label !== ''): ?> &middot; <strong>User:</strong> <?php echo $h($user_label); ?><?php endif; ?><?php if ($q !== ''): ?> &middot; <strong>Search:</strong> &ldquo;<?php echo $h($q); ?>&rdquo;<?php endif; ?></p>
-        <p><strong>Entries:</strong> <?php echo count($logs); ?><?php echo $total > count($logs) ? ' of ' . (int) $total . ' (the newest 3,000 are printed - narrow the dates to print the rest)' : ''; ?></p>
-    </div>
+<?php if ($print): mh_layout_open(['shell' => false, 'body_class' => 'print-view', 'body_attr' => 'style="background:#fff; color:#000; display:block; padding:24px;"']); ?>
+    <?php
+    // Universal report header (clinic, title, date/time, printed by, role) + the active filters as a note line.
+    $print_note = 'Period: ' . $range_label
+        . ($action !== '' ? ' | Action: ' . $action : '')
+        . ($user_label !== '' ? ' | User: ' . $user_label : '')
+        . ($q !== '' ? ' | Search: "' . $q . '"' : '')
+        . ' | Entries: ' . count($logs)
+        . ($total > count($logs) ? ' of ' . (int) $total . ' (newest 3,000 printed - narrow the dates to print the rest)' : '');
+    mh_print_header(['title' => 'System Logs Report', 'note' => $print_note]);
+    ?>
     <table class="pr-table">
         <thead><tr><th style="width:140px;">Time</th><th style="width:170px;">User</th><th style="width:150px;">Action</th><th>Details</th></tr></thead>
         <tbody>
@@ -129,7 +133,6 @@ mh_layout_head(['title' => $print ? 'System Logs - Print' : 'System Logs']);
         <?php if (!$logs): ?><tr><td colspan="4" style="text-align:center; padding:20px;">No log entries for this selection.</td></tr><?php endif; ?>
         </tbody>
     </table>
-    <p class="pr-foot">Printed by <?php echo $h(trim(($_SESSION['first_name'] ?? '') . ' ' . ($_SESSION['last_name'] ?? '')) ?: ($_SESSION['role'] ?? 'staff')); ?> on <?php echo $h(date('M d, Y h:i A')); ?>.</p>
     <script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 250); });</script>
 <?php mh_layout_end(); else: mh_layout_open(); ?>
 

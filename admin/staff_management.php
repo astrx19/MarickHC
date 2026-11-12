@@ -8,6 +8,7 @@ require_once __DIR__ . '/../includes/icons.php';
 require_once(__DIR__ . "/../config/database.php");
 require_once __DIR__ . '/../includes/auth_helpers.php';
 require_once __DIR__ . '/../includes/settings_helper.php';
+require_once __DIR__ . '/../includes/sms_helper.php';   // defines mh_normalize_ph_mobile() used when adding/editing staff
 
 // Feature toggle 'manage_staff' (System Settings -> Staff Roles & Permissions). Health Head always passes.
 require_permission('manage_staff');

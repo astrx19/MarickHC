@@ -132,6 +132,10 @@ foreach (mh_options($conn, 'clinic_departments', false) as $opt) {
     if (!(int) $opt['is_active']) { $hidden_depts[] = $opt['option_value']; }
 }
 $visible = mh_departments_visible_to($user_role, array_values(array_diff($candidates, $hidden_depts)));
+// Inventory staff only work the medicine-dispensing queue.
+if ($user_role === 'inventory' && is_array($visible)) {
+    $visible = array_values(array_intersect($visible, ['Medicine Dispensing']));
+}
 $can_see_all = ($visible === null);
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {

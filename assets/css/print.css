@@ -1,0 +1,325 @@
+/* =====================================================================
+ * print.css  -  Universal print stylesheet (all staff modules)
+ *
+ * Loaded by includes/layout/layout.php with media="print", so it has ZERO
+ * effect on the on-screen UI. Result: a plain black-and-white report /
+ * Excel-style table, no sidebar, buttons, dark mode or card chrome.
+ *
+ * Helper classes you can use in any page:
+ *   .no-print        hide this element when printing (already used everywhere)
+ *   .print-only      show ONLY when printing
+ *   .print-bar       keep a grey fill when printing (chart bars)
+ *   .print-break     start a new page before this element
+ *   .print-avoid     do not split this element across two pages
+ * ===================================================================== */
+
+@page {
+    margin: 12mm 10mm 14mm;
+}
+
+@media print {
+
+    /* ---------- 1. Reset the page: white paper, black ink -------------- */
+    html, body {
+        background: #fff !important;
+        color: #000 !important;
+        width: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        display: block !important;          /* admin_theme.css makes <body> a flex row (sidebar + content) */
+        margin: 0 !important;
+        padding: 0 !important;
+        font-family: Arial, Helvetica, "Liberation Sans", sans-serif !important;
+        font-size: 10pt !important;
+        line-height: 1.35 !important;
+        -webkit-print-color-adjust: economy;
+        print-color-adjust: economy;
+    }
+
+    /* Strip every dark-mode / theme background, shadow and tint.
+       "html:not(#p) body" adds ID-level specificity so the theme's dark-mode and
+       [style*="color: ..."] !important overrides in admin_theme.css cannot win. */
+    html:not(#p) body *,
+    html:not(#p) body *::before,
+    html:not(#p) body *::after {
+        background-color: transparent !important;
+        background-image: none !important;
+        color: #000 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        animation: none !important;
+        transition: none !important;
+        border-color: #000 !important;
+        border-radius: 0 !important;
+    }
+
+    /* ---------- 2. Hide UI clutter ------------------------------------- */
+    .sidebar,
+    .sidebar-backdrop,
+    .topbar,
+    .skip-link,
+    .app-footer,
+    .no-print,
+    .theme-toggle,
+    .mh-tabs,
+    .panel-controls form,
+    .panel-controls .search-box,
+    .filter-toolbar,
+    .filter-chips,
+    .mode-toggle,
+    .lg-filters, .lg-presets, .lg-pager,        /* System Logs filters / pagination */
+    .dh-filters,                                /* Disposal History filters */
+    .ds-presets,                                /* Disease Statistics quick ranges */
+    .pagination, .pager,
+    .modal-overlay, .mh-modal, .modal, dialog,
+    .custom-confirm-overlay, #mhToastStack, .mh-toast,
+    .alert,
+    .stat-icon-badge,
+    .mh-icon,
+    .nav-icon,
+    button, .btn, .btn-primary, .btn-secondary, .btn-add, .btn-manage, .btn-icon,
+    .btn-dispense, .btn-add-batch, .btn-submit, .action-btn-group,
+    input[type="button"], input[type="submit"], input[type="reset"],
+    .panel-controls input, .panel-controls select,
+    iframe {
+        display: none !important;
+    }
+
+    /* The print header itself must show, even though it sits inside .main-content. */
+    .mh-print-header { display: block !important; }
+    .print-only      { display: block !important; }
+    span.print-only, small.print-only, b.print-only, strong.print-only { display: inline !important; }
+
+    /* Report header (includes/print_header.php): keep its own sizing despite the global resets below. */
+    html:not(#p) body .mh-print-header .mph-logo { filter: grayscale(1) contrast(1.2) !important; }
+    html:not(#p) body .mh-print-header .mph-meta th { background-color: #e6e6e6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html:not(#p) body .mh-print-header { border-bottom: 2px solid #000 !important; }
+    .mh-print-header { margin: 0 0 6mm !important; padding: 0 0 3mm !important; border-bottom: 2px solid #000 !important; break-inside: avoid; }
+    .mh-print-header .mph-row { display: flex !important; justify-content: space-between !important; align-items: flex-start !important; }
+    .mh-print-header .mph-id { display: flex !important; align-items: center !important; }
+    .mh-print-header .mph-logo { display: block !important; filter: grayscale(1) contrast(1.2) !important; }
+    .mh-print-header .mph-clinic { font-size: 10pt !important; margin: 0 !important; }
+    .mh-print-header .mph-title { font-size: 17pt !important; margin: 1mm 0 0 !important; }
+    .mh-print-header .mph-note { font-size: 9pt !important; margin: 1.5mm 0 0 !important; }
+    .mh-print-header .mph-meta { width: auto !important; margin: 0 !important; font-size: 9pt !important; }
+    .mh-print-header .mph-meta th { font-size: 8pt !important; white-space: nowrap !important; }
+    .mh-print-header .mph-meta td { white-space: nowrap !important; }
+
+    /* ---------- 3. Un-shell the layout (full-width, no scrollbars) ----- */
+    .main-content,
+    .page-body,
+    .dashboard-container,
+    .content-wrapper,
+    .container {
+        position: static !important;
+        display: block !important;
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        height: auto !important;
+        max-height: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        transform: none !important;
+    }
+
+    html body .main-content :is(.page-container, .dashboard-container, .masterlist-container, .archive-container, .container),
+    html body .page-body > div[style*="max-width"] {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .unified-panel,
+    .dash-widget,
+    .dashboard-card,
+    .stat-card,
+    .table-scroll,
+    .panel-header,
+    .panel-controls,
+    [class*="-card"],
+    [class*="-panel"] {
+        overflow: visible !important;
+        max-height: none !important;
+        transform: none !important;
+        position: static !important;
+    }
+
+    .unified-panel, .dash-widget, .dashboard-card {
+        border: none !important;
+        margin: 0 0 8mm !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+
+    .panel-controls, .panel-header {
+        padding: 0 0 2mm !important;
+        border: none !important;
+        justify-content: flex-start !important;
+    }
+
+    /* Anything that is position:fixed/sticky on screen must flow normally. */
+    [style*="position: fixed"], [style*="position:fixed"],
+    [style*="position: sticky"], [style*="position:sticky"],
+    thead th, th {
+        position: static !important;
+    }
+
+    /* ---------- 4. Typography ----------------------------------------- */
+    h1, h2, h3, h4, h5, h6 {
+        color: #000 !important;
+        font-family: Arial, Helvetica, "Liberation Sans", sans-serif !important;
+        letter-spacing: 0 !important;
+        break-after: avoid;
+        page-break-after: avoid;
+        margin: 0 0 2mm !important;
+    }
+    h1 { font-size: 15pt !important; }
+    h2 { font-size: 13pt !important; }
+    h3 { font-size: 11.5pt !important; }
+    h4 { font-size: 10.5pt !important; margin-top: 5mm !important; }
+    p, small, span, div, li, label, strong, b { color: #000 !important; }
+    a, a:visited { color: #000 !important; text-decoration: none !important; }
+    /* never append "(https://…)" after links */
+    a[href]::after { content: none !important; }
+
+    /* ---------- 5. Summary cards -> plain bordered boxes --------------- */
+    .stats-grid, .stats-grid-4, .ds-grid3, .ds-kpis, .dsx-kpis {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(38mm, 1fr)) !important;
+        gap: 3mm !important;
+        margin: 0 0 6mm !important;
+    }
+    .stat-card {
+        border: 1px solid #000 !important;
+        padding: 2mm 3mm !important;
+        margin: 0 !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+    .stat-card::before, .stat-card::after { display: none !important; }
+    .stat-card h3 { font-size: 8pt !important; text-transform: uppercase; margin: 0 0 1mm !important; }
+    .stat-card .number, .stat-card .stat-body .number { font-size: 14pt !important; font-weight: 700 !important; }
+
+    /* ---------- 6. Data tables -> Excel-style grid --------------------- */
+    table,
+    .unified-table,
+    .pr-table,
+    .batch-subtable {
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        table-layout: auto !important;
+        border-collapse: collapse !important;
+        border-spacing: 0 !important;
+        border: 1px solid #000 !important;
+        margin: 0 0 6mm !important;
+        font-size: 9pt !important;
+        background: #fff !important;
+    }
+
+    thead { display: table-header-group !important; }   /* repeat header row on every page */
+    tfoot { display: table-footer-group !important; }
+    tbody { display: table-row-group !important; }
+
+    tr, img, svg, figure, .print-avoid {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    th, td {
+        border: 1px solid #000 !important;
+        padding: 1.6mm 2mm !important;
+        text-align: left;
+        vertical-align: top !important;
+        white-space: normal !important;
+        word-break: break-word;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        max-width: none !important;
+        font-size: 9pt !important;
+        font-weight: 400;
+    }
+    th {
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        font-size: 8.5pt !important;
+        letter-spacing: 0 !important;
+    }
+    html:not(#p) body th {
+        background-color: #e6e6e6 !important;         /* light grey header row, like an Excel header */
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    tbody tr:nth-child(even) td { background: transparent !important; }   /* no zebra: pure B/W */
+
+    td strong, td b { font-weight: 700 !important; }
+    td small, td .sub, td div { font-size: 8.5pt !important; }
+
+    /* Status pills / badges / chips become plain outlined text. */
+    [class*="badge"], [class*="pill"], [class*="chip"], [class*="tag"],
+    .status-pill, .role-badge, .brand-badge, .fefo-tag, .near-expiry-pill, .batch-count-tag {
+        display: inline !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        font-size: 8.5pt !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+    }
+
+    /* Inventory: always show every batch under its item (rows collapsed on screen). */
+    .batch-detail-row { display: table-row !important; }
+    .batch-detail-row > td { padding: 0 !important; border: 0 !important; }
+    .batch-subtable-wrap { padding: 0 0 0 8mm !important; }
+    .batch-subtable { margin: 0 !important; }
+    /* Fixed column widths keep the item rows aligned even though each item row holds a nested batch table
+       (screen markup uses colspan="6"; the Action column is hidden when printing). */
+    #inventoryTable { table-layout: fixed !important; }
+    #inventoryTable > thead > tr > th:nth-child(1) { width: 36%; }
+    #inventoryTable > thead > tr > th:nth-child(2) { width: 13%; }
+    #inventoryTable > thead > tr > th:nth-child(3) { width: 18%; }
+    #inventoryTable > thead > tr > th:nth-child(4) { width: 18%; }
+    #inventoryTable > thead > tr > th:nth-child(5) { width: 15%; }
+    .group-chevron { display: none !important; }
+
+    /* ---------- 7. Charts (CSS bars / SVG) ----------------------------- */
+    html:not(#p) body .print-bar,
+    html:not(#p) body .ds-bar > div > i {
+        background-color: #555 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .ds-bar > div { border: 1px solid #000 !important; height: 3mm !important; }
+    html:not(#p) body svg text { fill: #000 !important; }
+    svg text { fill: #000 !important; }
+
+    /* ---------- 8. Collapsed sections: show their content -------------- */
+    /* (details are also force-opened by the script in print_header.php) */
+    details > summary { display: none !important; }
+    .ds-drawer-content { display: block !important; padding: 0 !important; border: none !important; }
+
+    /* ---------- 9. Form fields that carry data (dental, vitals, etc.) -- */
+    input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="hidden"]),
+    select, textarea {
+        border: none !important;
+        border-bottom: 1px solid #000 !important;
+        background: transparent !important;
+        color: #000 !important;
+        padding: 0 !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        box-shadow: none !important;
+    }
+
+    /* ---------- 10. Page-break helpers --------------------------------- */
+    .print-break { break-before: page; page-break-before: always; }
+    .unified-panel { break-inside: auto; }
+    p, li { orphans: 3; widows: 3; }
+}

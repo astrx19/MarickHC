@@ -32,6 +32,8 @@ if (!function_exists('mh_layout_staff_config')) {
         $show_stats     = mh_has_permission('view_disease_statistics');
         $show_logs      = mh_has_permission('view_system_logs');
         $show_archives  = mh_has_permission('view_system_archives');
+        // Monthly Reports: every role that admin/monthly_reports.php has a report for (the page re-checks this itself).
+        $show_monthly   = in_array(strtolower((string) $role), ['health_head', 'super_admin', 'admin', 'doctor', 'dental', 'dentist', 'midwife', 'inventory', 'encoder'], true);
 
         $items = [];
 
@@ -136,6 +138,15 @@ if (!function_exists('mh_layout_staff_config')) {
                 'href'   => 'disease_statistics.php',
                 'icon'   => 'shield',
                 'active' => $page === 'disease_statistics.php',
+            ];
+        }
+
+        if ($show_monthly) {
+            $items[] = [
+                'label'  => 'Monthly Reports',
+                'href'   => 'monthly_reports.php',
+                'icon'   => 'file-text',
+                'active' => $page === 'monthly_reports.php',
             ];
         }
 
