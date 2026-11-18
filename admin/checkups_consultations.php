@@ -55,7 +55,7 @@ if (isset($_POST['add_consultation'])) {
     $complaints  = trim($_POST['chief_complaints'] ?? '');
     $diagnosis   = trim($_POST['diagnosis'] ?? '');
     $prescription = trim($_POST['prescription'] ?? '');
-    $notes       = trim($_POST['notes'] ?? '');
+    $notes       = mh_followup_notes(trim($_POST['notes'] ?? ''));
     $next_raw    = trim($_POST['next_visit_date'] ?? '');
     $next_visit  = mh_cm_date('next_visit_date');
 
@@ -77,11 +77,15 @@ if (isset($_POST['add_consultation'])) {
         $record_id = (int) $conn->insert_id;
         $stmt->close();
 
+        $mh_route_msg = '';
         $_SESSION['success_msg'] = 'Consultation record saved successfully!' . mh_cm_after_save($conn, [
             'ctx' => $queue_ctx_post, 'patient_id' => $patient_id, 'patient_name' => $patient_name, 'record_id' => $record_id,
             'noun' => 'consultation', 'log_action' => 'Added Consultation', 'log_detail' => 'Logged general checkup for',
             'sms_label' => 'Check-up', 'next_visit' => $next_raw,
         ]);
+        if (!empty($_POST['route_dispensing']) && $prescription !== '') {
+            $_SESSION['success_msg'] .= mh_route_to_dispensing($conn, $patient_id);   // after the queue entry is completed
+        }
     } catch (Throwable $e) {
         error_log('[MarickHealth] consultation save FAILED (staff #' . (int) $user_id . ', patient ' . var_export($patient_id, true) . '): ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
         mh_cm_fail('checkups_consultations.php', 'checkups', 'The consultation record could not be saved, so nothing was changed. Please try again. If it keeps happening, tell the system administrator.');
@@ -199,7 +203,8 @@ echo mh_notify_script($flash['success'], 'success');
                 <div class="cf-field"><label>Diagnosis / Findings <span class="cf-req">*</span></label>
                     <textarea name="diagnosis" rows="2" required class="cf-mark-ok" placeholder="Doctor's diagnosis..."></textarea></div>
                 <div class="cf-field"><label>Prescription / Treatment</label>
-                    <textarea name="prescription" rows="2" class="cf-mark-warn" placeholder="Medications given or prescribed..."></textarea></div>
+                    <textarea name="prescription" rows="2" class="cf-mark-warn" placeholder="Medications given or prescribed..."></textarea>
+                    <label style="display:flex; gap:8px; align-items:center; font-weight:400; margin-top:6px;"><input type="checkbox" name="route_dispensing" value="1"> Send patient to Dispensing (encoder) for this prescription</label></div>
                 <div class="cf-field"><label>Remarks / Notes</label>
                     <textarea name="notes" rows="2" placeholder="Any general remarks before the checkup..."></textarea></div>
 

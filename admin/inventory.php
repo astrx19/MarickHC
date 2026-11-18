@@ -171,7 +171,7 @@ $expired_count = 0;
 $near_expiry_count = 0;
 $today = date('Y-m-d');
 $today_ts = strtotime($today);
-$NEAR_EXPIRY_DAYS = 30;
+$NEAR_EXPIRY_DAYS = 90;   // Paper REQ45: alert window is 90 days
 $LOW_STOCK_THRESHOLD = 20;
 
 $items_array = [];
@@ -339,10 +339,10 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                         <div class="number" style="<?php echo $low_stock_count > 0 ? 'color:#f59e0b;' : ''; ?>"><?php echo $low_stock_count; ?></div>
                     </div>
                 </div>
-                <div class="stat-card clickable" data-quick="expiry:30" style="border-top-color: #c2410c;">
+                <div class="stat-card clickable" data-quick="expiry:90" style="border-top-color: #c2410c;">
                     <div class="stat-icon-badge" style="color:#c2410c; background:rgba(194,65,12,0.12);"><?php echo mh_icon('clock'); ?></div>
                     <div class="stat-body">
-                        <h3>Near Expiry (30d)</h3>
+                        <h3>Near Expiry (<?php echo (int) $NEAR_EXPIRY_DAYS; ?>d)</h3>
                         <div class="number" style="<?php echo $near_expiry_count > 0 ? 'color:#c2410c;' : ''; ?>"><?php echo $near_expiry_count; ?></div>
                     </div>
                 </div>
@@ -1155,7 +1155,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 const q = card.dataset.quick;
                 let active = false;
                 if (q === 'stock:low') active = state.stockStatus === 'low';
-                if (q === 'expiry:30') active = state.expiryWindow === '30';
+                if (q === 'expiry:90') active = state.expiryWindow === '90';
                 if (q === 'expiry:expired') active = state.expiryWindow === 'expired';
                 card.classList.toggle('active-quick', active);
             });
@@ -1169,8 +1169,8 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                     state.stockStatus = state.stockStatus === 'low' ? '' : 'low';
                     document.getElementById('stockStatusFilter').value = state.stockStatus;
                 }
-                if (q === 'expiry:30') {
-                    state.expiryWindow = state.expiryWindow === '30' ? '' : '30';
+                if (q === 'expiry:90') {
+                    state.expiryWindow = state.expiryWindow === '90' ? '' : '90';
                     document.getElementById('expiryFilter').value = state.expiryWindow;
                 }
                 if (q === 'expiry:expired') {

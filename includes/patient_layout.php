@@ -391,6 +391,50 @@ if (!function_exists('mh_pp_programs')) {
     }
 }
 
+if (!function_exists('mh_pp_followups')) {
+    /**
+     * Upcoming follow-up schedules for the portal's alert viewer (Paper Scope: Patient Portal).
+     * Read-only: the dates are the ones staff recorded (return visit / next visit). Today and later only,
+     * soonest first. Nothing here lets a patient book or change a schedule.
+     *
+     * @return array<int, array{service:string, date:string, days:int}>
+     */
+    function mh_pp_followups(mysqli $conn, int $pid): array
+    {
+        $sources = [
+            'General Consultation' => 'consultations',
+            'Dental Clinic'        => 'dental_records',
+            'Maternal Care'        => 'maternal_records',
+            'Child Immunization'   => 'child_immunization_records',
+        ];
+        $out  = [];
+        $seen = [];
+        $today = new DateTimeImmutable('today');
+        foreach ($sources as $label => $table) {
+            try {
+                $rows = mh_pp_rows($conn,
+                    "SELECT DISTINCT next_visit_date AS d FROM `$table`
+                      WHERE patient_id = ? AND next_visit_date IS NOT NULL
+                        AND next_visit_date >= CURDATE() AND next_visit_date <> '0000-00-00'",
+                    'i', [$pid]);
+            } catch (Throwable $e) {
+                continue;   // table/column not present on this install: skip that source
+            }
+            foreach ($rows as $r) {
+                $key = $label . '|' . $r['d'];
+                if (isset($seen[$key])) { continue; }
+                $seen[$key] = true;
+                $when = DateTimeImmutable::createFromFormat('Y-m-d', substr((string) $r['d'], 0, 10));
+                if (!$when) { continue; }
+                $out[] = ['service' => $label, 'date' => $when->format('Y-m-d'),
+                          'days' => (int) $today->diff($when->setTime(0, 0))->format('%r%a')];
+            }
+        }
+        usort($out, function ($a, $b) { return strcmp($a['date'], $b['date']) ?: strcmp($a['service'], $b['service']); });
+        return $out;
+    }
+}
+
 if (!function_exists('mh_pp_center_info')) {
     function mh_pp_center_info(): array
     {

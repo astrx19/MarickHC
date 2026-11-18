@@ -133,7 +133,7 @@ function mh_setting_defaults()
         'android_gateway_url'   => '',
         'android_gateway_key'   => '',
         // ---- OCR engine selection + API keys --------------------------
-        'ocr_engine'            => 'vision',   // 'vision' (Google Cloud Vision) | 'aws_textract' (AWS Textract) | 'groq_ocr' (Groq vision LLM)
+        'ocr_engine'            => 'groq_ocr', // 'vision' (Google Cloud Vision) | 'aws_textract' (AWS Textract) | 'groq_ocr' (Groq vision LLM)
         'google_vision_api_key' => '',          // DB-backed override of config/vision.php hardcoded key
         'gemini_api_key'        => '',
         'aws_access_key_id'     => '',          // AWS IAM Access Key ID for Textract

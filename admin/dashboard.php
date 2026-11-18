@@ -62,7 +62,7 @@ $cal_appointments = $conn->query("
     SELECT a.appointment_date, p.first_name, p.last_name, a.department 
     FROM appointments a 
     JOIN patients p ON a.patient_id = p.id 
-    WHERE a.status IN ('Waiting', 'Approved', 'Pending', 'Rescheduled')
+    WHERE a.status IN ('Waiting', 'Serving', 'Approved', 'Pending', 'Rescheduled')
     ORDER BY a.id ASC
 ");
 

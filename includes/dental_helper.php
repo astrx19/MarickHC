@@ -131,6 +131,18 @@ function mh_dental_code_names($routineCsv, $otherCsv = '')
     return $out;
 }
 
+/** Paper REQ38: dental_records.prescription (added without a migration run; idempotent and portable). */
+function mh_dental_ensure_prescription(mysqli $conn)
+{
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+    try {
+        $r = $conn->query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dental_records' AND COLUMN_NAME = 'prescription' LIMIT 1");
+        if ($r && $r->num_rows === 0) { $conn->query("ALTER TABLE dental_records ADD COLUMN prescription TEXT NULL DEFAULT NULL"); }
+    } catch (Throwable $e) { error_log('mh_dental_ensure_prescription: ' . $e->getMessage()); }
+}
+
 function mh_dental_save_visit(mysqli $conn, $patientId, $dentistId, array $v)
 {
     $patientId = (int) $patientId; $dentistId = (int) $dentistId;

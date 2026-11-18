@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['record_visit'])) {
 $today = date('Y-m-d');
 $st = $conn->prepare("SELECT a.id, a.queue_number, a.status, a.reason, p.first_name, p.middle_name, p.last_name
                       FROM appointments a JOIN patients p ON p.id = a.patient_id
-                      WHERE a.department = ? AND a.appointment_date = ? AND a.status IN ('Waiting','Approved')
+                      WHERE a.department = ? AND a.appointment_date = ? AND a.status IN ('Waiting','Serving','Approved')
                       ORDER BY a.queue_number ASC, a.id ASC");
 $st->bind_param('ss', $dept, $today); $st->execute();
 $queue = $st->get_result()->fetch_all(MYSQLI_ASSOC); $st->close();

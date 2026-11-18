@@ -55,17 +55,19 @@ function mh_queue_proceed(mysqli $conn, $id)
 
     if ($customId > 0) {
         if (!mh_dept_user_can($dept)) { mh_deny_access(); }
+        mh_queue_transition($conn, "UPDATE appointments SET status = 'Serving' WHERE id = ? AND status IN ('Waiting', 'Approved')", 'i', [$id]);
         mh_queue_log($conn, 'Patient Queueing Update', "Sent queue item #$id to $dept.");
         header('Location: department.php?id=' . $customId . '&apt=' . $id);
         exit();
     }
     if ($page !== null) {
+        mh_queue_transition($conn, "UPDATE appointments SET status = 'Serving' WHERE id = ? AND status IN ('Waiting', 'Approved')", 'i', [$id]);
         mh_queue_log($conn, 'Patient Queueing Update', "Sent queue item #$id to $dept.");
         header('Location: ' . $page . '?walkin_id=' . (int) $apt['patient_id'] . '&apt_id=' . $id);
         exit();
     }
 
-    mh_queue_transition($conn, "UPDATE appointments SET status = 'Completed' WHERE id = ? AND status IN ('Waiting', 'Approved')", 'i', [$id]);
+    mh_queue_transition($conn, "UPDATE appointments SET status = 'Completed' WHERE id = ? AND status IN ('Waiting', 'Serving', 'Approved')", 'i', [$id]);
     mh_queue_log($conn, 'Patient Queueing Update', "Completed queue item #$id (department has no record page).");
     header('Location: view_patient.php?id=' . (int) $apt['patient_id']);
     exit();
@@ -87,14 +89,14 @@ function mh_queue_run_action(mysqli $conn, $action, array $in)
             return mh_queue_proceed($conn, $id);
 
         case 'complete_appointment':
-            list(, $changed) = mh_queue_transition($conn, "UPDATE appointments SET status = 'Completed' WHERE id = ? AND status IN ('Waiting', 'Approved')", 'i', [$id]);
+            list(, $changed) = mh_queue_transition($conn, "UPDATE appointments SET status = 'Completed' WHERE id = ? AND status IN ('Waiting', 'Serving', 'Approved')", 'i', [$id]);
             if (!$changed) { return ['error', MH_QUEUE_STALE]; }
             mh_queue_log($conn, 'Patient Queueing Update', "Completed queue item #$id.");
             return ['success', 'Queue entry marked as completed.'];
 
         case 'cancel_appointment':
             if ($remarks === '') { return ['error', 'Please give a reason for the rejection.']; }
-            list($ok, $changed) = mh_queue_transition($conn, "UPDATE appointments SET status = 'Rejected', admin_remarks = ? WHERE id = ? AND status IN ('Pending', 'Rescheduled', 'Waiting', 'Approved')", 'si', [$remarks, $id]);
+            list($ok, $changed) = mh_queue_transition($conn, "UPDATE appointments SET status = 'Rejected', admin_remarks = ? WHERE id = ? AND status IN ('Pending', 'Rescheduled', 'Waiting', 'Serving', 'Approved')", 'si', [$remarks, $id]);
             if (!$ok || !$changed) { return ['error', MH_QUEUE_STALE]; }
             mh_queue_log($conn, 'Patient Queueing Update', "Rejected queue item #$id.");
             return ['success', 'Queue request rejected. The patient will see your reason on their dashboard history.'];
@@ -193,7 +195,7 @@ if ($filter_dept !== '') {
 }
 
 $show_finished = (($_GET['show'] ?? '') === 'all');
-if (!$show_finished) { $where[] = "a.status IN ('Pending', 'Rescheduled', 'Waiting', 'Approved')"; }
+if (!$show_finished) { $where[] = "a.status IN ('Pending', 'Rescheduled', 'Waiting', 'Serving', 'Approved')"; }
 
 $stmt = $conn->prepare(
     "SELECT a.id, a.department, a.reason, a.appointment_date, a.status, a.queue_number, a.admin_remarks,
@@ -201,7 +203,7 @@ $stmt = $conn->prepare(
        FROM appointments a
        JOIN patients p ON p.id = a.patient_id
       WHERE " . implode(' AND ', $where) . "
-      ORDER BY CASE a.status WHEN 'Pending' THEN 1 WHEN 'Rescheduled' THEN 2 WHEN 'Waiting' THEN 3 WHEN 'Approved' THEN 3
+      ORDER BY CASE a.status WHEN 'Pending' THEN 1 WHEN 'Rescheduled' THEN 2 WHEN 'Waiting' THEN 3 WHEN 'Serving' THEN 3 WHEN 'Approved' THEN 3
                              WHEN 'Completed' THEN 4 WHEN 'Cancelled' THEN 5 WHEN 'Rejected' THEN 6 ELSE 7 END ASC,
                COALESCE(a.queue_number, 9999) ASC, a.id ASC"
 );
@@ -219,6 +221,7 @@ mh_layout_head(['title' => 'Patient Queueing']);
         .status-badge { padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; border: 1px solid; display: inline-block; }
         .status-pending { background: #fef3c7; color: #b45309; border-color: #fde68a; }
         .status-rescheduled { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
+        .status-serving { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
         .status-waiting { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
         .queue-no { display:inline-block; min-width:4.6em; white-space:nowrap; letter-spacing:.02em; text-align:center; background:#0ea5e9; color:#fff; border-radius:6px; padding:2px 7px; font-weight:bold; font-size:.85rem; margin-right:8px; }
         .status-approved { background: #d1fae5; color: #047857; border-color: #a7f3d0; }

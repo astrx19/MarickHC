@@ -154,6 +154,8 @@ $system_name = $system_name ?? mh_setting('system_name');
             
             <?php if(($_GET['error'] ?? '') === 'incorrect_password'): ?>
                 errorMessage = "Incorrect password. Please try again.";
+            <?php elseif(($_GET['error'] ?? '') === 'locked'): ?>
+                errorMessage = "Too many failed sign-in attempts. Please wait about <?php echo max(1, (int) ($_GET['wait'] ?? 15)); ?> minute(s) and try again.";
             <?php elseif(($_GET['error'] ?? '') === 'not_found'): ?>
                 errorMessage = "Account not found. Please register as a new patient on the homepage.";
             <?php elseif(isset($_GET['session_replaced'])): ?>

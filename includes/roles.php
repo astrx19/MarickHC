@@ -170,6 +170,48 @@ if (!function_exists('mh_roles_flush')) {
 }
 if (!function_exists('mh_custom_roles_flush')) { function mh_custom_roles_flush() { mh_roles_flush(); } }
 
+if (!function_exists('mh_roles_backfill_missing')) {
+    /**
+     * Self-heal: a permission key that exists in the registry but has NO rows in role_permissions
+     * (e.g. a toggle added after the matrix was first seeded) is seeded from the factory defaults,
+     * so a new/restored feature works without hand-running SQL. Existing rows are never touched.
+     * Runs at most once per request.
+     */
+    function mh_roles_backfill_missing(mysqli $conn)
+    {
+        static $done = false;
+        if ($done) { return; }
+        $done = true;
+        try {
+            $have = [];
+            $res = $conn->query("SELECT DISTINCT permission_key FROM role_permissions");
+            while ($res && ($r = $res->fetch_assoc())) { $have[$r['permission_key']] = true; }
+            $defaults = mh_default_role_permissions();
+            $missing  = [];
+            foreach (mh_permission_keys() as $k) { if (!isset($have[$k])) { $missing[] = $k; } }
+            if (!$missing) { return; }
+            $roleKeys = [];
+            $res = $conn->query("SELECT role_key FROM system_roles");
+            while ($res && ($r = $res->fetch_assoc())) { $roleKeys[] = $r['role_key']; }
+            $ins = $conn->prepare("INSERT IGNORE INTO role_permissions (role_key, permission_key, allowed) VALUES (?,?,?)");
+            if (!$ins) { return; }
+            foreach ($missing as $perm) {
+                $granted = array_map('trim', explode(',', (string) ($defaults[$perm] ?? '')));
+                foreach ($roleKeys as $rk) {
+                    $allowed = ($rk === 'health_head' || in_array($rk, $granted, true)) ? 1 : 0;
+                    $ins->bind_param('ssi', $rk, $perm, $allowed);
+                    $ins->execute();
+                }
+            }
+            $ins->close();
+            $c = &mh_roles_cache();
+            $c['perms'] = [];
+        } catch (Throwable $e) {
+            error_log('mh_roles_backfill_missing: ' . $e->getMessage());
+        }
+    }
+}
+
 if (!function_exists('mh_roles_db_ready')) {
     /** Both tables exist AND role_permissions has been seeded. Cached per request. */
     function mh_roles_db_ready()
@@ -183,6 +225,7 @@ if (!function_exists('mh_roles_db_ready')) {
             $r = $conn->query("SELECT (SELECT COUNT(*) FROM system_roles) AS a, (SELECT COUNT(*) FROM role_permissions) AS b");
             $row = $r ? $r->fetch_assoc() : null;
             $c['ready'] = $row && (int) $row['a'] > 0 && (int) $row['b'] > 0;
+            if ($c['ready']) { mh_roles_backfill_missing($conn); }
         } catch (Throwable $e) {
             $c['ready'] = false;   // tables not created yet -> factory defaults apply
         }

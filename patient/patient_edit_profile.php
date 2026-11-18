@@ -12,6 +12,50 @@ $marick_streets = mh_streets($conn);   // Streets / Areas / Purok masterlist (da
 $patient_id = (int)$_SESSION['patient_id'];
 $success_msg = ''; $error_msg = '';
 
+/* Figure 58: "upload Display Photo". Stored as a file (assets/images/patient_pics/<id>.jpg), like staff photos:
+   the ERD's patients table has no photo column, so none is added. Re-encoded with GD when available. */
+if (isset($_POST['upload_photo'])) {
+    $f = $_FILES['profile_pic'] ?? null;
+    if (!$f || (int) $f['error'] === UPLOAD_ERR_NO_FILE) {
+        $error_msg = 'Please choose a photo first.';
+    } elseif ((int) $f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
+        $error_msg = 'The photo could not be uploaded. Please try again.';
+    } elseif ($f['size'] > 3 * 1024 * 1024) {
+        $error_msg = 'That photo is too large (maximum 3 MB).';
+    } else {
+        $info = @getimagesize($f['tmp_name']);
+        if ($info === false || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG], true)) {
+            $error_msg = 'Only JPG or PNG photos are allowed.';
+        } else {
+            $dir = __DIR__ . '/../assets/images/patient_pics/';
+            if (!is_dir($dir)) { @mkdir($dir, 0755, true); }
+            $dest = $dir . $patient_id . '.jpg';
+            $saved = false;
+            if (function_exists('imagecreatefromstring') && function_exists('imagejpeg')) {
+                $img = @imagecreatefromstring((string) file_get_contents($f['tmp_name']));
+                if ($img) {
+                    $w = imagesx($img); $h = imagesy($img);
+                    $scale = min(1, 400 / max($w, $h));
+                    $nw = max(1, (int) round($w * $scale)); $nh = max(1, (int) round($h * $scale));
+                    $out = imagecreatetruecolor($nw, $nh);
+                    imagefill($out, 0, 0, imagecolorallocate($out, 255, 255, 255));
+                    imagecopyresampled($out, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+                    $saved = imagejpeg($out, $dest, 85);
+                    imagedestroy($img); imagedestroy($out);
+                }
+            } else {
+                $saved = move_uploaded_file($f['tmp_name'], $dest);
+            }
+            if ($saved) {
+                $success_msg = 'Display photo updated.';
+                logActivity($conn, $patient_id, 'patient', 'Profile Update', 'Patient #' . $patient_id . ' uploaded a new display photo.');
+            } else {
+                $error_msg = 'We could not save your photo right now. Please try again.';
+            }
+        }
+    }
+}
+
 if (isset($_POST['update_profile'])) {
     $contact_raw  = trim($_POST['contact_number'] ?? '');
     $contact      = function_exists('mh_normalize_ph_mobile') ? mh_normalize_ph_mobile($contact_raw) : $contact_raw;
@@ -112,6 +156,18 @@ mh_pp_layout_start([
             <h3><?php echo mh_icon('user'); ?> Edit Personal Profile</h3>
         </div>
         <div class="pp-section">
+            <?php $mh_pic = __DIR__ . '/../assets/images/patient_pics/' . $patient_id . '.jpg'; ?>
+            <form method="POST" enctype="multipart/form-data" style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:22px; padding-bottom:18px; border-bottom:1px solid var(--border-color,#e2e8f0);">
+                <?php if (is_file($mh_pic)): ?>
+                    <img src="../assets/images/patient_pics/<?php echo (int) $patient_id; ?>.jpg?t=<?php echo (int) @filemtime($mh_pic); ?>" alt="Your display photo" style="width:64px; height:64px; border-radius:50%; object-fit:cover;">
+                <?php endif; ?>
+                <div>
+                    <label style="display:block; font-weight:600; margin-bottom:4px;">Display Photo</label>
+                    <input type="file" name="profile_pic" accept="image/jpeg,image/png">
+                    <small style="display:block; opacity:.7;">JPG or PNG, up to 3 MB.</small>
+                </div>
+                <button type="submit" name="upload_photo" value="1" class="btn-soft" style="padding:8px 14px; border-radius:8px; cursor:pointer;">Upload Photo</button>
+            </form>
             <form method="POST">
                 <div class="form-group">
                     <label>Contact Number <span class="required">*</span></label>

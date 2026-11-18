@@ -55,7 +55,7 @@ if (isset($_POST['add_prenatal'])) {
     $para    = mh_cm_text('para');
     $aog     = mh_cm_text('aog');
     $fh_fht  = mh_cm_text('fh_fht');
-    $notes   = mh_cm_text('notes');
+    $notes   = mh_followup_notes(mh_cm_text('notes'));
     $lmp = mh_cm_date('lmp');
     $edc = mh_cm_date('edc');
     $tt1 = mh_cm_date('tt1_date');

@@ -17,6 +17,7 @@ define('MH_LOADED_INCLUDES_SMS_SMS_QUEUE_RUNNER', true);
  */
 
 require_once __DIR__ . '/../sms_helper.php';
+require_once __DIR__ . '/sms_scheduler.php';   // mh_sms_is_holiday() for the clinic-holiday pause
 
 /**
  * Sends every `scheduled_sms` row that is due (scheduled_date <= today)
@@ -38,7 +39,7 @@ require_once __DIR__ . '/../sms_helper.php';
  */
 function mh_run_sms_queue(mysqli $conn, $triggeredBy = 'cron', $limit = 100)
 {
-    $summary = ['checked' => 0, 'sent' => 0, 'failed' => 0, 'skipped_no_key' => false, 'details' => []];
+    $summary = ['checked' => 0, 'sent' => 0, 'failed' => 0, 'skipped_no_key' => false, 'paused_holiday' => false, 'details' => []];
 
     // Fail fast with one clear message rather than N identical failures.
     $keyProblem = function_exists('mh_sms_provider_problem') ? mh_sms_provider_problem() : 'includes/sms_helper.php not loaded.';
@@ -49,6 +50,15 @@ function mh_run_sms_queue(mysqli $conn, $triggeredBy = 'cron', $limit = 100)
     }
 
     $limit = max(1, min(500, (int) $limit));
+
+    // Paper REQ17: nothing is sent on a clinic holiday the Admin declared. Pending rows stay pending and go out
+    // on the next open day (the query below picks up everything scheduled_date <= today).
+    if (function_exists('mh_sms_is_holiday') && mh_sms_is_holiday($conn, date('Y-m-d'))) {
+        $summary['paused_holiday'] = true;
+        $summary['details'][] = ['id' => 0, 'patient_id' => 0, 'phone' => '', 'status' => 'paused',
+                                 'note' => 'Today is a declared clinic holiday - sending is paused; pending reminders stay queued.'];
+        return $summary;
+    }
 
     $stmt = $conn->prepare(
         "SELECT id, patient_id, phone_number, message

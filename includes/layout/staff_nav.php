@@ -186,7 +186,8 @@ if (!function_exists('mh_layout_staff_config')) {
 
         $footer = [];
         if (mh_is_health_head($role)) {
-            if (mh_setting('show_db_seeder_sidebar', '0') === '1') {
+            require_once __DIR__ . '/../env_guard.php';
+            if (mh_setting('show_db_seeder_sidebar', '0') === '1' && mh_is_dev_environment()) {
                 $footer[] = ['label' => 'Database Seeder', 'href' => 'db_seeder.php', 'icon' => 'database', 'active' => $page === 'db_seeder.php', 'class' => 'footer-link'];
             }
             $footer[] = ['label' => 'System Settings', 'href' => 'system_settings.php', 'icon' => 'settings', 'active' => $page === 'system_settings.php', 'class' => 'footer-link'];

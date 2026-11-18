@@ -26,6 +26,117 @@ define('MH_LOADED_INCLUDES_SMS_SMS_SCHEDULER', true);
  */
 
 /**
+ * Figure 60 ("input follow-up date and reason"): the ERD has no reason column, so the reason travels inside the
+ * record's existing `notes` field as a "Return visit reason: ..." line. Returns $notes unchanged unless the form
+ * has BOTH a follow-up date and a reason.
+ */
+if (!function_exists('mh_followup_notes')) {
+    function mh_followup_notes($notes)
+    {
+        $notes  = (string) $notes;
+        $date   = trim((string) ($_POST['next_visit_date'] ?? ''));
+        $reason = trim((string) ($_POST['followup_reason'] ?? ''));
+        if ($date === '' || $reason === '') { return $notes; }
+        $reason = mb_substr(preg_replace('/\s+/', ' ', $reason), 0, 255);
+        return rtrim($notes) === '' ? 'Return visit reason: ' . $reason : rtrim($notes) . "\nReturn visit reason: " . $reason;
+    }
+}
+
+/**
+ * Is $date (Y-m-d) a clinic holiday declared by the Admin (holidays table)?
+ * Fails open (false) if the table is unreadable, so a DB hiccup never blocks reminders.
+ */
+if (!function_exists('mh_sms_is_holiday')) {
+    function mh_sms_is_holiday(mysqli $conn, $date)
+    {
+        static $cache = [];
+        $date = (string) $date;
+        if (isset($cache[$date])) { return $cache[$date]; }
+        $cache[$date] = false;
+        try {
+            $st = $conn->prepare("SELECT 1 FROM holidays WHERE holiday_date = ? LIMIT 1");
+            if ($st) {
+                $st->bind_param('s', $date);
+                $st->execute();
+                $cache[$date] = $st->get_result()->num_rows > 0;
+                $st->close();
+            }
+        } catch (Throwable $e) { /* holidays table missing: treat as no holiday */ }
+        return $cache[$date];
+    }
+}
+
+/**
+ * Moves a reminder date off a declared holiday (Paper REQ17). Prefers the closest earlier open day
+ * (never before $floor = today), then the closest later open day up to $ceiling (the follow-up date).
+ * Returns the date to use, or null when no open day exists in that range.
+ */
+if (!function_exists('mh_sms_shift_off_holiday')) {
+    function mh_sms_shift_off_holiday(mysqli $conn, $date, $floor, $ceiling)
+    {
+        if (!mh_sms_is_holiday($conn, $date)) { return $date; }
+        for ($d = strtotime($date . ' -1 day'); date('Y-m-d', $d) >= $floor; $d = strtotime('-1 day', $d)) {
+            $cand = date('Y-m-d', $d);
+            if (!mh_sms_is_holiday($conn, $cand)) { return $cand; }
+        }
+        for ($d = strtotime($date . ' +1 day'); date('Y-m-d', $d) <= $ceiling; $d = strtotime('+1 day', $d)) {
+            $cand = date('Y-m-d', $d);
+            if (!mh_sms_is_holiday($conn, $cand)) { return $cand; }
+        }
+        return null;
+    }
+}
+
+/**
+ * True when a reminder for this exact follow-up is already queued or sent (Paper REQ66).
+ * "Same follow-up" = same patient + same source record (or same module when there is no record id) + same send date.
+ */
+if (!function_exists('mh_sms_reminder_exists')) {
+    function mh_sms_reminder_exists(mysqli $conn, $patientId, $moduleLabel, $sourceRecordId, $sendDate)
+    {
+        $st = $conn->prepare("SELECT 1 FROM scheduled_sms
+                               WHERE patient_id = ? AND scheduled_date = ? AND source_module <=> ?
+                                 AND source_record_id <=> ? AND status IN ('pending','sent') LIMIT 1");
+        if (!$st) { return false; }
+        $st->bind_param('issi', $patientId, $sendDate, $moduleLabel, $sourceRecordId);
+        $st->execute();
+        $found = $st->get_result()->num_rows > 0;
+        $st->close();
+        return $found;
+    }
+}
+
+/**
+ * Records WHY a reminder was not queued (Paper REQ64) as a 'failed' row with a "SKIPPED:" note, so it
+ * shows up in the SMS dashboard. Never throws. Written once per follow-up.
+ */
+if (!function_exists('mh_sms_record_skip')) {
+    function mh_sms_record_skip(mysqli $conn, $patientId, $moduleLabel, $sourceRecordId, $followupDate, $reason)
+    {
+        try {
+            $st = $conn->prepare("SELECT 1 FROM scheduled_sms
+                                   WHERE patient_id = ? AND scheduled_date = ? AND source_module <=> ?
+                                     AND source_record_id <=> ? AND status = 'failed' AND response_log LIKE 'SKIPPED:%' LIMIT 1");
+            if ($st) {
+                $st->bind_param('issi', $patientId, $followupDate, $moduleLabel, $sourceRecordId);
+                $st->execute();
+                $dup = $st->get_result()->num_rows > 0;
+                $st->close();
+                if ($dup) { return; }
+            }
+            $note = 'SKIPPED: ' . $reason;
+            $ins = $conn->prepare("INSERT INTO scheduled_sms (patient_id, phone_number, message, scheduled_date, status, response_log, source_module, source_record_id)
+                                   VALUES (?, '', '', ?, 'failed', ?, ?, ?)");
+            if ($ins) {
+                $ins->bind_param('isssi', $patientId, $followupDate, $note, $moduleLabel, $sourceRecordId);
+                $ins->execute();
+                $ins->close();
+            }
+        } catch (Throwable $e) { error_log('mh_sms_record_skip: ' . $e->getMessage()); }
+    }
+}
+
+/**
  * Queues follow-up reminder SMS for a patient.
  *
  * By default this queues TWO reminders (see MH_SMS_REMINDER_* below):
@@ -78,9 +189,11 @@ function mh_schedule_followup_sms(mysqli $conn, $patientId, $followupDate, $modu
 
     $normalizedPhone = mh_normalize_ph_mobile($patient['contact_number'] ?? '');
     if ($normalizedPhone === '') {
-        return ['queued' => 0, 'skipped_reason' => 'Patient has no valid PH mobile number on file (has: "'
-            . ($patient['contact_number'] ?? '') . '").'];
+        $why = 'Patient has no valid PH mobile number on file (has: "' . ($patient['contact_number'] ?? '') . '").';
+        mh_sms_record_skip($conn, $patientId, (string) $moduleLabel, $sourceRecordId === null ? null : (int) $sourceRecordId, $followupDate, $why);
+        return ['queued' => 0, 'skipped_reason' => $why];
     }
+    $sourceRecordId = ($sourceRecordId === null || $sourceRecordId === '') ? null : (int) $sourceRecordId;
 
     $firstName  = trim((string) ($patient['first_name'] ?? '')) ?: 'Patient';
     $clinicName = function_exists('mh_setting') ? mh_setting('system_name') : 'Health Center';
@@ -92,25 +205,52 @@ function mh_schedule_followup_sms(mysqli $conn, $patientId, $followupDate, $modu
     if (!defined('MH_SMS_REMINDER_DAY_BEFORE')) { define('MH_SMS_REMINDER_DAY_BEFORE', true); }
     if (!defined('MH_SMS_REMINDER_SAME_DAY'))   { define('MH_SMS_REMINDER_SAME_DAY', true); }
 
-    $toQueue = [];
+    $followupIsHoliday = mh_sms_is_holiday($conn, $followupDate);
+    $holidayNote = $followupIsHoliday ? ' Note: that date is a declared clinic holiday - please confirm with the health center.' : '';
+
+    $toQueue = [];   // keyed by final send date so two reminders never land on the same day
 
     if (MH_SMS_REMINDER_DAY_BEFORE) {
         $sendOn = date('Y-m-d', strtotime($followupDate . ' -1 day'));
         if ($sendOn >= $today) {
-            $msg = "Hello {$firstName}, this is a reminder from {$clinicName} for your {$moduleLabel} follow-up "
-                 . "TOMORROW, {$prettyDate}. Please bring your health card. Reply STOP to opt out.";
-            $toQueue[] = ['date' => $sendOn, 'message' => $msg];
+            $sendOn = mh_sms_shift_off_holiday($conn, $sendOn, $today, $followupDate);
+            if ($sendOn !== null) {
+                $when = ($sendOn === date('Y-m-d', strtotime($followupDate . ' -1 day'))) ? 'TOMORROW, ' : 'on ';
+                $toQueue[$sendOn] = "Hello {$firstName}, this is a reminder from {$clinicName} for your {$moduleLabel} follow-up "
+                    . "{$when}{$prettyDate}.{$holidayNote} Please bring your health card. Reply STOP to opt out.";
+            }
         }
     }
 
     if (MH_SMS_REMINDER_SAME_DAY) {
-        $msg = "Hello {$firstName}, this is a reminder from {$clinicName} for your {$moduleLabel} follow-up "
-             . "TODAY, {$prettyDate}. Please bring your health card. Reply STOP to opt out.";
-        $toQueue[] = ['date' => $followupDate, 'message' => $msg];
+        $sendOn = mh_sms_shift_off_holiday($conn, $followupDate, $today, $followupDate);
+        if ($sendOn !== null && !isset($toQueue[$sendOn])) {
+            $when = ($sendOn === $followupDate) ? 'TODAY, ' : 'on ';
+            $toQueue[$sendOn] = "Hello {$firstName}, this is a reminder from {$clinicName} for your {$moduleLabel} follow-up "
+                . "{$when}{$prettyDate}.{$holidayNote} Please bring your health card. Reply STOP to opt out.";
+        }
     }
 
     if (!$toQueue) {
-        return ['queued' => 0, 'skipped_reason' => 'Both reminder types are disabled in configuration.'];
+        return ['queued' => 0, 'skipped_reason' => (MH_SMS_REMINDER_DAY_BEFORE || MH_SMS_REMINDER_SAME_DAY)
+            ? 'No open (non-holiday) day is available to send a reminder before the follow-up.'
+            : 'Both reminder types are disabled in configuration.'];
+    }
+
+    // Follow-up date changed on re-save: drop this record's stale PENDING reminders so only the new dates send.
+    if ($sourceRecordId !== null) {
+        $keep = array_keys($toQueue);
+        $in   = implode(',', array_fill(0, count($keep), '?'));
+        $del  = $conn->prepare("DELETE FROM scheduled_sms
+                                 WHERE patient_id = ? AND source_module <=> ? AND source_record_id = ?
+                                   AND status = 'pending' AND scheduled_date NOT IN ($in)");
+        if ($del) {
+            $types = 'isi' . str_repeat('s', count($keep));
+            $args  = array_merge([$patientId, (string) $moduleLabel, $sourceRecordId], $keep);
+            $del->bind_param($types, ...$args);
+            $del->execute();
+            $del->close();
+        }
     }
 
     $insert = $conn->prepare(
@@ -122,23 +262,24 @@ function mh_schedule_followup_sms(mysqli $conn, $patientId, $followupDate, $modu
     }
 
     $queued = 0;
-    foreach ($toQueue as $item) {
-        $insert->bind_param(
-            'issssi',
-            $patientId,
-            $normalizedPhone,
-            $item['message'],
-            $item['date'],
-            $moduleLabel,
-            $sourceRecordId
-        );
-        // source_record_id may be null - bind_param with 'i' + null is fine, mysqli sends SQL NULL.
-        if ($insert->execute()) {
-            $queued++;
+    $duplicates = 0;
+    foreach ($toQueue as $date => $message) {
+        if (mh_sms_reminder_exists($conn, $patientId, (string) $moduleLabel, $sourceRecordId, $date)) {
+            $duplicates++;      // already queued/sent for this follow-up: never send twice
+            continue;
+        }
+        $insert->bind_param('issssi', $patientId, $normalizedPhone, $message, $date, $moduleLabel, $sourceRecordId);
+        try {
+            if ($insert->execute()) { $queued++; }
+        } catch (Throwable $e) {
+            $duplicates++;      // insert failed for this date: treat as already handled, never double-send
         }
     }
     $insert->close();
 
+    if ($queued === 0 && $duplicates > 0) {
+        return ['queued' => 0, 'skipped_reason' => 'Reminders for this follow-up are already scheduled (no duplicates created).'];
+    }
     return ['queued' => $queued, 'skipped_reason' => $queued === 0 ? 'Insert failed for all reminders.' : null];
 }
 }

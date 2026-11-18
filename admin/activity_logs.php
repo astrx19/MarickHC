@@ -26,14 +26,23 @@ $where = []; $params = []; $types = '';
 if ($from !== '') { $where[] = 'l.created_at >= ?'; $params[] = $from . ' 00:00:00'; $types .= 's'; }
 if ($to !== '')   { $where[] = 'l.created_at < ?';  $params[] = date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00'; $types .= 's'; }
 if ($action !== '') { $where[] = 'l.action = ?'; $params[] = $action; $types .= 's'; }
-if ($uid > 0)       { $where[] = 'l.user_id = ?'; $params[] = $uid; $types .= 'i'; }
+if ($uid > 0)       { $where[] = "(l.user_id = ? AND l.user_role <> 'patient')"; $params[] = $uid; $types .= 'i'; }
 if ($q !== '') {
     $like = '%' . addcslashes(mb_substr($q, 0, 80), '\\%_') . '%';
-    $where[] = "(l.details LIKE ? OR l.action LIKE ? OR CONCAT_WS(' ', s.first_name, s.last_name) LIKE ?)";
+    $where[] = "(l.details LIKE ? OR l.action LIKE ? OR CONCAT_WS(' ', COALESCE(s.first_name, p.first_name), COALESCE(s.last_name, p.last_name)) LIKE ?)";
     array_push($params, $like, $like, $like); $types .= 'sss';
 }
 $where_sql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
-$from_sql  = " FROM activity_logs l LEFT JOIN staff s ON l.user_id = s.id" . $where_sql;
+// Staff entries match staff.id. Patient entries (user_role = 'patient') match patients.id instead - or, for the
+// sign-up entry that is logged with user_id 0, the "Patient #N" written in its details - so a patient is never
+// shown as "System / Unknown" and never mistaken for a staff member who happens to share the same id number.
+$from_sql  = " FROM activity_logs l"
+           . " LEFT JOIN staff s ON l.user_id = s.id AND l.user_role <> 'patient'"
+           . " LEFT JOIN patients p ON l.user_role = 'patient' AND p.id = CASE"
+           . "      WHEN l.user_id > 0 THEN l.user_id"
+           . "      WHEN l.details LIKE 'Patient #%' THEN CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(l.details, '#', -1), ' ', 1) AS UNSIGNED)"
+           . "      ELSE 0 END"
+           . $where_sql;
 
 $run = function ($sql, $bindTypes, $bindParams) use ($conn) {
     $st = $conn->prepare($sql);
@@ -50,11 +59,11 @@ $limit = $print ? 3000 : $per;
 $pages = max(1, (int) ceil($total / $per));
 if (!$print && $page > $pages) { $page = $pages; }
 $offset = $print ? 0 : ($page - 1) * $per;
-$logs = $run("SELECT l.id, l.created_at, l.action, l.details, s.first_name, s.last_name, COALESCE(s.role, l.user_role) AS role"
+$logs = $run("SELECT l.id, l.created_at, l.action, l.details, COALESCE(s.first_name, p.first_name) AS first_name, COALESCE(s.last_name, p.last_name) AS last_name, COALESCE(s.role, l.user_role) AS role"
            . $from_sql . " ORDER BY l.created_at DESC, l.id DESC LIMIT ? OFFSET ?", $types . 'ii', array_merge($params, [$limit, $offset]));
 
 $unique_actions = array_column($run("SELECT DISTINCT action FROM activity_logs ORDER BY action ASC", '', []), 'action');
-$users = $run("SELECT DISTINCT s.id, s.first_name, s.last_name FROM activity_logs l JOIN staff s ON s.id = l.user_id ORDER BY s.first_name, s.last_name", '', []);
+$users = $run("SELECT DISTINCT s.id, s.first_name, s.last_name FROM activity_logs l JOIN staff s ON s.id = l.user_id AND l.user_role <> 'patient' ORDER BY s.first_name, s.last_name", '', []);
 
 $filtered = ($from !== '' || $to !== '' || $action !== '' || $uid > 0 || $q !== '');
 $range_label = ($from !== '' || $to !== '')
@@ -125,7 +134,7 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
     <table class="pr-table">
         <thead><tr><th style="width:140px;">Time</th><th style="width:170px;">User</th><th style="width:150px;">Action</th><th>Details</th></tr></thead>
         <tbody>
-        <?php foreach ($logs as $row): $user_name = $row['first_name'] ? $row['first_name'] . ' ' . $row['last_name'] : 'System / Unknown'; ?>
+        <?php foreach ($logs as $row): $user_name = $row['first_name'] ? $row['first_name'] . ' ' . $row['last_name'] : (strtolower((string) $row['role']) === 'patient' ? 'Patient' : 'System'); ?>
             <tr><td><?php echo $h(date('M d, Y h:i A', strtotime($row['created_at']))); ?></td>
                 <td><?php echo $h($user_name); ?><?php echo !empty($row['role']) ? ' <small>(' . $h($row['role']) . ')</small>' : ''; ?></td>
                 <td><?php echo $h($row['action']); ?></td><td><?php echo $h($row['details']); ?></td></tr>
@@ -175,7 +184,7 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
                         <tbody>
                             <?php if ($logs): foreach ($logs as $row):
                                 $role_class = "role-" . strtolower($row['role'] ?? 'bhw');
-                                $user_name = $row['first_name'] ? $row['first_name'] . ' ' . $row['last_name'] : 'System / Unknown';
+                                $user_name = $row['first_name'] ? $row['first_name'] . ' ' . $row['last_name'] : (strtolower((string) $row['role']) === 'patient' ? 'Patient' : 'System');
                             ?>
                             <tr>
                                 <td style="color: var(--text-muted, #64748b); font-size: 0.9rem; white-space: nowrap;"><?php echo $h(date("M d, Y - h:i A", strtotime($row['created_at']))); ?></td>
@@ -206,4 +215,3 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
         </div>
     <?php mh_layout_close(); mh_layout_end(); ?>
 <?php endif; ?>
-

@@ -147,3 +147,13 @@ html[data-theme="dark"] .cat-immunization { color: #6ee7b7; }
     border: 1px solid var(--border-color, #e2e8f0);
 }
 .pp-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+/* Upcoming follow-up alert viewer (patient dashboard) */
+.pp-followups { margin-bottom: 18px; }
+.pp-followup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-color, #e2e8f0); }
+.pp-followup-row:last-of-type { border-bottom: 0; }
+.pp-followup-row.is-soon strong { color: #c2410c; }
+.pp-followup-date { font-size: .85rem; color: var(--text-muted, #64748b); }
+.pp-followup-note { margin: 10px 0 0; font-size: .8rem; color: var(--text-muted, #64748b); }
+
+.pp-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }

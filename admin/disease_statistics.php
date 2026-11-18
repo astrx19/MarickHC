@@ -9,6 +9,12 @@ require_once __DIR__ . '/../includes/disease_stats.php';
 
 require_permission('view_disease_statistics');
 
+// Fig. 62: Excel download of exactly what is on screen (PDF = Print > Save as PDF).
+if (($_GET['export'] ?? '') === 'csv') {
+    require_once __DIR__ . '/../includes/report_export.php';
+    mh_report_csv_export('disease_statistics_' . date('Y_m_d') . '.csv', 'Disease Statistics');
+}
+
 $user_id   = (int) ($_SESSION['user_id'] ?? 0);
 $role      = (string) ($_SESSION['role'] ?? '');
 $is_head    = mh_is_health_head($role);          // only the Health Head edits what is tracked (System Settings)
@@ -218,7 +224,8 @@ mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Stati
                     <h1 style="margin:0 0 4px; font-family: Georgia, serif; color:var(--heading-color, #1e293b);">Disease Statistics</h1>
                     <p style="margin:0; color:var(--text-muted, #64748b);">Community illness trends from consultation, dental and child check-up diagnoses. Counts only &mdash; no patient names are shown. As of <?php echo $h(date('F j, Y', strtotime($stats['today']))); ?>.</p>
                 </div>
-                <button type="button" class="btn-primary no-print" onclick="window.print()">Print</button>
+                <button type="button" class="btn-primary no-print" onclick="window.print()">Print / Save as PDF</button>
+                <a class="btn-primary no-print" style="text-decoration:none; display:inline-block;" href="?<?php echo $h(http_build_query(array_merge($_GET, ['export' => 'csv']))); ?>">Download Excel (.csv)</a>
             </div>
 
             <?php if ($msg_ok !== ''): ?>

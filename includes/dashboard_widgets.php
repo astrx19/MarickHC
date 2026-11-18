@@ -255,7 +255,7 @@ if (!function_exists('mh_widget_active_queue')) {
 
         $today    = $ctx['today'];
         $limit    = 8;                                                    // rows shown; the rest is "+N more"
-        $statuses = ['Pending', 'Rescheduled', 'Waiting', 'Approved'];    // same set the Patient Queue page lists
+        $statuses = ['Pending', 'Rescheduled', 'Waiting', 'Serving', 'Approved'];    // same set the Patient Queue page lists
 
         // --- Departments this staff member may see (same rule as the Patient Queue page) ---
         mh_all_settings($conn);   // load Module Access before evaluating it
@@ -354,7 +354,7 @@ if (!function_exists('mh_widget_department_queues')) {
         $today = $ctx['today'];
         $counts = [];
         foreach (mh_wq_all($conn, "SELECT department, COUNT(*) AS c FROM appointments
-                            WHERE appointment_date = ? AND status IN ('Waiting', 'Approved') GROUP BY department", [$today]) as $r) {
+                            WHERE appointment_date = ? AND status IN ('Waiting', 'Serving', 'Approved') GROUP BY department", [$today]) as $r) {
             $counts[$r['department']] = (int) $r['c'];
         }
         $all     = array_column(mh_options($conn, 'clinic_departments', true), 'option_value');
@@ -517,7 +517,7 @@ if (!function_exists('mh_widget_inventory_alerts')) {
     function mh_widget_inventory_alerts(mysqli $conn, array $ctx)
     {
         $today        = $ctx['today'];
-        $expiry_limit = date('Y-m-d', strtotime($today . ' +30 days'));
+        $expiry_limit = date('Y-m-d', strtotime($today . ' +90 days'));   // Paper REQ45: 90-day alert window
 
         $counts = mh_wq_one($conn, "
             SELECT SUM(quantity <= 20) AS low_stock,
@@ -535,7 +535,7 @@ if (!function_exists('mh_widget_inventory_alerts')) {
         ?>
         <div class="widget-chip-row" style="margin-bottom: 12px;">
             <span class="widget-chip chip-red"><?php echo $low_stock; ?> Low Stock</span>
-            <span class="widget-chip chip-amber"><?php echo $expiring; ?> Expiring in 30 Days</span>
+            <span class="widget-chip chip-amber"><?php echo $expiring; ?> Expiring in 90 Days</span>
         </div>
         <table class="data-table widget-table">
             <tbody>

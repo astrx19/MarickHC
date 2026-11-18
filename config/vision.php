@@ -159,13 +159,13 @@ if (!function_exists('mh_ocr_active_engine')) {
     /**
      * Returns the OCR engine currently selected in System Settings, read live from the
      * database: 'vision', 'gemini', 'aws_textract' or 'groq_ocr'. Anything else (or an unreadable
-     * setting) falls back to 'vision' - the factory default.
+     * setting) falls back to 'groq_ocr' - the factory default (Paper: Groq OCR).
      *
      * @return string 'vision' | 'gemini' | 'aws_textract' | 'groq_ocr'
      */
     function mh_ocr_active_engine()
     {
-        $engine = strtolower(trim((string) mh_ocr_live_setting('ocr_engine', 'vision')));
-        return in_array($engine, ['vision', 'gemini', 'aws_textract', 'groq_ocr', 'openai'], true) ? $engine : 'vision';
+        $engine = strtolower(trim((string) mh_ocr_live_setting('ocr_engine', 'groq_ocr')));
+        return in_array($engine, ['vision', 'gemini', 'aws_textract', 'groq_ocr', 'openai'], true) ? $engine : 'groq_ocr';
     }
 }

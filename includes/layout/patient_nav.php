@@ -14,6 +14,12 @@ if (!function_exists('mh_layout_patient_config')) {
             $fullname = 'Patient';
         }
         $initials   = mh_pp_initials($first, $last);
+        // Display photo (Figure 58): a file named after the patient id; initials when there is none.
+        $mh_pid = (int) ($_SESSION['patient_id'] ?? 0);
+        $mh_pic = __DIR__ . '/../../assets/images/patient_pics/' . $mh_pid . '.jpg';
+        $mh_avatar_inner = ($mh_pid > 0 && is_file($mh_pic))
+            ? '<img src="../assets/images/patient_pics/' . $mh_pid . '.jpg?t=' . (int) @filemtime($mh_pic) . '" alt="">'
+            : mh_h($initials);
         $patient_no = mh_pp_patient_no($_SESSION['patient_id'] ?? 0);
 
         $links = [
@@ -59,7 +65,7 @@ if (!function_exists('mh_layout_patient_config')) {
                 'subtitle'  => 'Patient Portal',
                 'user_name' => $fullname,
                 'user_sub'  => $patient_no,
-                'avatar'    => '<a href="patient_edit_profile.php" class="pp-avatar pp-avatar-lg" title="My Profile" aria-label="My Profile">' . mh_h($initials) . '</a>',
+                'avatar'    => '<a href="patient_edit_profile.php" class="pp-avatar pp-avatar-lg" title="My Profile" aria-label="My Profile">' . $mh_avatar_inner . '</a>',
                 'aria'      => 'Patient portal navigation',
             ],
         ];

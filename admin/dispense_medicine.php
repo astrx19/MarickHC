@@ -21,7 +21,7 @@ $can_view_log = mh_has_permission('view_dispensing_history');   // Dispensing Re
 $system_name = $system_name ?? mh_setting('system_name');
 
 $success_msg = ""; $error_msg = "";
-$old = ['inventory_id' => 0, 'patient_id' => 0, 'quantity' => ''];   // posted values, restored after a failed submit
+$old = ['patient_id' => 0, 'lines' => []];   // posted values, restored after a failed submit
 
 // Post/Redirect/Get: a successful dispense redirects, so refreshing the page can NEVER dispense twice.
 if (!empty($_SESSION['dispense_flash'])) {
@@ -181,92 +181,101 @@ if (isset($_POST['dispense_item'])) {
         http_response_code(403);
         $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
     } else {
-        $item_id    = (int) ($_POST['inventory_id'] ?? 0);
-        $amount     = (int) ($_POST['quantity'] ?? 0);
         $patient_id = (int) ($_POST['patient_id'] ?? 0);
         $staff_id   = (int) ($_SESSION['user_id'] ?? 0);
-        $old = ['inventory_id' => $item_id, 'patient_id' => $patient_id, 'quantity' => $amount > 0 ? $amount : ''];
 
-        if ($item_id <= 0) {
-            $error_msg = "Please select a medicine and a batch.";
-        } elseif ($amount <= 0 || $amount > 100000) {
-            $error_msg = "Enter a valid quantity to dispense (1 to 100,000).";
+        // One or many medicines per visit: parallel arrays inventory_id[] / quantity[]. The same lot listed twice is summed.
+        $ids  = (array) ($_POST['inventory_id'] ?? []);
+        $qtys = (array) ($_POST['quantity'] ?? []);
+        $lines = [];            // lot id => total quantity
+        $line_problem = '';
+        foreach ($ids as $i => $rawId) {
+            $iid = (int) $rawId; $q = (int) ($qtys[$i] ?? 0);
+            if ($iid <= 0 && $q <= 0) { continue; }
+            if ($iid <= 0) { $line_problem = "Please select a medicine and a batch for every line."; break; }
+            $lines[$iid] = ($lines[$iid] ?? 0) + $q;
+        }
+        $old = ['patient_id' => $patient_id, 'lines' => []];
+        foreach ($lines as $iid => $q) { $old['lines'][] = ['inventory_id' => $iid, 'quantity' => $q]; }
+
+        if ($line_problem !== '') {
+            $error_msg = $line_problem;
+        } elseif (!$lines) {
+            $error_msg = "Add at least one medicine to dispense.";
+        } elseif (count($lines) > 25) {
+            $error_msg = "Too many medicines in one visit (maximum 25). Dispense the rest separately.";
         } elseif ($patient_id <= 0) {
             $error_msg = "Please select the patient receiving the medicine.";
         } else {
+            foreach ($lines as $q) {
+                if ($q <= 0 || $q > 100000) { $error_msg = "Enter a valid quantity for every medicine (1 to 100,000)."; break; }
+            }
+        }
+
+        if ($error_msg === '') {
             mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);   // SQL errors become exceptions -> caught below
             try {
+                // ALL-OR-NOTHING: every medicine is deducted, recorded and logged inside this one transaction.
+                // If any line fails (expired, archived, not enough stock) the whole visit is rolled back and nothing changes.
                 $conn->begin_transaction();
 
-                // The patient must exist and be active (not archived).
                 $pc = $conn->prepare("SELECT first_name, last_name FROM patients WHERE id = ? AND status = 1 LIMIT 1");
                 $pc->bind_param('i', $patient_id);
                 $pc->execute();
                 $patient_row = $pc->get_result()->fetch_assoc();
-                $patient_ok = (bool) $patient_row;
                 $pc->close();
 
-                // Lock the batch row so its details cannot change under us.
-                $ls = $conn->prepare("SELECT item_name, brand_name, expiry_date, status, quantity, unit, batch_number, tracking_code FROM inventory WHERE id = ? FOR UPDATE");
-                $ls->bind_param('i', $item_id);
-                $ls->execute();
-                $item = $ls->get_result()->fetch_assoc();
-                $ls->close();
-
-                if (!$patient_ok) {
-                    $conn->rollback();
-                    $error_msg = "That patient record is not active.";
-                } elseif (!$item) {
-                    $conn->rollback();
-                    $error_msg = "Selected batch could not be found.";
-                } elseif ((int) $item['status'] !== 1) {
-                    $conn->rollback();
-                    $error_msg = "This batch has been archived and can no longer be dispensed.";
-                } elseif (!empty($item['expiry_date']) && $item['expiry_date'] < date('Y-m-d')) {
-                    $conn->rollback();
-                    $error_msg = "This batch has expired and cannot be dispensed.";
-                } elseif ($amount > (int) $item['quantity']) {
-                    // Friendly pre-check (row is locked, so this number is exact). The conditional UPDATE below stays as the safety net.
-                    $conn->rollback();
-                    $error_msg = "Not enough stock: only " . (int) $item['quantity'] . " " . $item['unit'] . " left in lot " . ($item['batch_number'] ?: 'N/A') . ". You asked for $amount.";
+                $fail = null;
+                $done = [];
+                if (!$patient_row) {
+                    $fail = "That patient record is not active.";
                 } else {
-                    $item_full_name = $item['item_name'] . ' (' . (($item['brand_name'] ?? '') !== '' ? $item['brand_name'] : 'Generic') . ')';
+                    ksort($lines);   // lock lots in a fixed order so two clerks can never deadlock each other
+                    foreach ($lines as $item_id => $amount) {
+                        $ls = $conn->prepare("SELECT item_name, brand_name, expiry_date, status, quantity, unit, batch_number, tracking_code FROM inventory WHERE id = ? FOR UPDATE");
+                        $ls->bind_param('i', $item_id);
+                        $ls->execute();
+                        $item = $ls->get_result()->fetch_assoc();
+                        $ls->close();
 
-                    // FEFO audit flag: is an earlier-expiring active batch of the same item still in stock?
-                    // (Does not block the dispense - staff may have a valid reason - but it is recorded.)
-                    $brand = (string) ($item['brand_name'] ?? '');
-                    $fs = $conn->prepare(
-                        "SELECT 1 FROM inventory
-                          WHERE status = 1 AND quantity > 0 AND id <> ? AND item_name = ? AND IFNULL(brand_name, '') = ?
-                            AND expiry_date IS NOT NULL AND expiry_date >= CURDATE() AND (? IS NULL OR expiry_date < ?)
-                          LIMIT 1"
-                    );
-                    $this_expiry = $item['expiry_date'];   // NULL (no expiry) = anything dated sooner counts as earlier
-                    $fs->bind_param('issss', $item_id, $item['item_name'], $brand, $this_expiry, $this_expiry);
-                    $fs->execute();
-                    $is_override = $fs->get_result()->num_rows > 0 ? 1 : 0;
-                    $fs->close();
+                        if (!$item) { $fail = "A selected batch could not be found."; break; }
+                        $name = $item['item_name'] . ' (' . (($item['brand_name'] ?? '') !== '' ? $item['brand_name'] : 'Generic') . ')';
+                        if ((int) $item['status'] !== 1) { $fail = "$name: this batch has been archived and can no longer be dispensed."; break; }
+                        if (!empty($item['expiry_date']) && $item['expiry_date'] < date('Y-m-d')) { $fail = "$name: this batch has expired and cannot be dispensed."; break; }
+                        if ($amount > (int) $item['quantity']) {
+                            $fail = "Not enough stock for $name: only " . (int) $item['quantity'] . ' ' . $item['unit'] . ' left in lot ' . ($item['batch_number'] ?: 'N/A') . ". You asked for $amount.";
+                            break;
+                        }
 
-                    // Conditional deduction: only succeeds while enough stock remains.
-                    $up = $conn->prepare("UPDATE inventory SET quantity = quantity - ? WHERE id = ? AND status = 1 AND quantity >= ?");
-                    $up->bind_param('iii', $amount, $item_id, $amount);
-                    $up->execute();
-                    $deducted = $up->affected_rows;
-                    $up->close();
-
-                    if ($deducted === 0) {
-                        $conn->rollback();
-                        $error_msg = "Insufficient stock available for this item.";
-                    } else {
-                        $di = $conn->prepare(
-                            "INSERT INTO dispensations (inventory_id, patient_id, dispensed_by, quantity, is_fefo_override)
-                             VALUES (?, ?, ?, ?, ?)"
+                        // FEFO audit flag: is an earlier-expiring active batch of the same item still in stock?
+                        // (Does not block the dispense - staff may have a valid reason - but it is recorded.)
+                        $brand = (string) ($item['brand_name'] ?? '');
+                        $fs = $conn->prepare(
+                            "SELECT 1 FROM inventory
+                              WHERE status = 1 AND quantity > 0 AND id <> ? AND item_name = ? AND IFNULL(brand_name, '') = ?
+                                AND expiry_date IS NOT NULL AND expiry_date >= CURDATE() AND (? IS NULL OR expiry_date < ?)
+                              LIMIT 1"
                         );
+                        $this_expiry = $item['expiry_date'];
+                        $fs->bind_param('issss', $item_id, $item['item_name'], $brand, $this_expiry, $this_expiry);
+                        $fs->execute();
+                        $is_override = $fs->get_result()->num_rows > 0 ? 1 : 0;
+                        $fs->close();
+
+                        // Conditional deduction: only succeeds while enough stock remains.
+                        $up = $conn->prepare("UPDATE inventory SET quantity = quantity - ? WHERE id = ? AND status = 1 AND quantity >= ?");
+                        $up->bind_param('iii', $amount, $item_id, $amount);
+                        $up->execute();
+                        $deducted = $up->affected_rows;
+                        $up->close();
+                        if ($deducted === 0) { $fail = "Insufficient stock available for $name."; break; }
+
+                        $di = $conn->prepare("INSERT INTO dispensations (inventory_id, patient_id, dispensed_by, quantity, is_fefo_override) VALUES (?, ?, ?, ?, ?)");
                         $di->bind_param('iiiii', $item_id, $patient_id, $staff_id, $amount, $is_override);
                         $di->execute();
                         $di->close();
 
-                        $log_note = "Dispensed $amount {$item['unit']} of $item_full_name (SKU " . ($item['tracking_code'] ?: 'N/A') . ", Lot " . ($item['batch_number'] ?: 'N/A')
+                        $log_note = "Dispensed $amount {$item['unit']} of $name (SKU " . ($item['tracking_code'] ?: 'N/A') . ", Lot " . ($item['batch_number'] ?: 'N/A')
                                   . ") to Patient ID #$patient_id (" . $patient_row['last_name'] . ", " . $patient_row['first_name'] . "). Stock left in lot: " . ((int) $item['quantity'] - $amount) . ".";
                         if ($is_override) {
                             $log_note .= " NOTE: an earlier-expiring active batch of the same item still had stock on hand (FEFO override).";
@@ -274,22 +283,28 @@ if (isset($_POST['dispense_item'])) {
                         if (!logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Dispensed Medicine", $log_note)) {
                             throw new RuntimeException('Audit log write failed');   // no log = no dispense: roll everything back
                         }
-
-                        // Opened from Patient Queueing > Proceed: the dispense IS the "save record" step, so the queue
-                        // entry closes in the same transaction (only when it is this patient's inventory queue entry).
-                        $q_done = false;
-                        $queue_ctx_post = mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'inventory', $patient_id);
-                        if ($queue_ctx_post && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) { $q_done = true; }
-
-                        $conn->commit();   // stock deduction + dispensation record + audit log succeed together, or not at all
-                        $success_msg = "Successfully dispensed $amount {$item['unit']} of $item_full_name!";
-                        if ($q_done) {
-                            $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked as Completed.";
-                        }
-                        $_SESSION['dispense_flash'] = $success_msg;   // PRG: show it after the redirect, never re-POST on refresh
-                        header('Location: dispense_medicine.php');
-                        exit();
+                        $done[] = "$amount {$item['unit']} of $name";
                     }
+                }
+
+                if ($fail !== null) {
+                    $conn->rollback();
+                    $error_msg = $fail . (count($lines) > 1 ? " Nothing was dispensed - fix this line and try again." : '');
+                } else {
+                    // Opened from Patient Queueing > Proceed: the dispense IS the "save record" step, so the queue
+                    // entry closes in the same transaction (only when it is this patient's inventory queue entry).
+                    $q_done = false;
+                    $queue_ctx_post = mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'inventory', $patient_id);
+                    if ($queue_ctx_post && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) { $q_done = true; }
+
+                    $conn->commit();   // every deduction + dispensation record + audit log succeed together, or not at all
+                    $success_msg = "Successfully dispensed " . implode('; ', $done) . "!";
+                    if ($q_done) {
+                        $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked Completed.";
+                    }
+                    $_SESSION['dispense_flash'] = $success_msg;   // PRG: show it after the redirect, never re-POST on refresh
+                    header('Location: dispense_medicine.php');
+                    exit();
                 }
             } catch (Throwable $e) {
                 try { $conn->rollback(); } catch (Throwable $ignored) {}
@@ -486,7 +501,8 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                         <?php endif; ?>
                         <?php echo mh_csrf_field(); ?>
                         <input type="hidden" name="dispense_item" value="1">
-                        <input type="hidden" name="inventory_id" id="selectedBatchId" required>
+                        <input type="hidden" id="selectedBatchId">   <?php /* line editor only: the posted fields are the inventory_id[] / quantity[] inputs generated from the medicine list */ ?>
+                        <div id="cartInputs"></div>
                         
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label>Select Medicine <span style="color:red;">*</span></label>
@@ -560,8 +576,14 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
                         <div class="form-group" style="margin-bottom: 25px;">
                             <label>Total Quantity to Give (Base Unit) <span style="color:red;">*</span></label>
-                            <input type="number" name="quantity" id="disp_total_qty" required min="1" placeholder="e.g., 20" oninput="onManualQtyInput(); validateQty(true)" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-size: 1.1rem; font-weight: bold; color: #10b981; background: rgba(16,185,129,0.08); box-sizing: border-box;">
+                            <input type="number" id="disp_total_qty" min="1" placeholder="e.g., 20" oninput="onManualQtyInput(); validateQty(true)" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-size: 1.1rem; font-weight: bold; color: #10b981; background: rgba(16,185,129,0.08); box-sizing: border-box;">
                         <div class="stock-readout" id="qtyHint"></div>
+                        </div>
+
+                        <button type="button" onclick="cartAdd()" style="width:100%; padding:10px; margin:-10px 0 14px; border:2px dashed #10b981; background:transparent; color:#047857; border-radius:6px; font-weight:700; cursor:pointer;">+ Add this medicine to the list</button>
+                        <div id="dispenseCart" style="display:none; margin-bottom:18px; border:1px solid var(--border-color,#e2e8f0); border-radius:8px; overflow:hidden;">
+                            <div style="padding:8px 12px; background:rgba(16,185,129,.1); font-weight:700; font-size:.85rem;">Medicines to dispense (<span id="cartCount">0</span>)</div>
+                            <div id="cartList"></div>
                         </div>
 
                         <button type="button" class="btn-submit" onclick="confirmDispense()" style="width: 100%; padding: 12px; font-size: 1rem; background: #10b981; border:none; color:white; border-radius:6px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);"><?php echo mh_icon('check-circle'); ?> Dispense to Patient</button>
@@ -840,21 +862,17 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             return true;
         }
 
-        /* After a failed submit the page reloads: put the staff member's choices back. */
+        /* After a failed submit the page reloads: put the patient and the medicine list back. */
         function restoreForm(o) {
-            const g = MEDICINE_GROUPS.find(x => x.batches.some(b => b.id === o.inventory_id));
-            if (!g) return;
-            $('#medicineSelect').val(g.key).trigger('change');
-            pendingLoad.then(function () {
-                const sel = document.getElementById('batchSelect');
-                if (Array.prototype.some.call(sel.options, op => op.value === String(o.inventory_id))) {
-                    sel.value = String(o.inventory_id);
-                    onBatchChange();
-                }
-                if (o.patient_id) { $('#patientSelect').val(String(o.patient_id)).trigger('change'); }
-                document.getElementById('disp_total_qty').value = o.quantity || '';
-                validateQty(true);
+            (o.lines || []).forEach(function (ln) {
+                const g = MEDICINE_GROUPS.find(x => x.batches.some(b => b.id === ln.inventory_id));
+                if (!g) return;
+                const b = g.batches.find(x => x.id === ln.inventory_id);
+                cart.push({ id: ln.inventory_id, qty: parseInt(ln.quantity, 10) || 0, unit: b.unit, lot: b.batch_number,
+                            name: g.item_name + ' (' + g.brand_name + ')', override: false });
             });
+            renderCart();
+            if (o.patient_id) { $('#patientSelect').val(String(o.patient_id)).trigger('change'); }
         }
 
         window.onload = function() {
@@ -865,7 +883,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
             mhSelect2('#medicineSelect', { placeholder: 'Search generic or brand name...' });
 
-            <?php if ($error_msg !== '' && (int) $old['inventory_id'] > 0): ?>
+            <?php if ($error_msg !== '' && !empty($old['lines'])): ?>
             restoreForm(<?php echo json_encode($old, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>);
             <?php elseif ($preselect_group_key !== null): ?>
             // Deep-linked from the Supply Masterlist's "Dispense" action: preselect the medicine and (if given) that lot.
@@ -892,30 +910,89 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             <?php endif; ?>
         };
 
+
+        /* =========================================================
+           MEDICINE LIST (several medicines per visit). The line editor above picks one medicine/lot/quantity;
+           "Add to list" moves it here. On submit every row is posted as inventory_id[] / quantity[] and the
+           server dispenses ALL of them in one all-or-nothing transaction.
+           ========================================================= */
+        let cart = [];
+
+        function renderCart() {
+            const box = document.getElementById('dispenseCart');
+            const list = document.getElementById('cartList');
+            const inputs = document.getElementById('cartInputs');
+            document.getElementById('cartCount').textContent = cart.length;
+            box.style.display = cart.length ? 'block' : 'none';
+            list.innerHTML = cart.map((c, i) =>
+                '<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 12px; border-top:1px solid var(--border-color,#e2e8f0);">' +
+                    '<div><strong>' + escHtml(c.name) + '</strong><div style="font-size:.8rem; opacity:.75;">Lot ' + escHtml(c.lot || 'N/A') + (c.override ? ' &middot; <span style="color:#b45309;">FEFO override</span>' : '') + '</div></div>' +
+                    '<div style="white-space:nowrap;"><strong>' + Number(c.qty).toLocaleString() + '</strong> ' + escHtml(c.unit || '') +
+                    ' <button type="button" onclick="cartRemove(' + i + ')" aria-label="Remove" style="margin-left:8px; border:none; background:transparent; color:#dc2626; font-size:1.1rem; cursor:pointer;">&times;</button></div>' +
+                '</div>').join('');
+            inputs.innerHTML = cart.map(c =>
+                '<input type="hidden" name="inventory_id[]" value="' + Number(c.id) + '">' +
+                '<input type="hidden" name="quantity[]" value="' + Number(c.qty) + '">').join('');
+        }
+
+        function cartRemove(i) { cart.splice(i, 1); renderCart(); }
+
+        function clearLineEditor() {
+            ['disp_box_qty', 'disp_pack_qty', 'disp_loose_qty'].forEach(function (id) { const e = document.getElementById(id); if (e) e.value = ''; });
+            $('#medicineSelect').val('').trigger('change');   // resets lot list, stock pill, FEFO banner, quantity
+        }
+
+        /* Moves the line editor into the list. Returns true when a line was added. */
+        function cartAdd() {
+            const qty = parseInt(document.getElementById('disp_total_qty').value, 10);
+            if (!currentGroup || !currentBatch || !qty || qty < 1) {
+                mh_alert('Pick a medicine, a batch / lot and a quantity first, then add it to the list.', 'Incomplete Line', 'warning');
+                return false;
+            }
+            if (!validateQty(false)) {
+                mh_alert('Only ' + currentBatch.quantity.toLocaleString() + ' ' + currentBatch.unit + ' left in this batch.', 'Not Enough Stock', 'danger');
+                return false;
+            }
+            const already = cart.filter(c => c.id === currentBatch.id).reduce((s, c) => s + c.qty, 0);
+            if (already + qty > currentBatch.quantity) {
+                mh_alert('This lot has only ' + currentBatch.quantity.toLocaleString() + ' ' + currentBatch.unit + ' and ' + already.toLocaleString() + ' is already on your list.', 'Not Enough Stock', 'danger');
+                return false;
+            }
+            const override = document.getElementById('fefoWarningBanner').style.display !== 'none';
+            const hit = cart.find(c => c.id === currentBatch.id);
+            if (hit) { hit.qty += qty; hit.override = hit.override || override; }
+            else {
+                cart.push({ id: currentBatch.id, qty: qty, unit: currentBatch.unit, lot: currentBatch.batch_number,
+                            name: currentGroup.item_name + ' (' + currentGroup.brand_name + ')', override: override });
+            }
+            renderCart();
+            clearLineEditor();
+            return true;
+        }
+
         function confirmDispense() {
             const patientSelect = document.getElementById('patientSelect');
-            const quantity = document.getElementById('disp_total_qty').value;
-
-            if(!currentGroup || !currentBatch || !patientSelect.value || !quantity || quantity < 1) {   // incomplete
-                mh_alert('Please select a medicine, a batch / lot, a patient, and enter a valid quantity to dispense.', 'Incomplete Form', 'warning');
+            // A medicine still sitting in the line editor is added automatically.
+            const lineStarted = !!(currentBatch && document.getElementById('disp_total_qty').value);
+            if (lineStarted && !cartAdd()) { return; }
+            if (!cart.length) {
+                mh_alert('Add at least one medicine (choose a medicine, a batch / lot and a quantity).', 'Nothing to Dispense', 'warning');
                 return;
             }
-
-            if(!validateQty(false)) {
-                mh_alert('Only ' + currentBatch.quantity.toLocaleString() + ' ' + currentBatch.unit + ' left in this batch.', 'Not Enough Stock', 'danger');
+            if (!patientSelect.value) {
+                mh_alert('Please select the patient receiving the medicine.', 'Incomplete Form', 'warning');
                 return;
             }
-
-            const itemName = currentGroup.item_name + ' (' + currentGroup.brand_name + ')';
             const patientName = patientSelect.options[patientSelect.selectedIndex].text;
-            const isOverride = document.getElementById('fefoWarningBanner').style.display !== 'none';
+            const anyOverride = cart.some(c => c.override);
+            const rows = cart.map(c => '<li><strong>' + escHtml(Number(c.qty).toLocaleString()) + ' ' + escHtml(c.unit || '') + '</strong> of <strong>' + escHtml(c.name) + '</strong> (Lot ' + escHtml(c.lot || 'N/A') + ')' + (c.override ? ' <em>- FEFO override</em>' : '') + '</li>').join('');
 
             mh_confirm(
-                'Dispense <strong>' + escHtml(quantity) + ' ' + escHtml(currentBatch.unit) + '</strong> of <strong>' + escHtml(itemName) + '</strong>' +
-                ' (Lot ' + escHtml(currentBatch.batch_number || 'N/A') + ') to <strong>' + escHtml(patientName) + '</strong>?' +
-                (isOverride ? '<br><br><span class="mh-text-warning">An earlier-expiring batch still has stock - this will be logged as a FEFO override.</span>' : ''),
-                isOverride ? 'Confirm Dispensing (FEFO Override)' : 'Confirm Dispensing',
-                isOverride ? 'warning' : 'info',
+                'Dispense to <strong>' + escHtml(patientName) + '</strong>:<ul style="margin:10px 0 0 18px; text-align:left;">' + rows + '</ul>' +
+                (cart.length > 1 ? '<br><span style="opacity:.8;">All medicines are dispensed together; if one cannot be, nothing is dispensed.</span>' : '') +
+                (anyOverride ? '<br><br><span class="mh-text-warning">An earlier-expiring batch still has stock for at least one item - this will be logged as a FEFO override.</span>' : ''),
+                anyOverride ? 'Confirm Dispensing (FEFO Override)' : 'Confirm Dispensing',
+                anyOverride ? 'warning' : 'info',
                 'Yes, Dispense',
                 { html: true }
             ).then(function (ok) {

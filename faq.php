@@ -1,5 +1,8 @@
 <?php
 session_start();
+require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/settings_helper.php';
+require_once __DIR__ . '/includes/queue_helper.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -52,15 +55,49 @@ session_start();
         <div class="faq-container">
             
             <details>
-                <summary>Mision</summary>
-                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+                <summary>What are your operating hours?</summary>
+                <p>We are open <?php echo htmlspecialchars(mh_operating_days_summary()); ?>, from <?php echo htmlspecialchars(mh_operating_hours_summary()); ?>. We are closed on non-operating days and declared holidays.</p>
             </details>
 
             <details>
-                <summary>Vision</summary>
-                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+                <summary>Do you accept walk-in patients?</summary>
+                <p>Yes. Walk-in patients are welcome during clinic hours. Staff register you and give you a queue number for the department you need, and emergency check-ups are always accommodated.</p>
             </details>
 
+            <details>
+                <summary>Can I book an appointment online?</summary>
+                <p>No. Visits are walk-in and handled through the queue at the health center. Your patient account is for viewing your own records, not for booking.</p>
+            </details>
+
+            <details>
+                <summary>How do I create a patient account?</summary>
+                <p>Use "Register" on the home page. If the health center already has a record for you, we verify your mobile number with a one-time code and link the account to that record instead of creating a duplicate.</p>
+            </details>
+
+            <details>
+                <summary>What can I see in my patient account?</summary>
+                <p>Your profile, consultation and program history, medicines dispensed to you, and your upcoming follow-up schedule. You can update your own contact details and password. Only health center staff can add or change medical records.</p>
+            </details>
+
+            <details>
+                <summary>Will I get text message reminders?</summary>
+                <p>Yes. When staff set a follow-up date, we send an SMS reminder the day before and on the day of the visit to the mobile number on your record. Please keep your number up to date. No reminders are sent on declared clinic holidays.</p>
+            </details>
+
+            <details>
+                <summary>Are vaccines free for infants?</summary>
+                <p>Yes. Mandatory routine immunizations (BCG, Hepatitis B, Pentavalent, OPV, etc.) are provided free as part of the center's health program.</p>
+            </details>
+
+            <details>
+                <summary>I forgot my password. What do I do?</summary>
+                <p>Use "Forgot password" on the login page. We send a reset link to your email or a code by SMS. It expires after 15 minutes.</p>
+            </details>
+
+            <details>
+                <summary>Do you accept online payments or process insurance claims?</summary>
+                <p>No. This system manages health records, queueing, medicine inventory and reminders only. It does not handle payments, billing or PhilHealth claims.</p>
+            </details>
 
         </div>
     </section>

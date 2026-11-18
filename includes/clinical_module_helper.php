@@ -240,6 +240,7 @@ if (!function_exists('mh_cm_followup_field')) {
                 <div class="cf-field">
                     <label>Follow-up / Return Date <span class="cf-opt">(Optional)</span></label>
                     <input type="date" name="next_visit_date" min="<?php echo date('Y-m-d'); ?>">
+                    <input type="text" name="followup_reason" maxlength="255" placeholder="Reason for the return visit (saved with the notes)" style="margin-top:6px;">
                     <span class="cf-help"><?php echo mh_h($help); ?></span>
                 </div>
         <?php

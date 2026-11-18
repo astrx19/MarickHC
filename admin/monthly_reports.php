@@ -39,6 +39,8 @@ $scope_map = [
 ];
 $scope = $scope_map[$role] ?? null;
 if ($scope === null) { mh_deny_access(); exit; }
+// The Medicine Inventory report needs stock access: the registration-only 'encoder' role has none (kept separate from 'inventory').
+if ($scope === 'inventory' && !mh_has_permission('view_stock')) { mh_deny_access(); exit; }
 
 $scope_labels = [
     'master'    => 'All Departments',
@@ -65,6 +67,12 @@ $start        = sprintf('%04d-%02d-01', $year, $month);
 $end          = date('Y-m-d', strtotime($start . ' +1 month'));
 $P            = [$start, $end];                       // bound as 'ss' in every range query
 $period_label = date('F Y', strtotime($start));
+
+// Fig. 62: Excel download of exactly what is on screen (PDF = Print > Save as PDF).
+if (($_GET['export'] ?? '') === 'csv') {
+    require_once __DIR__ . '/../includes/report_export.php';
+    mh_report_csv_export('monthly_report_' . date('Y_m', strtotime($start)) . '.csv', 'Monthly Clinic Report: ' . $period_label);
+}
 
 $module_title = "Monthly Clinic Report";
 
@@ -337,7 +345,8 @@ mh_layout_head([
                     </div>
                     <button type="submit" class="btn-submit btn-sm">Apply</button>
                 </form>
-                <button class="btn btn-primary" onclick="window.print()">Print Report</button>
+                <button class="btn btn-primary" onclick="window.print()">Print / Save as PDF</button>
+                <a class="btn btn-primary" style="text-decoration:none;" href="?month=<?php echo (int) $month; ?>&amp;year=<?php echo (int) $year; ?>&amp;export=csv">Download Excel (.csv)</a>
             </div>
 
 <?php 

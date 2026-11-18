@@ -94,7 +94,9 @@ if ($summary['skipped_no_key']) {
 echo "[$startedAt] SMS reminder run started.\n";
 echo "  Checked: {$summary['checked']}   Sent: {$summary['sent']}   Failed: {$summary['failed']}\n";
 
-if ($summary['checked'] === 0) {
+if (!empty($summary['paused_holiday'])) {
+    echo "  Today is a declared clinic holiday - nothing sent; pending reminders stay queued for the next open day.\n";
+} elseif ($summary['checked'] === 0) {
     echo "  Nothing was due (no pending rows with scheduled_date <= today).\n";
 } else {
     foreach ($summary['details'] as $d) {

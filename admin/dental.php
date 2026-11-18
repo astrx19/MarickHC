@@ -16,6 +16,7 @@ require_once __DIR__ . '/../includes/queue_helper.php';
 require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
 mh_check_module_enabled('dental');
 mh_dental_ensure_tables($conn);
+mh_dental_ensure_prescription($conn);
 
 $can_log          = mh_has_capability('can_log_dental');
 $can_view_history = mh_has_capability('can_view_dental_history');
@@ -200,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE id = ? AND patient_id = ?");
             $st->bind_param('ii', $apt, $pid);
         } else {
-            $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE patient_id = ? AND status IN ('Waiting','Approved')
+            $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE patient_id = ? AND status IN ('Waiting','Serving','Approved')
                                   AND (department LIKE '%Dental%' OR department = 'Dental Clinic')");
             $st->bind_param('i', $pid);
         }
@@ -215,8 +216,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'date' => (string) ($_POST['visit_date'] ?? ''), 'complaint' => mh_dental_str($_POST['chief_complaint'] ?? '', 255),
             'diagnosis' => mh_dental_str($_POST['diagnosis'] ?? '', 255), 'routine' => (array) ($_POST['routine'] ?? []), 'other' => (array) ($_POST['other'] ?? []),
             'teeth' => (string) ($_POST['tooth_numbers'] ?? ''), 'referral' => mh_dental_str($_POST['referral'] ?? '', 255),
-            'notes' => mh_dental_str($_POST['notes'] ?? '', 1000), 'bp' => trim((string) ($_POST['bp'] ?? '')), 'temp' => trim((string) ($_POST['temp'] ?? '')),
+            'notes' => mh_dental_str(mh_followup_notes($_POST['notes'] ?? ''), 1000), 'bp' => trim((string) ($_POST['bp'] ?? '')), 'temp' => trim((string) ($_POST['temp'] ?? '')),
             'next' => (string) ($_POST['next_visit_date'] ?? ''),
+            'rx' => mh_dental_str($_POST['prescription'] ?? '', 1000), 'route' => !empty($_POST['route_dispensing']),
             'tooth_c' => (array) ($_POST['tooth_c'] ?? []), 'tooth_s' => (array) ($_POST['tooth_s'] ?? []),
         ];
 
@@ -260,6 +262,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$ok) { $visit_fail($err); }
 
         $msg = 'Dental record saved.';
+        if ($old['rx'] !== '') {
+            $st = $conn->prepare("UPDATE dental_records SET prescription = ? WHERE id = ?");
+            if ($st) { $st->bind_param('si', $old['rx'], $rec_id); $st->execute(); $st->close(); }
+        }
 
         $tooth_changes = mh_dental_apply_tooth_updates($conn, $pid, $teeth, $old['tooth_c'], $old['tooth_s'], $rec_id, $user_id);
         if ($tooth_changes > 0) { $msg .= ' Tooth chart updated (' . $tooth_changes . ($tooth_changes === 1 ? ' tooth' : ' teeth') . ').'; }
@@ -267,10 +273,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($apt > 0) {
             if (mh_queue_complete($conn, $apt, $pid)) { $msg .= ' Queue entry marked as Completed.'; }
         } else {
-            $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE patient_id = ? AND appointment_date = CURDATE() AND status IN ('Waiting','Approved')
+            $st = $conn->prepare("UPDATE appointments SET status = 'Completed' WHERE patient_id = ? AND appointment_date = CURDATE() AND status IN ('Waiting','Serving','Approved')
                                   AND (department LIKE '%Dental%' OR department = 'Dental Clinic')");
             $st->bind_param('i', $pid); $st->execute(); $st->close();
         }
+        if ($old['route'] && $old['rx'] !== '') { $msg .= mh_route_to_dispensing($conn, $pid); }   // REQ38: route to the encoder
         if ($next !== null) {
             $sms = mh_schedule_followup_sms($conn, $pid, $next, 'Dental Clinic', $rec_id);
             if (!empty($sms['queued'])) { $msg .= ' ' . (int) $sms['queued'] . ' SMS reminder(s) queued for the follow-up.'; }
@@ -418,7 +425,7 @@ if ($patient) {
     $in = implode(',', array_fill(0, count($dentalDepts), '?'));
     $st = $conn->prepare("SELECT a.id AS apt_id, a.queue_number, a.status, p.id, p.first_name, p.middle_name, p.last_name, p.birthdate, p.sex
                           FROM appointments a JOIN patients p ON p.id = a.patient_id
-                          WHERE a.department IN ($in) AND a.appointment_date = ? AND a.status IN ('Waiting','Approved')
+                          WHERE a.department IN ($in) AND a.appointment_date = ? AND a.status IN ('Waiting','Serving','Approved')
                           ORDER BY a.queue_number ASC, a.id ASC");
     $types = str_repeat('s', count($dentalDepts) + 1);
     $params = array_merge($dentalDepts, [$today]);
@@ -441,7 +448,7 @@ if ($patient) {
 
     $visits = [];
     if ($can_view_history) {
-        $res = $conn->query("SELECT r.id, r.patient_id, r.visit_date, r.procedure_done, r.chief_complaint, r.diagnosis, r.tooth_number, r.notes, r.referral,
+        $res = $conn->query("SELECT r.id, r.patient_id, r.visit_date, r.procedure_done, r.chief_complaint, r.diagnosis, r.tooth_number, r.notes, r.referral, r.prescription,
                                     r.next_visit_date, r.bp, r.temp, p.first_name, p.middle_name, p.last_name, s.first_name AS s_first, s.last_name AS s_last,
                                     t.routine_codes, t.other_codes
                                FROM dental_records r
@@ -526,7 +533,7 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 $dent  = trim(($v['s_first'] ?? '') . ' ' . ($v['s_last'] ?? ''));
                 $hay   = strtolower($pname . ' ' . ($v['tooth_number'] ?? '') . ' ' . ($v['diagnosis'] ?? '') . ' ' . implode(' ', $svc) . ' ' . ($v['chief_complaint'] ?? ''));
                 $det = [];
-                foreach (['Reason for visit' => 'chief_complaint', 'Diagnosis' => 'diagnosis', 'Blood pressure' => 'bp', 'Temperature' => 'temp', 'Referral' => 'referral', 'Notes' => 'notes'] as $lbl => $col) {
+                foreach (['Reason for visit' => 'chief_complaint', 'Diagnosis' => 'diagnosis', 'Blood pressure' => 'bp', 'Temperature' => 'temp', 'Referral' => 'referral', 'Prescription' => 'prescription', 'Notes' => 'notes'] as $lbl => $col) {
                     if (!empty($v[$col])) { $det[$lbl] = $v[$col] . ($col === 'temp' ? ' °C' : ''); }
                 }
             ?>
@@ -635,8 +642,12 @@ echo mh_flash_scripts($success_msg, $error_msg);
                 <div class="form-grid dv-grid-2">
                     <div class="form-group"><label>Referral (if any, with reason)</label>
                         <input type="text" name="referral" id="dvReferral" maxlength="255"></div>
+                    <div class="form-group"><label>Prescription <small class="du-muted">(medicines to dispense, with instructions)</small></label>
+                        <textarea name="prescription" id="dvRx" rows="2" maxlength="1000"></textarea>
+                        <label style="display:flex; gap:8px; align-items:center; font-weight:400; margin-top:6px;"><input type="checkbox" name="route_dispensing" value="1"> Send patient to Dispensing (encoder)</label></div>
                     <div class="form-group"><label>Next visit date <small class="du-muted">(the patient gets an SMS reminder)</small></label>
-                        <input type="date" name="next_visit_date" id="dvNext" min="<?php echo date('Y-m-d'); ?>"></div>
+                        <input type="date" name="next_visit_date" id="dvNext" min="<?php echo date('Y-m-d'); ?>">
+                        <input type="text" name="followup_reason" maxlength="255" placeholder="Reason for the return visit (saved with the notes)" style="margin-top:6px;"></div>
                 </div>
 
                 <button type="submit" name="add_visit" id="dvSubmit" class="du-btn du-btn-primary" style="width:100%; margin-top:6px;">Save Dental Record</button>

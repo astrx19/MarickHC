@@ -41,6 +41,7 @@ mh_roles_install($conn);   // creates system_roles / role_permissions + seeds th
 
 $active_tab = $_GET['tab'] ?? 'branding';
 $allowed_tabs = ['branding', 'appearance', 'masterlists', 'departments', 'disease', 'ocr', 'sms', 'modules', 'roles'];
+if (mh_is_health_head()) { $allowed_tabs[] = 'backup'; }   // Paper REQ78: Database Backup lives here, Health Head only
 if (!in_array($active_tab, $allowed_tabs, true)) { $active_tab = 'branding'; }
 
 $list_key  = $_GET['list'] ?? 'streets';
@@ -247,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* ---------------- 4. OCR ENGINE + API KEYS ---------------------- */
     if (isset($_POST['save_ocr'])) {
-        $ocrEngine = trim($_POST['ocr_engine'] ?? 'vision');
+        $ocrEngine = trim($_POST['ocr_engine'] ?? 'groq_ocr');
         if (!in_array($ocrEngine, ['vision', 'gemini', 'groq_ocr', 'aws_textract', 'openai'], true)) { $ocrEngine = 'vision'; }
 
         $aiProvider = trim($_POST['ai_provider'] ?? 'groq');
@@ -540,10 +541,10 @@ $gemini_key_problem  = null;
 $groq_key_problem    = null;
 $aws_textract_problem = null;
 $openai_key_problem  = null;
-$active_ocr_engine   = 'vision';
+$active_ocr_engine   = 'groq_ocr';
 if ($active_tab === 'ocr') {
     require_once __DIR__ . '/../config/vision.php';
-    $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
+    $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'groq_ocr';
 
     $vk = defined('GOOGLE_VISION_API_KEY') ? GOOGLE_VISION_API_KEY : '';
     if (empty($vk)) {
@@ -767,6 +768,7 @@ mh_layout_head(['title' => 'System Settings']);
             <a href="?tab=sms"         class="<?php echo $active_tab === 'sms' ? 'active' : ''; ?>">SMS Reminders</a>
             <a href="?tab=modules"     class="<?php echo $active_tab === 'modules' ? 'active' : ''; ?>">Module Access</a>
             <a href="?tab=roles"       class="<?php echo $active_tab === 'roles' ? 'active' : ''; ?>">Staff Roles &amp; Permissions</a>
+            <?php if (mh_is_health_head()): ?><a href="?tab=backup" class="<?php echo $active_tab === 'backup' ? 'active' : ''; ?>">Database Backup</a><?php endif; ?>
         </nav>
 
 <?php /* ================= TAB 1: BRANDING ================= */ ?>
@@ -1229,10 +1231,10 @@ mh_layout_head(['title' => 'System Settings']);
         'gemini' => 'Google Gemini API (Gemini 3.6 Flash / 3.1 Pro)',
         'openai' => 'OpenAI (GPT-4o / GPT-4o mini)',
     ];
-    $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
+    $active_ocr_engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'groq_ocr';
     $activeAiProvider  = function_exists('mh_active_ai_provider') ? mh_active_ai_provider() : (mh_setting('ai_provider', 'groq') ?: 'groq');
 
-    $ocr_engine_label  = $engineLabels[$active_ocr_engine] ?? 'Google Cloud Vision API';
+    $ocr_engine_label  = $engineLabels[$active_ocr_engine] ?? 'Groq OCR';
     $ai_provider_label = $aiLabels[$activeAiProvider] ?? 'Groq Cloud (LLaMA 3.3 / Qwen)';
 
     if ($active_ocr_engine === 'groq_ocr') {
@@ -1863,6 +1865,38 @@ mh_layout_head(['title' => 'System Settings']);
             });
         }
     </script>
+
+<?php elseif ($active_tab === 'backup'): ?>
+    <?php
+        require_once __DIR__ . '/../includes/db_backup.php';
+        $saved_backups = [];
+        foreach (glob(__DIR__ . '/../storage/backups/marick_backup_*') ?: [] as $bf) { $saved_backups[] = [basename($bf), filemtime($bf), filesize($bf)]; }
+        usort($saved_backups, function ($a, $b) { return $b[1] <=> $a[1]; });
+        $saved_backups = array_slice($saved_backups, 0, 10);
+    ?>
+    <div class="unified-panel">
+        <div class="panel-header"><h3><?php echo mh_icon('database'); ?> Database Backup &amp; Recovery</h3></div>
+        <div style="padding:20px;">
+            <p>Download a complete copy of the clinic database (patients, records, inventory, logs, settings) as a single <code>.sql</code> file. Keep it somewhere safe and offline: it contains patient health data.</p>
+            <form method="POST" action="db_backup.php">
+                <?php echo mh_csrf_field(); ?>
+                <button type="submit" name="download_backup" class="btn-primary">Download full backup (.sql)</button>
+            </form>
+            <h4 style="margin-top:24px;">Restoring</h4>
+            <p>In Hostinger hPanel open <strong>phpMyAdmin</strong>, select the clinic database, choose <strong>Import</strong> and upload the backup file. It recreates every table. See <code>docs/BACKUP_RECOVERY.md</code>.</p>
+            <h4 style="margin-top:24px;">Automatic daily backups</h4>
+            <p>Add a Hostinger cron job that runs <code>php cron/backup_database.php</code> once a day. Files are saved to <code>storage/backups/</code> (blocked from web access) and the last 14 days are kept.</p>
+            <?php if ($saved_backups): ?>
+                <table class="data-table" style="margin-top:12px;"><thead><tr><th>Saved backup</th><th>Created</th><th>Size</th></tr></thead><tbody>
+                <?php foreach ($saved_backups as $sb): ?>
+                    <tr><td><?php echo htmlspecialchars($sb[0]); ?></td><td><?php echo date('M j, Y g:i A', $sb[1]); ?></td><td><?php echo round($sb[2] / 1024); ?> KB</td></tr>
+                <?php endforeach; ?>
+                </tbody></table>
+            <?php else: ?>
+                <p style="margin-top:12px; color:var(--text-muted,#64748b);">No scheduled backups found yet.</p>
+            <?php endif; ?>
+        </div>
+    </div>
 
 <?php elseif ($active_tab === 'modules'): ?>
 

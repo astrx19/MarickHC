@@ -142,7 +142,8 @@ function mh_queue_signature(mysqli $conn)
 
 function mh_queue_active_statuses()
 {
-    return ['Waiting', 'Approved'];
+    // Paper Fig. 60 lifecycle: Waiting -> Serving (staff opened the patient) -> Completed (record saved).
+    return ['Waiting', 'Serving', 'Approved'];
 }
 
 function mh_queue_department_problem(mysqli $conn, $department)
@@ -237,6 +238,36 @@ function mh_queue_open_context(mysqli $conn, $aptId, $module = null, $patientHin
     if ($module !== null && mh_department_module($row['department']) !== $module) { return null; }
     if ((int) $patientHint > 0 && (int) $row['patient_id'] !== (int) $patientHint) { return null; }
     return $row;
+}
+
+/**
+ * Paper REQ38 / consultation->prescription->dispensing flow: sends the patient to the Dispensing queue
+ * (the clinic department whose module is Medicine Inventory / Dispensing) so the Encoder can dispense.
+ * Never throws and never blocks the clinical save: returns a short sentence to append to the success message.
+ */
+function mh_route_to_dispensing(mysqli $conn, $patientId)
+{
+    try {
+        $target = null;
+        foreach (mh_clinic_departments($conn) as $dept) {
+            if (mh_department_module($dept) === 'inventory') { $target = $dept; break; }
+        }
+        if ($target === null) {
+            return ' The patient was NOT routed: no Dispensing department is set up under Departments.';
+        }
+        $conn->begin_transaction();
+        list($queueNo, $err) = mh_enqueue_patient($conn, (int) $patientId, $target, 'Prescription - For Dispensing');
+        if ($queueNo === null) {
+            $conn->rollback();
+            return ' The patient was not routed to Dispensing: ' . $err;
+        }
+        $conn->commit();
+        return ' Patient routed to ' . $target . ' (Queue ' . mh_queue_label($target, $queueNo) . ').';
+    } catch (Throwable $e) {
+        error_log('mh_route_to_dispensing: ' . $e->getMessage());
+        try { $conn->rollback(); } catch (Throwable $e2) {}
+        return ' The patient could not be routed to Dispensing; please tell the encoder directly.';
+    }
 }
 
 function mh_queue_complete(mysqli $conn, $aptId, $patientId)

@@ -17,7 +17,7 @@ if (!$patient) {
 
 $history   = mh_pp_history($conn, $patient_id);
 $dispensed = mh_pp_dispensed($conn, $patient_id, 5);
-$programs  = mh_pp_programs($conn, $patient_id);
+$followups = mh_pp_followups($conn, $patient_id);
 
 $total_visits = 0;
 foreach ($history as $h) {
@@ -76,13 +76,29 @@ mh_pp_layout_start([
         <div class="number"><?php echo (int)$recent_meds_count; ?></div>
         <div class="sub">Medicines dispensed in the last 90 days</div>
     </div>
-    <div class="stat-card pp-stat">
-        <span class="stat-icon-badge"><?php echo mh_icon('shield'); ?></span>
-        <h3>Program Enrollment</h3>
-        <div class="number"><?php echo count($programs); ?></div>
-        <div class="sub"><?php echo count($programs) > 0 ? 'Active health programs' : 'No programs enrolled yet'; ?></div>
+</div>
+
+<?php if (!empty($followups)): ?>
+<div class="unified-panel pp-followups">
+    <div class="panel-header">
+        <h3><?php echo mh_icon('calendar'); ?> Upcoming Follow-up Schedule</h3>
+    </div>
+    <div class="pp-section">
+        <?php foreach ($followups as $f): ?>
+            <div class="pp-followup-row<?php echo $f['days'] <= 1 ? ' is-soon' : ''; ?>">
+                <div>
+                    <strong><?php echo mh_pp_e($f['service']); ?></strong>
+                    <div class="pp-followup-date"><?php echo mh_pp_e(mh_pp_date($f['date'], 'l, F j, Y')); ?></div>
+                </div>
+                <span class="status-pill <?php echo $f['days'] <= 1 ? 'status-warning' : 'status-scheduled'; ?>">
+                    <?php echo $f['days'] === 0 ? 'Today' : ($f['days'] === 1 ? 'Tomorrow' : 'In ' . (int) $f['days'] . ' days'); ?>
+                </span>
+            </div>
+        <?php endforeach; ?>
+        <p class="pp-followup-note">Walk-in policy applies: please come to the health center on the date above. Scheduling is done by health center staff, not online.</p>
     </div>
 </div>
+<?php endif; ?>
 
 <div class="pp-grid">
     <div>
@@ -182,27 +198,6 @@ mh_pp_layout_start([
             </div>
         </div>
 
-        <?php if (!empty($programs)): ?>
-        <div class="unified-panel">
-            <div class="panel-header">
-                <h3><?php echo mh_icon('shield'); ?> Program Status</h3>
-            </div>
-            <div class="pp-section">
-                <div class="pp-programs">
-                    <?php foreach ($programs as $p): ?>
-                        <div class="pp-program">
-                            <span class="icn"><?php echo mh_icon($p['icon']); ?></span>
-                            <div>
-                                <strong><?php echo mh_pp_e($p['label']); ?></strong>
-                                <div class="status"><?php echo mh_pp_e($p['status']); ?></div>
-                                <div class="detail"><?php echo mh_pp_e($p['detail']); ?></div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
 
         <?php mh_pp_render_center_card(false); ?>
     </div>

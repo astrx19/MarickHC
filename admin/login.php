@@ -14,6 +14,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/icons.php';
+require_once __DIR__ . '/../includes/login_throttle.php';
 
 // Already signed in? Skip straight to the dashboard instead of showing
 // the login form again.
@@ -30,6 +31,10 @@ if (isset($_POST['login'])) {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
+    $mh_wait = mh_lt_blocked_seconds($conn, 'staff', $username);
+    if ($mh_wait > 0) {
+        $error_msg = mh_lt_message($mh_wait);
+    } else {
     $stmt = $conn->prepare("SELECT * FROM staff WHERE username = ?");
     $stmt->bind_param("s", $username);
     $stmt->execute();
@@ -43,6 +48,7 @@ if (isset($_POST['login'])) {
         } elseif (!$account_archived && password_verify($password, $user['password'])) {
             // New session id at every privilege change, so a session id
             // captured before login can't be reused afterwards.
+            mh_lt_clear($conn, 'staff', $username);
             session_regenerate_id(true);
 
             if ($user['is_first_login'] == 1) {
@@ -63,10 +69,11 @@ if (isset($_POST['login'])) {
                 header("Location: dashboard.php");
                 exit();
             }
-        } else { $error_msg = "Incorrect username or password."; }
-    } else { $error_msg = "Incorrect username or password."; }
+        } else { $error_msg = "Incorrect username or password."; mh_lt_record_failure($conn, 'staff', $username); }
+    } else { $error_msg = "Incorrect username or password."; mh_lt_record_failure($conn, 'staff', $username); }
 
     $stmt->close();
+    }   // end throttle check
 }
 
 if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {

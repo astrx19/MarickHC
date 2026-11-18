@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../includes/env_guard.php';
+mh_require_dev_environment();   // never runs on the live clinic database (see includes/env_guard.php)
 /**
  * ============================================================
  * MARICK HEALTH CENTER - DATABASE SEEDER
