@@ -133,6 +133,7 @@ function mh_pm_classify(array $row, array $streets = [])
     $row['search'] = mb_strtolower(trim(implode(' ', [
         $row['first_name'] ?? '', $row['middle_name'] ?? '', $row['last_name'] ?? '',
         $contact, $digits, $display, $row['extra_contacts'] ?? '',
+        mh_pm_is_placeholder_email($row['email'] ?? '') ? '' : ($row['email'] ?? ''),
     ])));
     return $row;
 }

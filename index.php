@@ -88,25 +88,53 @@ $marick_streets = mh_streets($conn);
     </footer>
 
     <div class="modal-overlay" id="faqModal">
-        <div class="modal-content" style="max-width: 600px; text-align: left;">
+        <div class="modal-content faq-modal" style="max-width: 600px; text-align: left;">
             <button class="close-modal" onclick="closeModal('faqModal')">×</button>
             <div class="modal-header" style="text-align: center;">
                 <img src="assets/images/logo.png" alt="Marick Logo">
                 <h2>Frequently Asked Questions</h2>
                 <p>Everything you need to know about our health center.</p>
             </div>
-            <div style="margin-top: 20px;">
-                <div style="margin-bottom: 20px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 15px;">
-                    <h4 style="color: #0369a1; margin: 0 0 5px 0; font-size: 1.05rem; display:flex; align-items:center; gap:6px;"><?php echo mh_icon('clock'); ?> What are your operating hours?</h4>
-                    <p style="color: #475569; margin: 0; font-size: 0.95rem; line-height: 1.5;">We are open <?php echo htmlspecialchars(mh_operating_days_summary()); ?>, from <?php echo htmlspecialchars(mh_operating_hours_summary()); ?>. We are closed on non-operating days and declared holidays.</p>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('clock'); ?> What are your operating hours?</h4>
+                    <p>We are open <?php echo htmlspecialchars(mh_operating_days_summary()); ?>, from <?php echo htmlspecialchars(mh_operating_hours_summary()); ?>. We are closed on non-operating days and declared holidays.</p>
                 </div>
-                <div style="margin-bottom: 20px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 15px;">
-                    <h4 style="color: #0369a1; margin: 0 0 5px 0; font-size: 1.05rem; display:flex; align-items:center; gap:6px;"><?php echo mh_icon('users'); ?> Do you accept walk-in patients?</h4>
-                    <p style="color: #475569; margin: 0; font-size: 0.95rem; line-height: 1.5;">Yes! Walk-in patients are welcome during clinic hours, and we always accommodate emergency checkups.</p>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('users'); ?> Do you accept walk-in patients?</h4>
+                    <p>Yes! Walk-in patients are welcome on a first-come, first-served basis during clinic hours, with priority queuing for urgent cases, senior citizens, pregnant women, and PWDs.</p>
                 </div>
-                <div style="margin-bottom: 10px;">
-                    <h4 style="color: #0369a1; margin: 0 0 5px 0; font-size: 1.05rem; display:flex; align-items:center; gap:6px;"><?php echo mh_icon('droplet'); ?> Are vaccines free for infants?</h4>
-                    <p style="color: #475569; margin: 0; font-size: 0.95rem; line-height: 1.5;">Yes, all mandatory routine immunizations (BCG, Hepatitis B, Pentavalent, OPV, etc.) are provided for free as part of the center's health program.</p>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('droplet'); ?> Are vaccines free for infants?</h4>
+                    <p>Yes, all mandatory routine immunizations (BCG, Hepatitis B, Pentavalent, OPV, etc.) are provided for free as part of the center's health program.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('calendar'); ?> Do I need to book an online appointment before visiting?</h4>
+                    <p>No. We do not take online bookings. Visits are walk-in: just come during clinic hours and our staff will register you and give you a queue number. Once a follow-up date is set for you, our system automatically sends SMS reminders to the mobile number on your record.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('activity'); ?> What healthcare services do you offer?</h4>
+                    <p>We offer general consultations, prenatal and maternal care, child immunizations, basic dental services, vital signs monitoring, and medicine dispensing.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('heart'); ?> Are consultations and medicines free?</h4>
+                    <p>Yes. Consultations and medicines are free for residents of Barangay Sto. Domingo, subject to available stock.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('file-text'); ?> What should I bring on my visit?</h4>
+                    <p>Please bring a valid ID or proof of residency, an active mobile number for SMS OTP and reminders, and any existing immunization or prenatal booklets.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('message'); ?> How do I view my medical records and prescriptions online?</h4>
+                    <p>Use the Patient Portal. If you are new to the health center, choose <strong>Register</strong> to create an account. If the center already has a record for you, use <strong>Claim Account</strong>: we send a 6-digit SMS OTP to the mobile number on file to verify it is you and link the account to your existing record. After logging in, you can view your records and prescriptions.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('home'); ?> What happens on Wednesdays during BHW house-to-house visits?</h4>
+                    <p>On Wednesdays, our Barangay Health Workers (BHWs) go out into the community for house-to-house visits and follow-ups with residents. This works alongside our SMS reminders, so you are reached whether you are at home or due for a clinic visit.</p>
+                </div>
+                <div class="faq-item">
+                    <h4><?php echo mh_icon('shield'); ?> Is my medical information kept private?</h4>
+                    <p>Yes. Your information is protected under Republic Act 10173, the Data Privacy Act of 2012. Role-based access control limits who can see your records to authorized medical staff and you, the verified patient.</p>
                 </div>
             </div>
         </div>

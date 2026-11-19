@@ -155,7 +155,7 @@ mh_layout_open();
                 <div class="pm-panel-head">
                     <?php echo mh_pm_render_filters([
                         'id' => 'mlFilters', 'target' => '#patientsTable', 'counts' => $counts, 'streets' => $streets,
-                        'page_size' => 50, 'placeholder' => 'Search name, contact or address',
+                        'page_size' => 50, 'placeholder' => 'Search name, contact, email or address',
                     ]); ?>
                 </div>
 
