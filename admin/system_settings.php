@@ -73,7 +73,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'hero_subtitle'         => trim($_POST['hero_subtitle'] ?? ''),
             'global_announcement'   => trim($_POST['global_announcement'] ?? ''),
             'enable_online_booking' => isset($_POST['enable_online_booking']) ? '1' : '0',
-            'show_db_seeder_sidebar' => isset($_POST['show_db_seeder_sidebar']) ? '1' : '0',
             'home_address_type'     => mb_substr(trim($_POST['home_address_type'] ?? ''), 0, 60),
             'outside_address_type'  => mb_substr(trim($_POST['outside_address_type'] ?? ''), 0, 60),
             'home_address_suffix'   => mb_substr(trim($_POST['home_address_suffix'] ?? ''), 0, 150),
@@ -725,11 +724,6 @@ mh_layout_head(['title' => 'System Settings']);
                     Branding, colours and every dropdown in the system - no code editing required.
                 </p>
             </div>
-            <div>
-                <a href="db_seeder.php" class="btn btn-soft" style="display:inline-flex; align-items:center; gap:6px; font-weight:600; text-decoration:none; padding:8px 14px; border-radius:8px; border:1px solid var(--border-color,#cbd5e1); background:var(--bg-hover,#f1f5f9); color:var(--text-main,#334155);" title="Open test data generator and module seeder">
-                    <span style="display:inline-flex; width:16px; height:16px;"><?php echo mh_icon('database'); ?></span> Database Seeder
-                </a>
-            </div>
         </div>
 
         <?php if ($flash): ?>
@@ -817,26 +811,6 @@ mh_layout_head(['title' => 'System Settings']);
                                       placeholder="e.g. Clinic closed tomorrow due to storm..."
                                       class="announce-input"><?php echo htmlspecialchars($settings['global_announcement']); ?></textarea>
                             <p class="hint">Leave blank to hide. Any text here shows as a red alert on the patient portal.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <header>
-                        <h3>Administrator Tools</h3>
-                        <p>Controls which maintenance tools appear in the staff sidebar.</p>
-                    </header>
-                    <div class="body">
-                        <div class="feature-row" style="margin-bottom:0;">
-                            <div>
-                                <strong>Show Database Seeder in Sidebar</strong>
-                                <span class="sub">Adds a Database Seeder link for Health Heads. Keep this off on a live system; the seeder inserts mock records.</span>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" name="show_db_seeder_sidebar" value="1"
-                                    <?php echo (($settings['show_db_seeder_sidebar'] ?? '0') === '1') ? 'checked' : ''; ?>>
-                                <span class="slider"></span>
-                            </label>
                         </div>
                     </div>
                 </div>

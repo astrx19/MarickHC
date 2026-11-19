@@ -71,7 +71,6 @@ function mh_setting_defaults()
         'hero_subtitle'         => 'Providing accessible, compassionate, and comprehensive medical services to ensure the well-being of every resident in our barangay.',
         'global_announcement'   => '',
         'enable_online_booking' => '1',
-        'show_db_seeder_sidebar' => '0',
         'logo_path'             => 'assets/images/logo.png',
         'background_path'       => 'assets/images/barangay_bg.png',
         'ocr_model'             => 'llama-3.3-70b-versatile',

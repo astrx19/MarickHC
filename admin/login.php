@@ -46,7 +46,8 @@ if (isset($_POST['login'])) {
                 $_SESSION['user_role'] = $user['role'];
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['role'] = $user['role'];
-                mh_ss_issue('staff', $user['id']);   
+                $_SESSION['full_name'] = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
+                mh_ss_issue('staff', $user['id']);
 
                 logActivity($conn, $user['id'], $user['role'], "System Login", "User logged into the portal.");
                 header("Location: dashboard.php");

@@ -185,10 +185,6 @@ if (!function_exists('mh_layout_staff_config')) {
 
         $footer = [];
         if (mh_is_health_head($role)) {
-            require_once __DIR__ . '/../env_guard.php';
-            if (mh_setting('show_db_seeder_sidebar', '0') === '1' && mh_is_dev_environment()) {
-                $footer[] = ['label' => 'Database Seeder', 'href' => 'db_seeder.php', 'icon' => 'database', 'active' => $page === 'db_seeder.php', 'class' => 'footer-link'];
-            }
             $footer[] = ['label' => 'System Settings', 'href' => 'system_settings.php', 'icon' => 'settings', 'active' => $page === 'system_settings.php', 'class' => 'footer-link'];
         }
         $footer[] = [
@@ -204,7 +200,25 @@ if (!function_exists('mh_layout_staff_config')) {
             ],
         ];
 
-        $staff_name = (string) ($_SESSION['full_name'] ?? 'Staff Member');
+        if (empty($_SESSION['full_name']) && function_exists('mh_auth_db')) {
+            $sid = (int) ($_SESSION['staff_id'] ?? $_SESSION['user_id'] ?? 0);
+            $dbc = $sid > 0 ? mh_auth_db() : null;
+            if ($dbc) {
+                try {
+                    $st = $dbc->prepare('SELECT first_name, last_name FROM staff WHERE id = ? LIMIT 1');
+                    $st->bind_param('i', $sid);
+                    $st->execute();
+                    $r = $st->get_result()->fetch_assoc();
+                    $st->close();
+                    if ($r) {
+                        $_SESSION['full_name'] = trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? ''));
+                    }
+                } catch (Throwable $e) {
+                    error_log('staff_nav name lookup: ' . $e->getMessage());
+                }
+            }
+        }
+        $staff_name = (string) (($_SESSION['full_name'] ?? '') !== '' ? $_SESSION['full_name'] : 'Staff Member');
         $staff_role = (string) ($_SESSION['role'] ?? 'User');
         $user_id    = (int) ($_SESSION['user_id'] ?? 0);
         $photo_path = __DIR__ . '/../../assets/images/profile_pics/' . $user_id . '.jpg';
