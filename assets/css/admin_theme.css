@@ -2040,23 +2040,3 @@ button[type="submit"].btn-submit {
 }
 
 /* ===== END MARICK THEME VARIABLES ===== */
-
-/* Audit log manage controls (temporary Health-Head-only edit/delete) */
-.lg-edit-row {
-    display: none;
-    background: rgba(59, 130, 246, .06);
-}
-
-.lg-edit-row.lg-edit-open {
-    display: table-row;
-}
-
-.lg-notice {
-    background: #d1fae5;
-    color: #047857;
-    border: 1px solid #a7f3d0;
-    border-radius: 8px;
-    padding: 10px 14px;
-    margin-bottom: 14px;
-    font-weight: 600;
-}

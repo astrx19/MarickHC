@@ -355,6 +355,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('sms', 'success', 'SMS settings saved. Active provider: ' . $providerLabel . '.');
     }
 
+
+    if (isset($_POST['save_sms_templates']) || isset($_POST['reset_sms_templates'])) {
+        require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
+        if (isset($_POST['reset_sms_templates'])) {
+            $d = mh_setting_defaults();
+            mh_set_settings($conn, [
+                'sms_followup_tomorrow_template' => $d['sms_followup_tomorrow_template'],
+                'sms_followup_today_template'    => $d['sms_followup_today_template'],
+            ], $user_id);
+            logActivity($conn, $user_id, $user_role, 'System Settings', 'Reset follow-up reminder SMS wording to the default.');
+            mh_redirect('sms', 'success', 'Reminder wording reset to the default.');
+        }
+
+        $labels = ['sms_followup_tomorrow_template' => 'Day-before ("tomorrow") reminder', 'sms_followup_today_template' => 'Same-day ("today") reminder'];
+        $clean = [];
+        foreach ($labels as $key => $label) {
+            $v = trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST[$key] ?? '')));
+            if ($v === '') { mh_redirect('sms', 'error', $label . ' message cannot be blank.'); }
+            if (mb_strlen($v) > 459) { mh_redirect('sms', 'error', $label . ' message is too long (maximum 459 characters, about 3 SMS).'); }
+            if (preg_match_all('/\{([^{}]*)\}/', $v, $m)) {
+                $bad = array_diff($m[1], mh_sms_template_placeholders());
+                if ($bad) { mh_redirect('sms', 'error', $label . ': unknown placeholder {' . implode('}, {', array_unique($bad)) . '}. Use only the ones listed under the box.'); }
+            }
+            if (preg_match('/[{}]/', preg_replace('/\{[a-z_]+\}/', '', $v))) {
+                mh_redirect('sms', 'error', $label . ': there is a stray { or } in the message.');
+            }
+            $clean[$key] = $v;
+        }
+        if (!mh_set_settings($conn, $clean, $user_id)) {
+            mh_redirect('sms', 'error', 'The database rejected the update. Nothing was saved.');
+        }
+        logActivity($conn, $user_id, $user_role, 'System Settings', 'Edited follow-up reminder SMS wording (tomorrow / today).');
+        mh_redirect('sms', 'success', 'Reminder wording saved. It applies to reminders queued from now on.');
+    }
+
     
     if (isset($_POST['send_test_sms'])) {
         $testNumber = trim($_POST['test_phone_number'] ?? '');
@@ -1639,6 +1674,59 @@ mh_layout_head(['title' => 'System Settings']);
                         </div>
                         <button type="submit" name="send_test_sms" class="btn btn-main btn-block">Send Test SMS Now</button>
                     </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <header>
+                    <h3>Follow-up Reminder Wording</h3>
+                    <p>The text patients receive the day before and on the day of their follow-up.</p>
+                </header>
+                <div class="body">
+                    <form method="POST">
+                        <?php echo mh_csrf_field(); ?>
+                        <div class="field">
+                            <label>Day-before reminder ("Tomorrow")</label>
+                            <textarea name="sms_followup_tomorrow_template" id="tplTomorrow" rows="4" maxlength="459" required style="width:100%; box-sizing:border-box;"><?php echo htmlspecialchars((string) mh_setting('sms_followup_tomorrow_template')); ?></textarea>
+                            <p class="hint"><strong>Preview:</strong> <span id="prevTomorrow"></span><br><span id="cntTomorrow"></span></p>
+                        </div>
+                        <div class="field">
+                            <label>Same-day reminder ("Today")</label>
+                            <textarea name="sms_followup_today_template" id="tplToday" rows="4" maxlength="459" required style="width:100%; box-sizing:border-box;"><?php echo htmlspecialchars((string) mh_setting('sms_followup_today_template')); ?></textarea>
+                            <p class="hint"><strong>Preview:</strong> <span id="prevToday"></span><br><span id="cntToday"></span></p>
+                        </div>
+                        <p class="hint">
+                            Placeholders you can use:
+                            <code class="inline">{first_name}</code> <code class="inline">{clinic}</code> <code class="inline">{module}</code>
+                            <code class="inline">{date}</code> <code class="inline">{when_date}</code> <code class="inline">{holiday_note}</code>.
+                            <code class="inline">{when_date}</code> becomes "TOMORROW, November 20, 2026 (Fri)" or "TODAY, ..." automatically.
+                            If the date is a declared clinic holiday, the holiday warning is always added. Changes apply to reminders queued from now on; ones already waiting in the queue keep their old text.
+                        </p>
+                        <button type="submit" name="save_sms_templates" class="btn btn-main">Save Wording</button>
+                        <button type="submit" name="reset_sms_templates" value="1" class="btn btn-soft" formnovalidate
+                                onclick="return confirm('Reset both reminder messages to the default wording?');">Reset to Default</button>
+                    </form>
+                    <script>
+                    (function () {
+                        var sample = {first_name: 'Jed', clinic: <?php echo json_encode((string) mh_setting('system_name'), JSON_HEX_TAG | JSON_HEX_AMP); ?>, module: 'Check-up',
+                                      date: 'November 20, 2026 (Fri)', holiday_note: ''};
+                        function render(t, when) {
+                            var v = Object.assign({}, sample, {when_date: when + 'November 20, 2026 (Fri)'});
+                            return t.replace(/\{([a-z_]+)\}/g, function (m, k) { return k in v ? v[k] : m; }).replace(/\s{2,}/g, ' ').trim();
+                        }
+                        function wire(inputId, prevId, cntId, when) {
+                            var i = document.getElementById(inputId), p = document.getElementById(prevId), c = document.getElementById(cntId);
+                            function upd() {
+                                var out = render(i.value, when), n = out.length, parts = n <= 160 ? 1 : Math.ceil(n / 153);
+                                p.textContent = out;
+                                c.textContent = n + ' characters \u2248 ' + parts + ' SMS' + (parts > 1 ? ' (each SMS uses a credit)' : '');
+                            }
+                            i.addEventListener('input', upd); upd();
+                        }
+                        wire('tplTomorrow', 'prevTomorrow', 'cntTomorrow', 'TOMORROW, ');
+                        wire('tplToday', 'prevToday', 'cntToday', 'TODAY, ');
+                    })();
+                    </script>
                 </div>
             </div>
 

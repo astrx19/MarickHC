@@ -17,6 +17,7 @@ $viewer_is_super = mh_is_health_head();
 
 
 
+mh_roles_merge_encoder_into_inventory($conn);   // Encoder + Inventory are one role now
 $role_labels = mh_get_roles(true);   
 $active_role_labels = mh_get_roles();   
 $assignable_roles = $viewer_is_super

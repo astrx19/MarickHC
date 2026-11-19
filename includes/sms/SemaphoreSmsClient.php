@@ -169,6 +169,18 @@ function mh_semaphore_get_balance()
         return ['success' => false, 'error' => $keyProblem];
     }
 
+    // Semaphore allows only 2 calls/minute to /account (HTTP 429 beyond that). Reuse a result < 35 s old
+    // (success OR failure) so a page refresh or a double click never burns a call.
+    if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['mh_sem_balance']) && (time() - (int) $_SESSION['mh_sem_balance']['at']) < 35) {
+        $cached = $_SESSION['mh_sem_balance']['result'];
+        if (!$cached['success']) { $cached['error'] .= ' (Showing the last result - wait about a minute before checking again.)'; }
+        return $cached;
+    }
+    $remember = function (array $r) {
+        if (session_status() === PHP_SESSION_ACTIVE) { $_SESSION['mh_sem_balance'] = ['at' => time(), 'result' => $r]; }
+        return $r;
+    };
+
     $base = defined('SEMAPHORE_API_BASE') ? SEMAPHORE_API_BASE : 'https://api.semaphore.co/api/v4';
     $url  = $base . '/account?apikey=' . urlencode(SEMAPHORE_API_KEY);
 
@@ -189,14 +201,16 @@ function mh_semaphore_get_balance()
 
     $decoded = json_decode($body, true);
     if ($httpCode >= 200 && $httpCode < 300 && is_array($decoded) && isset($decoded['credit_balance'])) {
-        return ['success' => true, 'balance' => (string) $decoded['credit_balance'], 'raw' => $decoded];
+        return $remember(['success' => true, 'balance' => (string) $decoded['credit_balance'], 'raw' => $decoded]);
     }
 
     $errMsg = 'Semaphore rejected the request (HTTP ' . $httpCode . ').';
-    if (is_array($decoded) && isset($decoded['message'])) {
+    if ($httpCode === 429) {
+        $errMsg = 'Semaphore allows only 2 balance checks per minute. Wait about a minute and try again. (Sending reminders is not affected.)';
+    } elseif (is_array($decoded) && isset($decoded['message'])) {
         $errMsg = is_array($decoded['message']) ? implode(' ', $decoded['message']) : (string) $decoded['message'];
     }
-    return ['success' => false, 'error' => $errMsg];
+    return $remember(['success' => false, 'error' => $errMsg]);
 }
 
 /* =====================================================================

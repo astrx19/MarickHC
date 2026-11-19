@@ -127,6 +127,10 @@ function mh_setting_defaults()
         'semaphore_api_key'     => '',
         'semaphore_sender_name' => 'SEMAPHORE',
         'sms_password_reset_enabled' => '0',
+        // ---- Follow-up reminder SMS wording (editable in System Settings > SMS) ----
+        // Placeholders: {first_name} {clinic} {module} {date} {when_date} {holiday_note}
+        'sms_followup_tomorrow_template' => 'Hello {first_name}, this is a reminder from {clinic} for your {module} follow-up {when_date}.{holiday_note} Please bring your health card. Reply STOP to opt out.',
+        'sms_followup_today_template'    => 'Hello {first_name}, this is a reminder from {clinic} for your {module} follow-up {when_date}.{holiday_note} Please bring your health card. Reply STOP to opt out.',
         'departments_locked'    => '1',   // 1 = the center's departments are fixed by policy: nobody can add new ones
         // ---- SMS provider routing + Android SMS Gateway ---------------
         'sms_provider'          => 'semaphore', // 'semaphore' | 'android_gateway'

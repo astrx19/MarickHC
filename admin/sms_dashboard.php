@@ -26,6 +26,16 @@ $user_role = $_SESSION['role'] ?? 'admin';
 
 $flash = null;
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_one_id'])) {
+    if (function_exists('mh_csrf_check') && !mh_csrf_check()) {
+        $flash = ['type' => 'error', 'message' => 'Your session security token expired. Please reload the page and try again.'];
+    } else {
+        $one = mh_send_sms_queue_row($conn, (int) $_POST['send_one_id'], 'manual');
+        $flash = ['type' => $one['ok'] ? 'success' : 'error', 'message' => $one['message']];
+        logActivity($conn, $user_id, $user_role, 'SMS Reminders', 'Sent reminder #' . (int) $_POST['send_one_id'] . ' early (manual "Send now"): ' . $one['message']);
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_queue_now'])) {
     $summary = mh_run_sms_queue($conn, 'manual', 200);
 
@@ -187,7 +197,7 @@ mh_layout_head(['title' => 'SMS Reminders']);
                     <div class="table-scroll">
                     <table class="sms-table">
                         <thead>
-                            <tr><th>Send Date</th><th>Patient</th><th>Phone</th><th>Module</th><th>Message</th></tr>
+                            <tr><th>Send Date</th><th>Patient</th><th>Phone</th><th>Module</th><th>Message</th><th></th></tr>
                         </thead>
                         <tbody>
                         <?php while ($row = $upcoming->fetch_assoc()): ?>
@@ -200,6 +210,13 @@ mh_layout_head(['title' => 'SMS Reminders']);
                                 <td><?php echo htmlspecialchars($row['phone_number']); ?></td>
                                 <td><?php echo htmlspecialchars($row['source_module'] ?: '—'); ?></td>
                                 <td class="msg-cell"><?php echo htmlspecialchars($row['message']); ?></td>
+                                <td style="white-space:nowrap;">
+                                    <form method="POST" style="margin:0;">
+                                        <?php if (function_exists('mh_csrf_field')) { echo mh_csrf_field(); } ?>
+                                        <input type="hidden" name="send_one_id" value="<?php echo (int) $row['id']; ?>">
+                                        <button type="submit" class="btn btn-soft" data-confirm="<?php echo htmlspecialchars('Send this reminder to ' . $row['phone_number'] . ' right now' . ($row['scheduled_date'] > date('Y-m-d') ? ' (it is scheduled for ' . date('M d, Y', strtotime($row['scheduled_date'])) . ' and the text will be sent exactly as shown, including any TODAY/TOMORROW wording)' : '') . '?', ENT_QUOTES); ?>" data-confirm-title="Send now?" data-confirm-type="warning" data-confirm-ok="Send now">Send now</button>
+                                    </form>
+                                </td>
                             </tr>
                         <?php endwhile; ?>
                         </tbody>

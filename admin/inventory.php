@@ -32,9 +32,13 @@ if ((isset($_POST['add_item']) || isset($_POST['edit_item']) || isset($_POST['up
 
 function mh_inv_read_item_fields(): array
 {
-    $t = function ($k) { return trim((string) ($_POST[$k] ?? '')); };
+    // Auto-correct (server side, in case the browser-side fixes are bypassed):
+    // collapse repeated spaces and keep packaging numbers in a sane range.
+    $t = function ($k) { return trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST[$k] ?? ''))); };
     $nullable_int = function ($k) {
-        return (isset($_POST[$k]) && $_POST[$k] !== '') ? (int) $_POST[$k] : null;
+        if (!isset($_POST[$k]) || $_POST[$k] === '') { return null; }
+        $n = (int) $_POST[$k];
+        return $n >= 1 ? min($n, 10000) : null;
     };
     return [
         'item_name'      => $t('item_name'),
@@ -53,7 +57,7 @@ function mh_inv_read_item_fields(): array
 
 if(isset($_POST['add_item'])) {
     $f = mh_inv_read_item_fields();
-    $quantity = (int) ($_POST['quantity'] ?? 0);
+    $quantity = max(0, min(1000000, (int) ($_POST['quantity'] ?? 0)));
 
     $st = $conn->prepare("INSERT INTO inventory (item_name, brand_name, category, tracking_code, batch_number, quantity, unit,
                                                  units_per_pack, pack_label, packs_per_box, box_label, expiry_date, status)
@@ -230,6 +234,16 @@ require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inventory Report']);
 ?>
     <style>
+        .suggest-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; margin-top: 2px; background: var(--bg-card, #fff); border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18); overflow: hidden; max-height: 290px; overflow-y: auto; }
+        .suggest-head { padding: 6px 12px; font-size: 0.7rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted, #64748b); background: var(--bg-hover, #f1f5f9); }
+        .suggest-item { padding: 8px 12px; cursor: pointer; border-top: 1px solid var(--border-color, #e2e8f0); }
+        .suggest-item:first-of-type { border-top: 0; }
+        .suggest-item .s-name { font-weight: 600; color: var(--heading-color, #0f172a); font-size: 0.9rem; }
+        .suggest-item .s-meta { font-size: 0.74rem; color: var(--text-muted, #64748b); margin-top: 1px; }
+        .suggest-item.active, .suggest-item:hover { background: var(--bg-hover, #f1f5f9); }
+        .autofix-note { font-size: 0.74rem; margin-top: 4px; color: #047857; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .autofix-note.suggest { color: #b45309; }
+        .autofix-note button { border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 6px; padding: 1px 8px; font-size: 0.74rem; cursor: pointer; font-family: inherit; }
         .stats-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 25px; }
         @media (max-width: 1100px) { .stats-grid-4 { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 560px) { .stats-grid-4 { grid-template-columns: 1fr; } }
@@ -412,11 +426,11 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                     <div class="form-group">
                         <label>Generic Name <span style="color:red;">*</span></label>
-                        <input type="text" name="item_name" id="itemNameInput" required placeholder="e.g., Amoxicillin 500mg" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                        <input type="text" name="item_name" id="itemNameInput" data-autofix="name" data-suggest="1" autocomplete="off" required placeholder="e.g., Amoxicillin 500mg" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
                     </div>
                     <div class="form-group">
                         <label>Brand Name (Optional)</label>
-                        <input type="text" name="brand_name" id="brandNameInput" placeholder="e.g., Clavamox" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                        <input type="text" name="brand_name" id="brandNameInput" data-autofix="name" placeholder="e.g., Clavamox" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
                     </div>
                 </div>
 
@@ -445,62 +459,65 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                                 <label><input type="radio" name="batch_type" value="manual" onchange="toggleBatchInput()"> Manual</label>
                             </div>
                         </label>
-                        <input type="text" name="batch_number" id="batchNumberInput" value="LOT-<?php echo date('ymd') . rand(10, 99); ?>" readonly style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-family: monospace; background: #e2e8f0; color: #475569; outline: none;">
+                        <input type="text" name="batch_number" id="batchNumberInput" data-autofix="batch" value="LOT-<?php echo date('ymd') . rand(10, 99); ?>" readonly style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-family: monospace; background: #e2e8f0; color: #475569; outline: none;">
                     </div>
                     <div class="form-group">
                         <label>Expiry Date</label>
-                        <input type="date" name="expiry_date" id="expiryDateInput" min="<?php echo date('Y-m-d'); ?>" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                        <input type="date" name="expiry_date" id="expiryDateInput" min="<?php echo date('Y-m-d'); ?>" max="<?php echo date('Y-m-d', strtotime('+15 years')); ?>" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
                     </div>
                 </div>
 
                 <div class="form-group packaging-config-box" style="grid-column: 1 / -1;">
-                    <label class="section-label"><?php echo mh_icon('package'); ?> Packaging Structure (Box &rarr; Pack &rarr; Base Unit)</label>
-                    <p style="margin: 0 0 10px 0; font-size: 0.78rem; color: var(--text-muted);">Define how this batch is packaged. Leave the multipliers blank if this item is only ever tracked in base units (e.g. a single vial or a piece of equipment).</p>
-                    <div class="packaging-grid" style="margin-bottom: 12px;">
-                        <div class="form-group">
-                            <label>Box Label</label>
-                            <input type="text" name="box_label" id="add_box_label" placeholder="e.g., Box, Carton" value="Box" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
-                        <div class="form-group">
-                            <label>Packs per Box</label>
-                            <input type="number" name="packs_per_box" id="add_packs_per_box" min="1" placeholder="e.g., 10" onkeyup="calcAddTotal()" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
-                        <div class="form-group">
-                            <label>Pack Label</label>
-                            <input type="text" name="pack_label" id="add_pack_label" placeholder="e.g., Blister Pack, Banig" value="Blister Pack" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
-                        <div class="form-group">
-                            <label>Base Units per Pack</label>
-                            <input type="number" name="units_per_pack" id="add_units_per_pack" min="1" placeholder="e.g., 10" onkeyup="calcAddTotal()" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
-                    </div>
+                    <input type="hidden" id="add_mode" value="">
+                    <input type="hidden" name="box_label" id="add_box_label" value="Box">
+                    <input type="hidden" name="pack_label" id="add_pack_label" value="Blister">
 
-                    <label class="section-label" style="margin-top: 4px;"><?php echo mh_icon('calculator'); ?> Enter Delivered Stock (auto-calculates total base units)</label>
-                    <div class="packaging-grid" style="grid-template-columns: 1fr 1fr 1fr;">
-                        <div class="form-group">
-                            <label id="add_box_qty_label">No. of Boxes</label>
-                            <input type="number" id="add_box_qty" min="0" placeholder="e.g., 5" onkeyup="calcAddTotal()" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                    <div id="add_pick_cat" style="font-size: 0.85rem; color: var(--text-muted);">Choose a <strong>Category</strong> above and the quantity fields will appear here.</div>
+
+                    <div id="add_pack_body" style="display: none;">
+                        <div id="add_cfg_wrap">
+                            <label class="section-label"><?php echo mh_icon('package'); ?> How is it packed?</label>
+                            <div id="add_cfg_row" class="packaging-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 14px;">
+                                <div class="form-group" id="add_g_ppb">
+                                    <label id="add_ppb_label">Blisters per Box</label>
+                                    <input type="number" name="packs_per_box" id="add_packs_per_box" data-autofix="int" data-max="10000" inputmode="numeric" min="1" placeholder="e.g., 10" oninput="calcAddTotal()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                                </div>
+                                <div class="form-group" id="add_g_upp">
+                                    <label id="add_upp_label">Tablets per Blister</label>
+                                    <input type="number" name="units_per_pack" id="add_units_per_pack" data-autofix="int" data-max="10000" inputmode="numeric" min="1" placeholder="e.g., 10" oninput="calcAddTotal()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label id="add_pack_qty_label">No. of Packs</label>
-                            <input type="number" id="add_pack_qty" min="0" placeholder="e.g., 3" onkeyup="calcAddTotal()" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+
+                        <label class="section-label"><?php echo mh_icon('calculator'); ?> <span id="add_qty_title">How much was delivered?</span></label>
+                        <div id="add_qty_row" class="packaging-grid" style="grid-template-columns: 1fr;">
+                            <div class="form-group" id="add_g_box_qty">
+                                <label id="add_box_qty_label">Boxes</label>
+                                <input type="number" id="add_box_qty" data-autofix="int" data-max="100000" inputmode="numeric" min="0" placeholder="0" oninput="calcAddTotal()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            </div>
+                            <div class="form-group" id="add_g_pack_qty">
+                                <label id="add_pack_qty_label">Extra Blisters <span style="font-weight: 400;">(optional)</span></label>
+                                <input type="number" id="add_pack_qty" data-autofix="int" data-max="100000" inputmode="numeric" min="0" placeholder="0" oninput="calcAddTotal()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            </div>
+                            <div class="form-group" id="add_g_loose">
+                                <label id="add_loose_label">Quantity</label>
+                                <input type="number" id="add_loose_qty" data-autofix="int" data-max="100000" inputmode="numeric" min="0" placeholder="0" oninput="calcAddTotal()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Loose Base Units</label>
-                            <input type="number" id="add_loose_qty" min="0" placeholder="e.g., 4" onkeyup="calcAddTotal()" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
+                        <div id="add_total_sentence" class="packaging-total-readout" style="margin-top: 12px;">Total: <strong>0</strong></div>
+                        <div id="add_total_hint" style="display: none; margin-top: 8px; font-size: 0.78rem; color: #b45309;"></div>
+                        <div id="add_total_warn" style="display: none; margin-top: 6px; font-size: 0.78rem; color: #b45309;"></div>
                     </div>
-                    <div class="packaging-total-readout" id="add_total_readout">Total: <strong>0</strong> base units</div>
                 </div>
 
                 <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                     <div class="form-group">
-                        <label>Total Initial Quantity (Base Units) <span style="color:red;">*</span></label>
-                        <input type="number" name="quantity" id="add_total_qty" required value="0" min="0" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-weight: bold; color: var(--heading-color, #0f172a); background: var(--bg-hover);">
+                        <label>Total Quantity (auto) <span style="color:red;">*</span></label>
+                        <input type="number" name="quantity" id="add_total_qty" required readonly value="0" min="0" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); font-weight: bold; color: var(--heading-color, #0f172a); background: var(--bg-hover);">
                     </div>
                     <div class="form-group">
                         <label>Base Unit <span style="color:red;">*</span></label>
-                        <input type="text" name="unit" id="unitInput" required placeholder="e.g., pcs, capsules" value="pcs" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="text" name="unit" id="unitInput" data-autofix="unit" required placeholder="e.g., pcs, capsules" value="pcs" oninput="syncAddLabels()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
                 </div>
 
@@ -611,11 +628,11 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                     <div class="form-group">
                         <label>Generic Name <span style="color:red;">*</span></label>
-                        <input type="text" name="item_name" id="editItemNameInput" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="text" name="item_name" id="editItemNameInput" data-autofix="name" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
                     <div class="form-group">
                         <label>Brand Name (Optional)</label>
-                        <input type="text" name="brand_name" id="editBrandNameInput" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="text" name="brand_name" id="editBrandNameInput" data-autofix="name" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
                 </div>
 
@@ -641,7 +658,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                     </div>
                     <div class="form-group">
                         <label>Expiry Date</label>
-                        <input type="date" name="expiry_date" id="editExpiryDateInput" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <input type="date" name="expiry_date" id="editExpiryDateInput" max="<?php echo date('Y-m-d', strtotime('+15 years')); ?>" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                     </div>
                 </div>
 
@@ -650,26 +667,26 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                     <div class="packaging-grid">
                         <div class="form-group">
                             <label>Box Label</label>
-                            <input type="text" name="box_label" id="editBoxLabel" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            <input type="text" name="box_label" id="editBoxLabel" data-autofix="label" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                         </div>
                         <div class="form-group">
                             <label>Packs per Box</label>
-                            <input type="number" name="packs_per_box" id="editPacksPerBox" min="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            <input type="number" name="packs_per_box" id="editPacksPerBox" data-autofix="int" data-max="10000" inputmode="numeric" min="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                         </div>
                         <div class="form-group">
                             <label>Pack Label</label>
-                            <input type="text" name="pack_label" id="editPackLabel" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            <input type="text" name="pack_label" id="editPackLabel" data-autofix="label" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                         </div>
                         <div class="form-group">
                             <label>Base Units per Pack</label>
-                            <input type="number" name="units_per_pack" id="editUnitsPerPack" min="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                            <input type="number" name="units_per_pack" id="editUnitsPerPack" data-autofix="int" data-max="10000" inputmode="numeric" min="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                         </div>
                     </div>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 20px;">
                     <label>Base Unit <span style="color:red;">*</span></label>
-                    <input type="text" name="unit" id="editUnitInput" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                    <input type="text" name="unit" id="editUnitInput" data-autofix="unit" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                 </div>
 
                 <button type="submit" name="edit_item" data-confirm="Save changes to this item?" data-confirm-title="Save changes?" data-confirm-type="warning" data-confirm-ok="Save" class="btn-submit" style="width: 100%; padding: 15px; font-size: 1.1rem; background: var(--primary); border:none; color:white; border-radius:6px; cursor:pointer; font-weight:bold;">Save Batch Details</button>
@@ -692,7 +709,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         const MH_CAN_EDIT_STOCK = <?php echo $can_edit_stock ? 'true' : 'false'; ?>;   
         const MH_CAN_DISPENSE = <?php echo mh_has_permission('dispense_medicine') ? 'true' : 'false'; ?>;
         
-           DATA (rendered by PHP once on page load)
+           // DATA (rendered by PHP once on page load)
            
         const TODAY_STR   = "<?php echo $today; ?>";
         const CATEGORIES  = <?php echo $js_categories; ?>;
@@ -712,7 +729,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         const expandedGroups = new Set();
 
        
-           Helpers
+        // Helpers
         function escapeHtml(str) {
             if (str === null || str === undefined) return '';
             return String(str)
@@ -1199,9 +1216,11 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         function generateTrackingCode() {
             const cat = document.getElementById('categorySelect').value;
             const input = document.getElementById('trackingCodeInput');
-            if(!cat) { input.value = ''; return; }
+            if(!cat) { input.value = ''; applyCategoryMode(''); return; }
             
-            const prefix = cat.charAt(0).toUpperCase();
+            // Single-letter prefix = first letter of the category, except Medical Supply -> 'S'
+            // so it does not collide with Medicine ('M').
+            const prefix = /^medical\s+suppl/i.test(cat.trim()) ? 'S' : cat.trim().charAt(0).toUpperCase();
             const today = new Date();
             const yyyy = today.getFullYear();
             const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -1210,6 +1229,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             const randomNum = Math.floor(1000 + Math.random() * 9000);
             
             input.value = `${prefix}${dateStr}-${randomNum}`;
+            applyCategoryMode(cat);
         }
 
         function toggleStockAction() {
@@ -1275,23 +1295,347 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
+        // ---- Auto-correct for typos / mistypes -------------------------------------------
+        // Inputs opt in with data-autofix="name|unit|label|batch|int". Fixes run when the field loses focus
+        // (names, units, labels, batch no.) or as you type (numbers). Anything changed is shown briefly.
+        var AutoFix = (function () {
+            var UNIT_TOKENS = ['mg', 'mcg', 'g', 'kg', 'ml', 'l', 'cc', 'iu', 'pcs'];
+            var SMALL_WORDS = ['of', 'and', 'with', 'for', 'in', 'per', 'to', 'the'];
+            var UNIT_ALIAS = {pc: 'pcs', pcs: 'pcs', piece: 'pcs', pieces: 'pcs', tab: 'tablets', tabs: 'tablets', tablet: 'tablets', tablets: 'tablets',
+                              cap: 'capsules', caps: 'capsules', capsule: 'capsules', capsules: 'capsules', vial: 'vials', vials: 'vials', amp: 'ampules', ampule: 'ampules', ampules: 'ampules'};
+
+            function collapse(v) { return v.replace(/\s+/g, ' ').trim(); }
+
+            function fixName(v) {
+                v = collapse(v);
+                // "500 MG" / "500Mg" -> "500mg"; "10 iu" -> "10IU"
+                v = v.replace(/(\d)\s*(mg|mcg|g|kg|ml|l|cc|iu)\b/gi, function (_, n, u) { u = u.toLowerCase(); return n + (u === 'iu' ? 'IU' : u); });
+                return v.split(' ').map(function (w, i) {
+                    var lw = w.toLowerCase();
+                    if (UNIT_TOKENS.indexOf(lw) !== -1) { return lw; }
+                    if (!/^[A-Za-z]+$/.test(w)) { return w; }               // digits, hyphens, brackets: leave alone
+                    if (SMALL_WORDS.indexOf(lw) !== -1 && i > 0) { return lw; }
+                    if (w === lw) { return w.charAt(0).toUpperCase() + w.slice(1); }          // amoxicillin -> Amoxicillin
+                    if (w === w.toUpperCase() && w.length >= 5) { return w.charAt(0) + lw.slice(1); }   // AMOXICILLIN -> Amoxicillin (ORS, BCG stay)
+                    return w;
+                }).join(' ');
+            }
+            function fixUnit(v) { v = collapse(v).toLowerCase().replace(/\.$/, ''); return UNIT_ALIAS[v] || v; }
+            function fixLabel(v) { return collapse(v).split(' ').map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w; }).join(' '); }
+            function fixBatch(v) { return collapse(v).toUpperCase().replace(/\s/g, '-').replace(/[^A-Z0-9\-_\/.]/g, '').replace(/-{2,}/g, '-'); }
+
+            function noteBox(input) {
+                var n = input.parentNode.querySelector('.autofix-note[data-for="' + input.id + '"]');
+                if (!n) { n = document.createElement('div'); n.className = 'autofix-note'; n.dataset.for = input.id; input.insertAdjacentElement('afterend', n); }
+                return n;
+            }
+            function clearNote(input) { var n = input.parentNode.querySelector('.autofix-note[data-for="' + input.id + '"]'); if (n) { n.remove(); } }
+            function flash(input, before, after) {
+                var n = noteBox(input);
+                n.className = 'autofix-note';
+                n.textContent = 'Auto-corrected: “' + before + '” → “' + after + '”';
+                clearTimeout(n._t); n._t = setTimeout(function () { n.remove(); }, 5000);
+            }
+
+            // ---- near-duplicate item names (Add Batch only) ----
+            function key(v) { return v.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+            function nums(v) { return (v.match(/\d+(\.\d+)?/g) || []).join(','); }
+            function lev(a, b) {
+                var m = a.length, n = b.length, d = [], i, j;
+                for (i = 0; i <= m; i++) { d[i] = [i]; }
+                for (j = 1; j <= n; j++) { d[0][j] = j; }
+                for (i = 1; i <= m; i++) { for (j = 1; j <= n; j++) {
+                    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+                } }
+                return d[m][n];
+            }
+            function knownNames() {
+                var seen = {}, out = [];
+                (typeof RAW_ITEMS !== 'undefined' ? RAW_ITEMS : []).forEach(function (r) { if (r.item_name && !seen[r.item_name]) { seen[r.item_name] = 1; out.push(r.item_name); } });
+                return out;
+            }
+            function checkExistingName(input) {
+                var v = input.value; if (!v) { return; }
+                var names = knownNames(), k = key(v), best = null, bestD = 99;
+                for (var i = 0; i < names.length; i++) {
+                    if (names[i] === v) { return; }                         // exact existing item: nothing to fix
+                    var nk = key(names[i]);
+                    if (nk === k) { var old = v; input.value = names[i]; flash(input, old, names[i]); return; }   // same name, different spelling of spaces/case
+                    // Never suggest across different strengths: "Paracetamol 250mg" is not a typo of "Paracetamol 500mg".
+                    if (nums(names[i]) !== nums(v)) { continue; }
+                    var a = k.replace(/\d/g, ''), b = nk.replace(/\d/g, '');
+                    var dist = lev(a, b), limit = a.length >= 9 ? 2 : (a.length >= 5 ? 1 : 0);
+                    if (dist > 0 && dist <= limit && dist < bestD) { best = names[i]; bestD = dist; }
+                }
+                if (best) {
+                    var n = noteBox(input); n.className = 'autofix-note suggest'; n.textContent = 'Did you mean “' + best + '” (already in your list)? ';
+                    var btn = document.createElement('button'); btn.type = 'button'; btn.textContent = 'Use it';
+                    btn.onclick = function () { input.value = best; n.remove(); input.focus(); };
+                    n.appendChild(btn);
+                }
+            }
+
+            function onBlur(e) {
+                var t = e.target, kind = t && t.dataset ? t.dataset.autofix : '';
+                if (!kind || kind === 'int' || t.readOnly) { return; }
+                var before = t.value, after = before;
+                if (kind === 'name')  { after = fixName(before); }
+                if (kind === 'unit')  { after = fixUnit(before); }
+                if (kind === 'label') { after = fixLabel(before); }
+                if (kind === 'batch') { after = fixBatch(before); }
+                clearNote(t);
+                if (after !== before) { t.value = after; if (collapse(before) !== after || before.trim() !== after) { flash(t, before.trim(), after); } }
+                if (t.dataset.suggest) { checkExistingName(t); }
+                if (kind === 'unit' || kind === 'label') { if (typeof syncAddLabels === 'function') { syncAddLabels(); } if (typeof calcAddTotal === 'function') { calcAddTotal(); } }
+            }
+            function onKeydown(e) {
+                var t = e.target;
+                if (t && t.dataset && t.dataset.autofix === 'int' && ['-', '+', 'e', 'E', '.', ','].indexOf(e.key) !== -1) { e.preventDefault(); }   // whole, positive numbers only
+            }
+            function onInput(e) {
+                var t = e.target;
+                if (!t || !t.dataset || t.dataset.autofix !== 'int') { return; }
+                var raw = t.value; if (raw === '') { clearNote(t); return; }
+                var n = parseInt(raw, 10), max = parseInt(t.dataset.max, 10) || 0;
+                if (isNaN(n) || n < 0) { t.value = ''; return; }
+                if (max && n > max) { t.value = max; var nb = noteBox(t); nb.className = 'autofix-note suggest'; nb.textContent = 'Limited to ' + max.toLocaleString() + '. Check for an extra digit.'; clearTimeout(nb._t); nb._t = setTimeout(function () { nb.remove(); }, 5000); }
+                else if (String(n) !== raw) { t.value = n; }                 // "007" -> "7"
+            }
+            function onIntBlur(e) {
+                var t = e.target;
+                if (t && t.dataset && t.dataset.autofix === 'int' && t.value !== '' && parseInt(t.min, 10) >= 1 && parseInt(t.value, 10) < parseInt(t.min, 10)) { t.value = ''; }
+            }
+            document.addEventListener('focusout', onBlur);
+            document.addEventListener('focusout', onIntBlur);
+            document.addEventListener('keydown', onKeydown);
+            document.addEventListener('input', onInput, true);   // capture: runs before the oninput="calcAddTotal()" handlers
+            return {fixName: fixName, fixUnit: fixUnit, fixLabel: fixLabel, fixBatch: fixBatch};
+        })();
+
+        // ---- Auto-suggest existing items (Add Batch -> Generic Name) -----------------------
+        // Type a few letters of a medicine / vaccine / supply / equipment (or its brand) and pick it from the list:
+        // name, category, unit and packing are filled from that item's most recent batch.
+        var ItemSuggest = (function () {
+            var input, list, active = -1, shown = [];
+
+            function norm(v) { return (v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+            function dist(a, b) {
+                var m = a.length, n = b.length, d = [], i, j;
+                for (i = 0; i <= m; i++) { d[i] = [i]; }
+                for (j = 1; j <= n; j++) { d[0][j] = j; }
+                for (i = 1; i <= m; i++) { for (j = 1; j <= n; j++) {
+                    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+                } }
+                return d[m][n];
+            }
+
+            // One entry per item name; packing and brand come from its newest batch (highest id) that has them.
+            function catalog() {
+                var map = {};
+                (typeof RAW_ITEMS !== 'undefined' ? RAW_ITEMS : []).forEach(function (r) {
+                    if (!r.item_name) { return; }
+                    var k = norm(r.item_name), e = map[k];
+                    if (!e) { e = map[k] = {name: r.item_name, category: r.category, unit: r.unit, brand: '', brands: {}, batches: 0, stock: 0, pack: null, newest: 0}; }
+                    e.batches++; e.stock += Number(r.quantity) || 0; if (r.brand_name) { e.brands[norm(r.brand_name)] = r.brand_name; }
+                    if (r.id > e.newest) { e.newest = r.id; e.category = r.category || e.category; e.unit = r.unit || e.unit; if (r.brand_name) { e.brand = r.brand_name; } }
+                    if (r.units_per_pack && (!e.pack || r.id > e.pack.id)) { e.pack = r; }
+                });
+                return Object.keys(map).map(function (k) { map[k].key = k; return map[k]; });
+            }
+
+            function score(e, q) {
+                if (e.key.indexOf(q) === 0) { return 0; }
+                var words = e.name.toLowerCase().split(/[^a-z0-9]+/), i;
+                for (i = 0; i < words.length; i++) { if (words[i].indexOf(q) === 0) { return 1; } }
+                if (e.key.indexOf(q) !== -1) { return 2; }
+                if (Object.keys(e.brands).some(function (bk) { return bk.indexOf(q) !== -1; })) { return 3; }   // any brand ever received
+                if (q.length >= 4) {                                   // typo tolerance: "amoxicilin" still finds "Amoxicillin"
+                    var tol = q.length >= 8 ? 2 : 1;
+                    if (dist(q, e.key.slice(0, q.length)) <= tol) { return 4; }
+                    for (i = 0; i < words.length; i++) { if (words[i].length >= 4 && dist(q, words[i].slice(0, q.length)) <= tol) { return 4; } }
+                }
+                return -1;
+            }
+
+            function search(text) {
+                var q = norm(text); if (!q) { return []; }
+                return catalog().map(function (e) { return {e: e, s: score(e, q)}; })
+                    .filter(function (x) { return x.s >= 0; })
+                    .sort(function (a, b) { return a.s - b.s || a.e.name.localeCompare(b.e.name); })
+                    .slice(0, 6).map(function (x) { return x.e; });
+            }
+
+            function close() { if (list) { list.style.display = 'none'; } active = -1; }
+            function setActive(i) {
+                active = i;
+                Array.prototype.forEach.call(list.querySelectorAll('.suggest-item'), function (el, j) { el.classList.toggle('active', j === i); if (j === i) { el.scrollIntoView({block: 'nearest'}); } });
+            }
+
+            function render() {
+                shown = search(input.value);
+                if (!shown.length) { close(); return; }
+                list.innerHTML = '<div class="suggest-head">Already in your list &mdash; pick one to reuse its details</div>';
+                shown.forEach(function (e, i) {
+                    var d = document.createElement('div'); d.className = 'suggest-item';
+                    var meta = [e.category || 'Uncategorized', fmtNum(e.stock) + ' ' + (e.unit || 'pcs') + ' in stock', e.batches + (e.batches === 1 ? ' batch' : ' batches')];
+                    var bl = Object.keys(e.brands).map(function (k) { return e.brands[k]; }); if (bl.length) { meta.push('Brand: ' + bl.slice(0, 3).join(', ')); }
+                    d.innerHTML = '<div class="s-name">' + escapeHtml(e.name) + '</div><div class="s-meta">' + escapeHtml(meta.join(' · ')) + '</div>';
+                    d.addEventListener('mousedown', function (ev) { ev.preventDefault(); choose(e); });     // keep focus so the field does not blur first
+                    d.addEventListener('mousemove', function () { setActive(i); });
+                    list.appendChild(d);
+                });
+                list.style.display = 'block'; active = -1;
+            }
+
+            function choose(e) {
+                input.value = e.name;
+                var sel = document.getElementById('categorySelect');
+                if (e.category && Array.prototype.some.call(sel.options, function (o) { return o.value === e.category; })) { sel.value = e.category; generateTrackingCode(); }
+                if (e.unit) { document.getElementById('unitInput').value = e.unit; }
+                var pk = e.pack || {};
+                document.getElementById('add_units_per_pack').value = pk.units_per_pack || '';
+                document.getElementById('add_packs_per_box').value = pk.packs_per_box || '';
+                if (e.brand && !document.getElementById('brandNameInput').value) { document.getElementById('brandNameInput').value = e.brand; }
+                syncAddLabels(); calcAddTotal();
+                close();
+                var nb = input.parentNode.querySelector('.autofix-note[data-for="itemNameInput"]'); if (nb) { nb.remove(); }
+                var n = document.createElement('div'); n.className = 'autofix-note'; n.dataset.for = 'itemNameInput';
+                n.textContent = 'Existing item selected — this will be added as a new batch. Category, unit and packing were filled in.';
+                input.insertAdjacentElement('afterend', n); setTimeout(function () { n.remove(); }, 6000);
+                var next = document.getElementById('add_loose_qty'); if (next && next.offsetParent) { next.focus(); }
+            }
+
+            function init() {
+                input = document.getElementById('itemNameInput'); if (!input) { return; }
+                input.parentNode.style.position = 'relative';
+                list = document.createElement('div'); list.className = 'suggest-list'; list.style.display = 'none';
+                input.parentNode.appendChild(list);
+                input.addEventListener('input', render);
+                input.addEventListener('focus', function () { if (input.value) { render(); } });
+                input.addEventListener('blur', close);
+                input.addEventListener('keydown', function (ev) {
+                    if (list.style.display === 'none') { return; }
+                    if (ev.key === 'ArrowDown') { ev.preventDefault(); setActive((active + 1) % shown.length); }
+                    else if (ev.key === 'ArrowUp') { ev.preventDefault(); setActive((active - 1 + shown.length) % shown.length); }
+                    else if (ev.key === 'Enter' && active >= 0) { ev.preventDefault(); choose(shown[active]); }
+                    else if (ev.key === 'Escape') { ev.stopPropagation(); close(); }
+                });
+            }
+            if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
+            return {search: search};
+        })();
+
+        // ---- Category-driven quantity fields (Add Batch) ---------------------------------
+        // The Category decides which fields appear (and what gets posted):
+        //   Medicine                -> Boxes x Blisters per Box x Tablets per Blister (+ Extra Blisters, Loose pcs)
+        //   Medical Supply/Vaccine  -> Boxes x Pieces per Box (+ Loose pcs)
+        //   Equipment / Inventory   -> one Quantity field
+        // Disabled inputs are not submitted, so units_per_pack / packs_per_box stay NULL when they do not apply.
+        function plural(label) { return label + (/(s|x|ch|sh)$/i.test(label) ? 'es' : 's'); }
+        function fmtNum(n) { return Number(n).toLocaleString(); }
+        function nounCount(n, one, many) { return fmtNum(n) + ' ' + (n === 1 ? one : many); }
+
+        function categoryMode(cat) {
+            var c = (cat || '').toLowerCase();
+            if (!c) { return ''; }
+            if (/medicine/.test(c)) { return 'blister'; }
+            if (/suppl|vaccine/.test(c)) { return 'boxes'; }
+            return 'single';
+        }
+        function addUnit() { return (document.getElementById('unitInput').value || '').trim() || 'pcs'; }
+        function addUnitWord() { var u = addUnit(); return (u === 'pcs' || u === 'tablets') ? 'tabs' : u; }   // "10 tabs" in the sentence
+
+        function show(id, on) { var el = document.getElementById(id); if (el) { el.style.display = on ? '' : 'none'; } }
+        function enable(id, on) { var el = document.getElementById(id); if (el) { el.disabled = !on; } }
+
+        function setAddMode(mode) {
+            var prev = document.getElementById('add_mode').value;
+            if (prev !== '' && prev !== mode) {          // different category type = different meaning of every number: start clean
+                ['add_packs_per_box', 'add_units_per_pack', 'add_box_qty', 'add_pack_qty', 'add_loose_qty'].forEach(function (id) { document.getElementById(id).value = ''; });
+            }
+            document.getElementById('add_mode').value = mode;
+            var none = mode === '', single = mode === 'single', boxes = mode === 'boxes', blister = mode === 'blister';
+            show('add_pick_cat', none); show('add_pack_body', !none);
+            show('add_cfg_wrap', blister || boxes);
+            show('add_g_ppb', blister); show('add_g_upp', blister || boxes);
+            show('add_g_box_qty', blister || boxes); show('add_g_pack_qty', blister);
+            enable('add_packs_per_box', blister); enable('add_units_per_pack', blister || boxes);
+            enable('add_pack_label', blister || boxes); enable('add_box_label', blister);
+            document.getElementById('add_box_label').value = 'Box';
+            document.getElementById('add_pack_label').value = blister ? 'Blister' : 'Box';   // supplies: the "pack" is the box itself
+            document.getElementById('add_cfg_row').style.gridTemplateColumns = blister ? '1fr 1fr' : '1fr';
+            document.getElementById('add_qty_row').style.gridTemplateColumns = blister ? '1fr 1fr 1fr' : (boxes ? '1fr 1fr' : '1fr');
+            syncAddLabels();
+            calcAddTotal();
+        }
+
+        function applyCategoryMode(cat) { setAddMode(categoryMode(cat)); }
+
+        function syncAddLabels() {
+            var mode = document.getElementById('add_mode').value, u = addUnit();
+            var noun = (u === 'pcs' || u === 'tablets') ? 'Tablets' : u.charAt(0).toUpperCase() + u.slice(1);
+            document.getElementById('add_upp_label').innerText = mode === 'blister' ? noun + ' per Blister' : 'Pieces per Box';
+            document.getElementById('add_loose_label').innerHTML = mode === 'single' ? 'Quantity' : 'Loose pcs <span style="font-weight: 400;">(optional)</span>';
+            document.getElementById('add_qty_title').innerText = mode === 'single' ? 'How many?' : 'How much was delivered?';
+        }
+
+        function calcAddTotal() {
+            var mode = document.getElementById('add_mode').value, unit = addUnit(), tabs = addUnitWord();
+            var perBox  = mode === 'blister' ? (parseInt(document.getElementById('add_packs_per_box').value) || 0) : 0;   // blisters per box
+            var perPack = parseInt(document.getElementById('add_units_per_pack').value) || 0;                          // tablets per blister / pieces per box
+            var boxes   = mode === 'single' || mode === '' ? 0 : (parseInt(document.getElementById('add_box_qty').value) || 0);
+            var xb      = mode === 'blister' ? (parseInt(document.getElementById('add_pack_qty').value) || 0) : 0;      // extra blisters
+            var loose   = parseInt(document.getElementById('add_loose_qty').value) || 0;
+            var total = loose, parts = [], hint = [], warn = [];
+
+            if (mode === 'blister') {
+                if (boxes > 0) {
+                    if (perBox > 0 && perPack > 0) { total += boxes * perBox * perPack; parts.push(nounCount(boxes, 'box', 'boxes') + ' × ' + nounCount(perBox, 'blister', 'blisters') + ' × ' + fmtNum(perPack) + ' ' + tabs); }
+                    else { hint.push('enter Blisters per Box and ' + document.getElementById('add_upp_label').innerText + ' to count the boxes'); }
+                }
+                if (xb > 0) {
+                    if (perPack > 0) { total += xb * perPack; parts.push(nounCount(xb, 'blister', 'blisters') + ' × ' + fmtNum(perPack) + ' ' + tabs); }
+                    else { hint.push('enter ' + document.getElementById('add_upp_label').innerText + ' to count the extra blisters'); }
+                }
+                if (loose > 0) { parts.push(fmtNum(loose) + ' loose'); }
+                if (perPack > 0 && loose >= perPack) { warn.push('Loose pcs (' + fmtNum(loose) + ') fills a whole blister or more. Did you mean to enter it under Extra Blisters?'); }
+                if (perBox > 0 && xb >= perBox) { warn.push('Extra Blisters (' + fmtNum(xb) + ') fills a whole box or more. Did you mean to enter it under Boxes?'); }
+            } else if (mode === 'boxes') {
+                if (boxes > 0) {
+                    if (perPack > 0) { total += boxes * perPack; parts.push(nounCount(boxes, 'box', 'boxes') + ' × ' + fmtNum(perPack) + ' ' + unit); }
+                    else { hint.push('enter Pieces per Box to count the boxes'); }
+                }
+                if (loose > 0) { parts.push(fmtNum(loose) + ' loose'); }
+                if (perPack > 0 && loose >= perPack) { warn.push('Loose pcs (' + fmtNum(loose) + ') fills a whole box or more. Did you mean to enter it under Boxes?'); }
+            }
+            if (total >= 100000) { warn.push('Total is very large (' + fmtNum(total) + '). Check for an extra digit.'); }
+
+            document.getElementById('add_total_qty').value = total;
+            document.getElementById('add_total_sentence').innerHTML = (mode === 'single' || mode === '' || !parts.length)
+                ? 'Total: <strong>' + fmtNum(total) + ' ' + escapeHtml(unit) + '</strong>'
+                : 'Total: ' + escapeHtml(parts.join(' + ')) + ' = <strong>' + fmtNum(total) + ' ' + escapeHtml(unit) + '</strong>';
+            var h = document.getElementById('add_total_hint');
+            h.style.display = hint.length ? 'block' : 'none';
+            h.innerText = hint.length ? 'Not counted yet: ' + hint.join('; ') + '.' : '';
+            var w = document.getElementById('add_total_warn');
+            w.style.display = warn.length ? 'block' : 'none';
+            w.innerText = warn.join(' ');
+        }
+
         function resetAddItemForm() {
             document.getElementById('itemNameInput').value = '';
             document.getElementById('brandNameInput').value = '';
             document.getElementById('categorySelect').value = '';
             document.getElementById('trackingCodeInput').value = '';
             document.getElementById('unitInput').value = 'pcs';
-            document.getElementById('add_box_label').value = 'Box';
-            document.getElementById('add_pack_label').value = 'Blister Pack';
             document.getElementById('add_packs_per_box').value = '';
             document.getElementById('add_units_per_pack').value = '';
             document.getElementById('add_box_qty').value = '';
             document.getElementById('add_pack_qty').value = '';
             document.getElementById('add_loose_qty').value = '';
             document.getElementById('add_total_qty').value = 0;
-            document.getElementById('add_total_readout').innerHTML = 'Total: <strong>0</strong> base units';
-            document.getElementById('add_box_qty_label').innerText = 'No. of Boxes';
-            document.getElementById('add_pack_qty_label').innerText = 'No. of Packs';
+            document.getElementById('add_total_hint').style.display = 'none';
+            setAddMode('');
             document.querySelector('input[name="batch_type"][value="auto"]').checked = true;
             toggleBatchInput();
         }
@@ -1311,10 +1655,10 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 generateTrackingCode();
             }
             
+            // Last-batch prefill: reuse the packing of an existing batch of this item.
             if (prefill.units_per_pack) document.getElementById('add_units_per_pack').value = prefill.units_per_pack;
             if (prefill.packs_per_box) document.getElementById('add_packs_per_box').value = prefill.packs_per_box;
-            if (prefill.pack_label) document.getElementById('add_pack_label').value = prefill.pack_label;
-            if (prefill.box_label) document.getElementById('add_box_label').value = prefill.box_label;
+            syncAddLabels();
             calcAddTotal();
             document.getElementById('addItemModalTitle').innerText = 'Add Batch — ' + (prefill.item_name || '');
             document.getElementById('brandNameInput').focus();

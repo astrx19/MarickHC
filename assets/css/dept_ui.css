@@ -316,3 +316,21 @@
 .cf-cell-links a { color: var(--du-accent); font-weight: 600; text-decoration: none; }
 .cf-cell-links a:hover { text-decoration: underline; }
 .du-pagehead h2.du-sectionhead { margin: 0; font-size: 1.25rem; }
+
+/* ===== Dental Record form: mirrors the center's paper DENTAL RECORD ===== */
+.dvs-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; margin-bottom: 4px; }
+.dvs-col { display: grid; gap: 10px; align-content: start; margin-bottom: 10px; }
+.dvs-col .cf-field { margin-bottom: 0; }
+.dvs-title { text-align: center; margin: 12px 0 14px; font-family: "Times New Roman", Times, serif; }
+.dvs-title h3 { margin: 0; font-size: 1.4rem; letter-spacing: .01em; color: var(--du-head); }
+.dvs-title h4 { margin: 2px 0 0; font-size: 1.1rem; color: var(--du-head); }
+.dvs-foot { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--du-line); }
+.dvs-foot .cf-field { margin-bottom: 0; }
+.dvs-dispense { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.dvs-live td.dvs-tooth-cell { padding: 0; }
+.cf-modal .dvs-live input { width: 100%; min-width: 0; border: 0; border-radius: 0; background: transparent; min-height: 38px; padding: 6px 8px; box-shadow: none; font-weight: 600; }
+@media (max-width: 720px) {
+    .dvs-meta { grid-template-columns: minmax(0, 1fr); }
+    .dvs-foot { grid-template-columns: minmax(0, 1fr); }
+}
+@media print { .dvs-foot, .dvs-dispense, #dvModal .cf-actions { display: none !important; } }

@@ -136,6 +136,36 @@ if (!function_exists('mh_sms_record_skip')) {
     }
 }
 
+
+/**
+ * Editable reminder wording (System Settings > SMS). Allowed placeholders:
+ *   {first_name}  patient's first name          {clinic}       health center name
+ *   {module}      Check-up / Immunization ...   {date}         November 20, 2026 (Fri)
+ *   {when_date}   "TOMORROW, <date>" / "TODAY, <date>" (or "on <date>" if the send day was moved off a holiday)
+ *   {holiday_note} warning text, only filled when the follow-up date is a declared clinic holiday
+ */
+if (!function_exists('mh_sms_template_placeholders')) {
+    function mh_sms_template_placeholders()
+    {
+        return ['first_name', 'clinic', 'module', 'date', 'when_date', 'holiday_note'];
+    }
+}
+if (!function_exists('mh_sms_render_template')) {
+    function mh_sms_render_template($template, array $vars)
+    {
+        $out = (string) $template;
+        // The holiday warning must never be lost: if the wording has no {holiday_note}, add it to the end.
+        if (($vars['holiday_note'] ?? '') !== '' && strpos($out, '{holiday_note}') === false) {
+            $out .= ' {holiday_note}';
+        }
+        foreach (mh_sms_template_placeholders() as $k) {
+            $out = str_replace('{' . $k . '}', (string) ($vars[$k] ?? ''), $out);
+        }
+        $out = trim(preg_replace('/[ \t]{2,}/', ' ', $out));
+        return $out;
+    }
+}
+
 /**
  * Queues follow-up reminder SMS for a patient.
  *
@@ -210,14 +240,21 @@ function mh_schedule_followup_sms(mysqli $conn, $patientId, $followupDate, $modu
 
     $toQueue = [];   // keyed by final send date so two reminders never land on the same day
 
+    // Wording comes from System Settings (falls back to the factory text if the setting is missing/blank).
+    $tplTomorrow = function_exists('mh_setting') ? (string) mh_setting('sms_followup_tomorrow_template') : '';
+    $tplToday    = function_exists('mh_setting') ? (string) mh_setting('sms_followup_today_template') : '';
+    if (trim($tplTomorrow) === '') { $tplTomorrow = 'Hello {first_name}, this is a reminder from {clinic} for your {module} follow-up {when_date}.{holiday_note} Please bring your health card. Reply STOP to opt out.'; }
+    if (trim($tplToday) === '')    { $tplToday    = $tplTomorrow; }
+    $tplVars = ['first_name' => $firstName, 'clinic' => $clinicName, 'module' => (string) $moduleLabel,
+                'date' => $prettyDate, 'holiday_note' => $holidayNote];
+
     if (MH_SMS_REMINDER_DAY_BEFORE) {
         $sendOn = date('Y-m-d', strtotime($followupDate . ' -1 day'));
         if ($sendOn >= $today) {
             $sendOn = mh_sms_shift_off_holiday($conn, $sendOn, $today, $followupDate);
             if ($sendOn !== null) {
                 $when = ($sendOn === date('Y-m-d', strtotime($followupDate . ' -1 day'))) ? 'TOMORROW, ' : 'on ';
-                $toQueue[$sendOn] = "Hello {$firstName}, this is a reminder from {$clinicName} for your {$moduleLabel} follow-up "
-                    . "{$when}{$prettyDate}.{$holidayNote} Please bring your health card. Reply STOP to opt out.";
+                $toQueue[$sendOn] = mh_sms_render_template($tplTomorrow, $tplVars + ['when_date' => $when . $prettyDate]);
             }
         }
     }
@@ -226,8 +263,7 @@ function mh_schedule_followup_sms(mysqli $conn, $patientId, $followupDate, $modu
         $sendOn = mh_sms_shift_off_holiday($conn, $followupDate, $today, $followupDate);
         if ($sendOn !== null && !isset($toQueue[$sendOn])) {
             $when = ($sendOn === $followupDate) ? 'TODAY, ' : 'on ';
-            $toQueue[$sendOn] = "Hello {$firstName}, this is a reminder from {$clinicName} for your {$moduleLabel} follow-up "
-                . "{$when}{$prettyDate}.{$holidayNote} Please bring your health card. Reply STOP to opt out.";
+            $toQueue[$sendOn] = mh_sms_render_template($tplToday, $tplVars + ['when_date' => $when . $prettyDate]);
         }
     }
 

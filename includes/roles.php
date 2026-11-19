@@ -88,8 +88,7 @@ if (!function_exists('mh_builtin_role_definitions')) {
             'midwife'     => ['label' => 'Midwife',                 'grid' => 'Midwife',      'is_system' => 1],
             'dental'      => ['label' => 'Dental',                  'grid' => 'Dental Staff', 'is_system' => 1],
             'bhw'         => ['label' => 'BHW',                     'grid' => 'BHW',          'is_system' => 1],
-            'inventory'   => ['label' => 'Inventory Staff',         'grid' => 'Inventory Staff', 'is_system' => 0],
-            'encoder'     => ['label' => 'Encoder / Registrations', 'grid' => 'Encoder',      'is_system' => 0],
+            'inventory'   => ['label' => 'Inventory / Encoder',     'grid' => 'Inventory / Encoder', 'is_system' => 0],
         ];
     }
 }
@@ -100,19 +99,20 @@ if (!function_exists('mh_default_role_permissions')) {
     {
         // Health Head holds every toggle implicitly (never listed here).
         // Per Dra. Celma's evaluation:
-        //   encoder - external-platform encoding only (PhilHealth / Yakap): registration intake + OCR + read-only queue.
+        //   inventory - the combined Inventory / Encoder role (the old separate Encoder role was merged into it):
+        //             medicine stock + dispensing, plus walk-in registration intake and OCR.
         //             NO patient masterlist, NO profile editing, NO admin pages.
         //   bhw     - physical folders (read-only masterlist + area list) and vital signs entry. Nothing else.
         return [
             'view_patient_masterlist'   => 'admin,doctor,bhw,midwife,dental',
             'edit_patient_profile'      => 'admin,doctor,midwife,dental',
-            'walkin_registration'       => 'admin,doctor,midwife,dental,encoder',
-            'use_ocr_scanner'           => 'admin,doctor,midwife,encoder',
+            'walkin_registration'       => 'admin,doctor,midwife,dental,inventory',
+            'use_ocr_scanner'           => 'admin,doctor,midwife,inventory',
             'view_stock'                => 'admin,inventory',
             'add_medicine'              => 'admin,inventory',
             'dispense_medicine'         => 'admin,inventory',
             'view_dispensing_history'   => 'admin,inventory',
-            'view_patient_queue'        => 'admin,doctor,midwife,dental,inventory,encoder,bhw',
+            'view_patient_queue'        => 'admin,doctor,midwife,dental,inventory,bhw',
             'manage_patient_queue'      => 'admin,doctor,midwife,dental,inventory',
             'manage_consultations'      => 'admin,doctor',
             'manage_maternal_care'      => 'admin,midwife',
@@ -328,6 +328,61 @@ if (!function_exists('mh_roles_upgrade_health_head')) {
             $st->bind_param('s', $legacy); $st->execute(); $st->close();
         } catch (Throwable $e) {
             error_log('mh_roles_upgrade_health_head: ' . $e->getMessage());
+        }
+        mh_roles_flush();
+    }
+}
+
+if (!function_exists('mh_roles_merge_encoder_into_inventory')) {
+    /**
+     * One-time, idempotent: the separate "Encoder / Registrations" role was merged into
+     * "Inventory / Encoder" (role key 'inventory'). Existing Encoder accounts become Inventory / Encoder,
+     * the combined role keeps the Encoder abilities (walk-in registration + OCR) on top of stock and
+     * dispensing, and the old Encoder role is removed. Same effect as
+     * database/merge_encoder_inventory_migration.sql. Safe to call on every request: it does
+     * nothing once no Encoder role, account or permission row is left.
+     */
+    function mh_roles_merge_encoder_into_inventory(mysqli $conn)
+    {
+        static $done = false;
+        if ($done) { return; }
+        $done = true;
+        try {
+            $need = false;
+            foreach (["SELECT 1 FROM system_roles WHERE role_key = 'encoder' LIMIT 1",
+                      "SELECT 1 FROM staff WHERE role = 'encoder' LIMIT 1",
+                      "SELECT 1 FROM role_permissions WHERE role_key = 'encoder' LIMIT 1"] as $q) {
+                $r = @$conn->query($q);
+                if ($r && $r->num_rows > 0) { $need = true; break; }
+            }
+            if (!$need) { return; }
+
+            $conn->query("UPDATE staff SET role = 'inventory' WHERE role = 'encoder'");
+
+            $conn->query("INSERT IGNORE INTO system_roles (role_key, role_name, is_system, status, sort_order) VALUES ('inventory','Inventory / Encoder',0,1,70)");
+            $conn->query("UPDATE system_roles SET role_name = 'Inventory / Encoder' WHERE role_key = 'inventory' AND role_name IN ('Inventory Staff','Inventory')");
+
+            foreach (['walkin_registration', 'use_ocr_scanner'] as $perm) {
+                $st = $conn->prepare("INSERT INTO role_permissions (role_key, permission_key, allowed) VALUES ('inventory', ?, 1) ON DUPLICATE KEY UPDATE allowed = 1");
+                if ($st) { $st->bind_param('s', $perm); $st->execute(); $st->close(); }
+            }
+
+            $conn->query("DELETE FROM role_permissions WHERE role_key = 'encoder'");
+            $conn->query("DELETE FROM system_roles WHERE role_key = 'encoder'");
+
+            // Module Access lists that still name the old role now name the merged one.
+            $res = @$conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'module\\_roles\\_%'");
+            while ($res && ($row = $res->fetch_assoc())) {
+                $list = array_values(array_filter(array_map('trim', explode(',', (string) $row['setting_value'])), 'strlen'));
+                if (!in_array('encoder', $list, true)) { continue; }
+                $list = array_values(array_diff($list, ['encoder']));
+                if (!in_array('inventory', $list, true)) { $list[] = 'inventory'; }
+                $val = implode(',', $list); $key = $row['setting_key'];
+                $up = $conn->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = ?");
+                if ($up) { $up->bind_param('ss', $val, $key); $up->execute(); $up->close(); }
+            }
+        } catch (Throwable $e) {
+            error_log('mh_roles_merge_encoder_into_inventory: ' . $e->getMessage());
         }
         mh_roles_flush();
     }

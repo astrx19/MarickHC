@@ -21,7 +21,7 @@ mh_roles_upgrade_health_head($conn);   // makes sure the Health Head role row ex
 // TEMPORARY passwords - printed once below. Change them / have staff change them at first login.
 $accounts = [
     ['Health',  'Head',      'health_head', 'healthhead',   'healthhead@marick.gov.ph', 'HealthHead@2026'],
-    ['Encoder', 'Account',   'encoder',     'encoder1',     'encoder1@marick.gov.ph',   'Encoder@2026'],
+    ['Encoder', 'Account',   'inventory',   'encoder1',     'encoder1@marick.gov.ph',   'Encoder@2026'],
     ['BHW',     'Account',   'bhw',         'bhw1',         'bhw1@marick.gov.ph',       'Bhw@2026'],
 ];
 

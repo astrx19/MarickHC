@@ -402,6 +402,11 @@ if (!function_exists('mh_refresh_staff_authority')) {
             $row['role'] = 'health_head';
         }
 
+        if (($row['role'] ?? '') === 'encoder') {   // the Encoder role was merged into Inventory / Encoder
+            mh_roles_merge_encoder_into_inventory($conn);
+            $row['role'] = 'inventory';
+        }
+
         if (!$row) { // account deleted while signed in
             session_unset();
             header('Location: ' . mh_admin_login_url());

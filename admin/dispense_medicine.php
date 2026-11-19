@@ -21,7 +21,28 @@ $can_view_log = mh_has_permission('view_dispensing_history');   // Dispensing Re
 $system_name = $system_name ?? mh_setting('system_name');
 
 $success_msg = ""; $error_msg = "";
-$old = ['patient_id' => 0, 'lines' => []];   // posted values, restored after a failed submit
+$old = ['patient_id' => 0, 'lines' => [], 'recipient_type' => 'patient', 'staff_id' => 0, 'purpose' => ''];   // posted values, restored after a failed submit
+
+/** True once database/staff_supply_issuance_migration.sql has been run (dispensations can then point at a staff member instead of a patient). */
+function mh_dispense_staff_ready(mysqli $conn): bool
+{
+    static $ready = null;
+    if ($ready === null) {
+        $r = $conn->query("SHOW COLUMNS FROM dispensations LIKE 'recipient_type'");
+        $ready = ($r && $r->num_rows > 0);
+    }
+    return $ready;
+}
+/** Staff roles that can receive supplies, with the label shown in the picker. */
+function mh_staff_recipient_roles(): array
+{
+    return ['doctor' => 'Doctor', 'midwife' => 'Midwife', 'dental' => 'Dentist', 'dentist' => 'Dentist', 'bhw' => 'BHW'];
+}
+function mh_staff_has_status(mysqli $conn): bool
+{
+    $r = $conn->query("SHOW COLUMNS FROM staff LIKE 'status'");
+    return $r && $r->num_rows > 0;
+}
 
 // Post/Redirect/Get: a successful dispense redirects, so refreshing the page can NEVER dispense twice.
 if (!empty($_SESSION['dispense_flash'])) {
@@ -32,24 +53,31 @@ if (!empty($_SESSION['dispense_flash'])) {
 /** Rows of the Dispensing Records table (latest 100 matches). Every word typed must match something. */
 function mh_render_dispense_rows(mysqli $conn, $q)
 {
+    $ready = mh_dispense_staff_ready($conn);
     $sql = "SELECT d.dispense_date, d.quantity, d.is_fefo_override,
                    i.item_name, i.brand_name, i.unit, i.batch_number, i.tracking_code,
                    p.id AS patient_id, p.first_name AS p_first, p.last_name AS p_last,
-                   s.first_name AS s_first, s.last_name AS s_last
-              FROM dispensations d
+                   s.first_name AS s_first, s.last_name AS s_last"
+         . ($ready ? ", d.recipient_type, d.purpose, rs.first_name AS r_first, rs.last_name AS r_last, rs.role AS r_role"
+                   : ", 'patient' AS recipient_type, NULL AS purpose, NULL AS r_first, NULL AS r_last, NULL AS r_role")
+         . " FROM dispensations d
               JOIN inventory i ON d.inventory_id = i.id
-              JOIN patients p ON d.patient_id = p.id
-              LEFT JOIN staff s ON d.dispensed_by = s.id";
+              LEFT JOIN patients p ON d.patient_id = p.id
+              LEFT JOIN staff s ON d.dispensed_by = s.id"
+         . ($ready ? " LEFT JOIN staff rs ON d.recipient_staff_id = rs.id" : "");
     $where = []; $types = ''; $params = [];
+    $cols = ['p.first_name', 'p.last_name', 'i.item_name', 'i.brand_name', 'i.batch_number', 'i.tracking_code', 's.first_name', 's.last_name'];
+    if ($ready) { array_push($cols, 'rs.first_name', 'rs.last_name', 'd.purpose'); }
     $terms = preg_split('/\s+/', trim((string) $q), -1, PREG_SPLIT_NO_EMPTY);
     foreach (array_slice($terms, 0, 6) as $t) {
         $like = '%' . addcslashes($t, '%_\\') . '%';
         $id = ltrim($t, '#');                      // "#4" finds patient ID 4
-        $where[] = "(p.first_name LIKE ? OR p.last_name LIKE ? OR i.item_name LIKE ? OR i.brand_name LIKE ? OR i.batch_number LIKE ?
-                     OR i.tracking_code LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?
-                     OR DATE_FORMAT(d.dispense_date, '%b %d, %Y %l:%i %p') LIKE ? OR CAST(p.id AS CHAR) = ? OR CAST(d.quantity AS CHAR) = ?)";
-        $types .= str_repeat('s', 11);
-        array_push($params, $like, $like, $like, $like, $like, $like, $like, $like, $like, $id, $id);
+        $parts = [];
+        foreach ($cols as $c) { $parts[] = "$c LIKE ?"; $types .= 's'; $params[] = $like; }
+        $parts[] = "DATE_FORMAT(d.dispense_date, '%b %d, %Y %l:%i %p') LIKE ?"; $types .= 's'; $params[] = $like;
+        $parts[] = "CAST(p.id AS CHAR) = ?";       $types .= 's'; $params[] = $id;
+        $parts[] = "CAST(d.quantity AS CHAR) = ?"; $types .= 's'; $params[] = $id;
+        $where[] = '(' . implode(' OR ', $parts) . ')';
     }
     if ($where) { $sql .= ' WHERE ' . implode(' AND ', $where); }
     $sql .= ' ORDER BY d.dispense_date DESC, d.id DESC LIMIT 100';
@@ -62,7 +90,15 @@ function mh_render_dispense_rows(mysqli $conn, $q)
     ob_start();
     if ($res && $res->num_rows > 0) {
         while ($row = $res->fetch_assoc()) {
-            $p_initials = mb_strtoupper(mb_substr($row['p_first'], 0, 1) . mb_substr($row['p_last'], 0, 1));
+            $is_staff_row = (($row['recipient_type'] ?? 'patient') === 'staff');
+            if ($is_staff_row) {
+                $roles_map = mh_staff_recipient_roles();
+                $r_name    = $row['r_first'] !== null ? $row['r_last'] . ', ' . $row['r_first'] : 'Former staff member';
+                $p_initials = $row['r_first'] !== null ? mb_strtoupper(mb_substr($row['r_first'], 0, 1) . mb_substr($row['r_last'], 0, 1)) : '?';
+                $r_role    = $roles_map[strtolower((string) $row['r_role'])] ?? ucfirst((string) $row['r_role']);
+            } else {
+                $p_initials = mb_strtoupper(mb_substr((string) $row['p_first'], 0, 1) . mb_substr((string) $row['p_last'], 0, 1));
+            }
             $staff_name = $row['s_first'] ? htmlspecialchars($row['s_first'] . ' ' . $row['s_last']) : 'System';
             ?>
             <tr>
@@ -74,8 +110,14 @@ function mh_render_dispense_rows(mysqli $conn, $q)
                     <div class="patient-badge">
                         <div class="avatar-circle"><?php echo htmlspecialchars($p_initials); ?></div>
                         <div>
+                        <?php if ($is_staff_row): ?>
+                            <span class="patient-badge-name"><?php echo htmlspecialchars($r_name); ?></span>
+                            <span class="patient-badge-id">Medical Staff &middot; <?php echo htmlspecialchars($r_role); ?></span>
+                            <?php if (!empty($row['purpose'])): ?><span class="patient-badge-id" style="font-style: italic;">Purpose: <?php echo htmlspecialchars($row['purpose']); ?></span><?php endif; ?>
+                        <?php else: ?>
                             <span class="patient-badge-name"><?php echo htmlspecialchars($row['p_last'] . ', ' . $row['p_first']); ?></span>
                             <span class="patient-badge-id">ID: <?php echo (int) $row['patient_id']; ?></span>
+                        <?php endif; ?>
                         </div>
                     </div>
                 </td>
@@ -181,8 +223,12 @@ if (isset($_POST['dispense_item'])) {
         http_response_code(403);
         $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
     } else {
-        $patient_id = (int) ($_POST['patient_id'] ?? 0);
-        $staff_id   = (int) ($_SESSION['user_id'] ?? 0);
+        $staff_ready  = mh_dispense_staff_ready($conn);
+        $to_staff     = $staff_ready && (($_POST['recipient_type'] ?? 'patient') === 'staff');   // Medical Staff recipient: no patient needed
+        $patient_id   = $to_staff ? 0 : (int) ($_POST['patient_id'] ?? 0);
+        $recipient_staff_id = $to_staff ? (int) ($_POST['recipient_staff_id'] ?? 0) : 0;
+        $purpose      = $to_staff ? mb_substr(trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['purpose'] ?? ''))), 0, 255) : '';
+        $staff_id     = (int) ($_SESSION['user_id'] ?? 0);
 
         // One or many medicines per visit: parallel arrays inventory_id[] / quantity[]. The same lot listed twice is summed.
         $ids  = (array) ($_POST['inventory_id'] ?? []);
@@ -195,7 +241,7 @@ if (isset($_POST['dispense_item'])) {
             if ($iid <= 0) { $line_problem = "Please select a medicine and a batch for every line."; break; }
             $lines[$iid] = ($lines[$iid] ?? 0) + $q;
         }
-        $old = ['patient_id' => $patient_id, 'lines' => []];
+        $old = ['patient_id' => $patient_id, 'lines' => [], 'recipient_type' => $to_staff ? 'staff' : 'patient', 'staff_id' => $recipient_staff_id, 'purpose' => $purpose];
         foreach ($lines as $iid => $q) { $old['lines'][] = ['inventory_id' => $iid, 'quantity' => $q]; }
 
         if ($line_problem !== '') {
@@ -204,8 +250,12 @@ if (isset($_POST['dispense_item'])) {
             $error_msg = "Add at least one medicine to dispense.";
         } elseif (count($lines) > 25) {
             $error_msg = "Too many medicines in one visit (maximum 25). Dispense the rest separately.";
-        } elseif ($patient_id <= 0) {
+        } elseif (!$to_staff && $patient_id <= 0) {
             $error_msg = "Please select the patient receiving the medicine.";
+        } elseif ($to_staff && $recipient_staff_id <= 0) {
+            $error_msg = "Please select the medical staff member receiving the supplies.";
+        } elseif ($to_staff && mb_strlen($purpose) < 3) {
+            $error_msg = "Please enter a brief purpose or note for this issuance (for example: home visit kit, outreach, clinic use).";
         } else {
             foreach ($lines as $q) {
                 if ($q <= 0 || $q > 100000) { $error_msg = "Enter a valid quantity for every medicine (1 to 100,000)."; break; }
@@ -219,20 +269,32 @@ if (isset($_POST['dispense_item'])) {
                 // If any line fails (expired, archived, not enough stock) the whole visit is rolled back and nothing changes.
                 $conn->begin_transaction();
 
-                $pc = $conn->prepare("SELECT first_name, last_name FROM patients WHERE id = ? AND status = 1 LIMIT 1");
-                $pc->bind_param('i', $patient_id);
-                $pc->execute();
-                $patient_row = $pc->get_result()->fetch_assoc();
-                $pc->close();
+                $patient_row = null; $staff_row = null;
+                if ($to_staff) {
+                    $role_list = "'" . implode("','", array_keys(mh_staff_recipient_roles())) . "'";
+                    $sc = $conn->prepare("SELECT first_name, last_name, role FROM staff WHERE id = ? AND role IN ($role_list)" . (mh_staff_has_status($conn) ? " AND status = 1" : "") . " LIMIT 1");
+                    $sc->bind_param('i', $recipient_staff_id);
+                    $sc->execute();
+                    $staff_row = $sc->get_result()->fetch_assoc();
+                    $sc->close();
+                } else {
+                    $pc = $conn->prepare("SELECT first_name, last_name FROM patients WHERE id = ? AND status = 1 LIMIT 1");
+                    $pc->bind_param('i', $patient_id);
+                    $pc->execute();
+                    $patient_row = $pc->get_result()->fetch_assoc();
+                    $pc->close();
+                }
 
                 $fail = null;
                 $done = [];
-                if (!$patient_row) {
+                if ($to_staff && !$staff_row) {
+                    $fail = "That staff account is not active or cannot receive supplies.";
+                } elseif (!$to_staff && !$patient_row) {
                     $fail = "That patient record is not active.";
                 } else {
                     ksort($lines);   // lock lots in a fixed order so two clerks can never deadlock each other
                     foreach ($lines as $item_id => $amount) {
-                        $ls = $conn->prepare("SELECT item_name, brand_name, expiry_date, status, quantity, unit, batch_number, tracking_code FROM inventory WHERE id = ? FOR UPDATE");
+                        $ls = $conn->prepare("SELECT item_name, brand_name, category, expiry_date, status, quantity, unit, batch_number, tracking_code FROM inventory WHERE id = ? FOR UPDATE");
                         $ls->bind_param('i', $item_id);
                         $ls->execute();
                         $item = $ls->get_result()->fetch_assoc();
@@ -241,6 +303,9 @@ if (isset($_POST['dispense_item'])) {
                         if (!$item) { $fail = "A selected batch could not be found."; break; }
                         $name = $item['item_name'] . ' (' . (($item['brand_name'] ?? '') !== '' ? $item['brand_name'] : 'Generic') . ')';
                         if ((int) $item['status'] !== 1) { $fail = "$name: this batch has been archived and can no longer be dispensed."; break; }
+                        if ($to_staff && stripos((string) $item['category'], 'suppl') === false) {
+                            $fail = "$name is a " . ($item['category'] ?: 'non-supply item') . ". Only Medical Supplies can be issued to staff; medicines and vaccines are dispensed to patients."; break;
+                        }
                         if (!empty($item['expiry_date']) && $item['expiry_date'] < date('Y-m-d')) { $fail = "$name: this batch has expired and cannot be dispensed."; break; }
                         if ($amount > (int) $item['quantity']) {
                             $fail = "Not enough stock for $name: only " . (int) $item['quantity'] . ' ' . $item['unit'] . ' left in lot ' . ($item['batch_number'] ?: 'N/A') . ". You asked for $amount.";
@@ -270,17 +335,28 @@ if (isset($_POST['dispense_item'])) {
                         $up->close();
                         if ($deducted === 0) { $fail = "Insufficient stock available for $name."; break; }
 
-                        $di = $conn->prepare("INSERT INTO dispensations (inventory_id, patient_id, dispensed_by, quantity, is_fefo_override) VALUES (?, ?, ?, ?, ?)");
-                        $di->bind_param('iiiii', $item_id, $patient_id, $staff_id, $amount, $is_override);
+                        if ($to_staff) {
+                            // Stock-out to a staff member: no patient. Who got it, why, and who handed it over are all recorded.
+                            $di = $conn->prepare("INSERT INTO dispensations (inventory_id, patient_id, recipient_type, recipient_staff_id, purpose, dispensed_by, quantity, is_fefo_override) VALUES (?, NULL, 'staff', ?, ?, ?, ?, ?)");
+                            $di->bind_param('iisiii', $item_id, $recipient_staff_id, $purpose, $staff_id, $amount, $is_override);
+                        } else {
+                            $di = $conn->prepare("INSERT INTO dispensations (inventory_id, patient_id, dispensed_by, quantity, is_fefo_override) VALUES (?, ?, ?, ?, ?)");
+                            $di->bind_param('iiiii', $item_id, $patient_id, $staff_id, $amount, $is_override);
+                        }
                         $di->execute();
                         $di->close();
 
-                        $log_note = "Dispensed $amount {$item['unit']} of $name (SKU " . ($item['tracking_code'] ?: 'N/A') . ", Lot " . ($item['batch_number'] ?: 'N/A')
-                                  . ") to Patient ID #$patient_id (" . $patient_row['last_name'] . ", " . $patient_row['first_name'] . "). Stock left in lot: " . ((int) $item['quantity'] - $amount) . ".";
+                        if ($to_staff) {
+                            $log_note = "Issued $amount {$item['unit']} of $name (SKU " . ($item['tracking_code'] ?: 'N/A') . ", Lot " . ($item['batch_number'] ?: 'N/A')
+                                      . ") to Medical Staff #$recipient_staff_id (" . $staff_row['last_name'] . ", " . $staff_row['first_name'] . " - " . $staff_row['role'] . "). Purpose: $purpose. Stock left in lot: " . ((int) $item['quantity'] - $amount) . ".";
+                        } else {
+                            $log_note = "Dispensed $amount {$item['unit']} of $name (SKU " . ($item['tracking_code'] ?: 'N/A') . ", Lot " . ($item['batch_number'] ?: 'N/A')
+                                      . ") to Patient ID #$patient_id (" . $patient_row['last_name'] . ", " . $patient_row['first_name'] . "). Stock left in lot: " . ((int) $item['quantity'] - $amount) . ".";
+                        }
                         if ($is_override) {
                             $log_note .= " NOTE: an earlier-expiring active batch of the same item still had stock on hand (FEFO override).";
                         }
-                        if (!logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], "Dispensed Medicine", $log_note)) {
+                        if (!logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], $to_staff ? "Issued Supply to Staff" : "Dispensed Medicine", $log_note)) {
                             throw new RuntimeException('Audit log write failed');   // no log = no dispense: roll everything back
                         }
                         $done[] = "$amount {$item['unit']} of $name";
@@ -294,11 +370,13 @@ if (isset($_POST['dispense_item'])) {
                     // Opened from Patient Queueing > Proceed: the dispense IS the "save record" step, so the queue
                     // entry closes in the same transaction (only when it is this patient's inventory queue entry).
                     $q_done = false;
-                    $queue_ctx_post = mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'inventory', $patient_id);
+                    $queue_ctx_post = $to_staff ? null : mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'inventory', $patient_id);
                     if ($queue_ctx_post && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) { $q_done = true; }
 
                     $conn->commit();   // every deduction + dispensation record + audit log succeed together, or not at all
-                    $success_msg = "Successfully dispensed " . implode('; ', $done) . "!";
+                    $success_msg = $to_staff
+                        ? "Successfully issued " . implode('; ', $done) . " to " . $staff_row['first_name'] . " " . $staff_row['last_name'] . "!"
+                        : "Successfully dispensed " . implode('; ', $done) . "!";
                     if ($q_done) {
                         $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked Completed.";
                     }
@@ -412,6 +490,17 @@ usort($medicine_groups, function($a, $b) {
 $js_medicine_groups = json_encode($medicine_groups, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 $js_preselect_group_key = json_encode($preselect_group_key, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
+$staff_issue_ready = mh_dispense_staff_ready($conn);
+$staff_recipients = [];   // grouped by role label for the picker
+if ($staff_issue_ready && $can_dispense) {
+    $role_list = "'" . implode("','", array_keys(mh_staff_recipient_roles())) . "'";
+    $sr = $conn->query("SELECT id, first_name, last_name, role FROM staff WHERE role IN ($role_list)" . (mh_staff_has_status($conn) ? " AND status = 1" : "") . " ORDER BY last_name ASC, first_name ASC");
+    $role_labels = mh_staff_recipient_roles();
+    while ($sr && ($row_s = $sr->fetch_assoc())) {
+        $staff_recipients[$role_labels[strtolower($row_s['role'])] ?? ucfirst($row_s['role'])][] = $row_s;
+    }
+    ksort($staff_recipients);
+}
 $patients_list = $conn->query("SELECT id, first_name, last_name, birthdate FROM patients WHERE status = 1 ORDER BY last_name ASC, first_name ASC");
 
 $log_rows_html = $can_view_log ? mh_render_dispense_rows($conn, '') : '';
@@ -461,6 +550,10 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
         html[data-theme="dark"] .select2-container--default .select2-results__option { background: var(--bg-card); color: var(--text-main); }
         html[data-theme="dark"] .select2-dropdown { background: var(--bg-card); }
         html[data-theme="dark"] .select2-search__field { background: var(--bg-hover); color: var(--text-main); }
+        .recipient-toggle { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; overflow: hidden; }
+        .recipient-toggle button { padding: 9px 10px; border: 0; background: var(--bg-card, #fff); color: var(--text-main, #334155); font-weight: 600; font-size: 0.9rem; cursor: pointer; font-family: inherit; }
+        .recipient-toggle button + button { border-left: 1px solid var(--border-color, #cbd5e1); }
+        .recipient-toggle button.active { background: #10b981; color: #fff; }
         .batch-select-option { display: flex; flex-direction: column; gap: 2px; }
         #packagingCalcWrap { display: none; }
         #packagingCalcWrap.active { display: block; }
@@ -484,7 +577,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             
             <div style="margin-bottom: 25px;">
                 <h1 style="margin: 0 0 5px 0; color: var(--heading-color, #1e293b); font-family: Georgia, serif; font-size: 1.8rem;">Dispense Medicine</h1>
-                <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem;">Issue medicines to patients following First-Expired-First-Out and track dispensing history.</p>
+                <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem;">Issue medicines to patients<?php echo $staff_issue_ready ? ' (and medical supplies to staff)' : ''; ?> following First-Expired-First-Out and track dispensing history.</p>
             </div>
 
             <div class="dispense-grid" style="display: grid; grid-template-columns: <?php echo ($can_dispense && $can_view_log) ? '380px 1fr' : '1fr'; ?>; gap: 25px; align-items: start;">
@@ -492,7 +585,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                 <?php if($can_dispense): ?>
                 <div class="unified-panel" style="margin: 0; position: sticky; top: 90px;">
                     <div class="panel-controls" style="background: rgba(16,185,129,0.1); border-top: 4px solid #10b981;">
-                        <h3 style="margin:0; font-size: 1.1rem; color: #047857;"><?php echo mh_icon('droplet'); ?> Issue Medicine</h3>
+                        <h3 style="margin:0; font-size: 1.1rem; color: #047857;"><?php echo mh_icon('droplet'); ?> <span id="issueTitleText">Issue Medicine</span></h3>
                     </div>
                     <form id="dispenseForm" method="POST" style="padding: 20px;">
                         <?php if ($queue_ctx): ?>
@@ -504,12 +597,23 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                         <input type="hidden" id="selectedBatchId">   <?php /* line editor only: the posted fields are the inventory_id[] / quantity[] inputs generated from the medicine list */ ?>
                         <div id="cartInputs"></div>
                         
+                        <?php if ($staff_issue_ready): ?>
                         <div class="form-group" style="margin-bottom: 15px;">
-                            <label>Select Medicine <span style="color:red;">*</span></label>
+                            <label>Recipient</label>
+                            <input type="hidden" name="recipient_type" id="recipientType" value="patient">
+                            <div class="recipient-toggle" role="tablist">
+                                <button type="button" class="active" data-recipient="patient" onclick="setRecipient('patient')">Patient</button>
+                                <button type="button" data-recipient="staff" onclick="setRecipient('staff')">Medical Staff</button>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label><span id="medLabelText">Select Medicine</span> <span style="color:red;">*</span></label>
                             <select id="medicineSelect" style="width: 100%;">
                                 <option value="" disabled selected>Search generic or brand name...</option>
                                 <?php foreach($medicine_groups as $grp): ?>
-                                    <option value="<?php echo htmlspecialchars($grp['key']); ?>">
+                                    <option value="<?php echo htmlspecialchars($grp['key']); ?>" data-cat="<?php echo htmlspecialchars((string) $grp['category']); ?>">
                                         <?php echo htmlspecialchars($grp['item_name']) . ' (' . htmlspecialchars($grp['brand_name']) . ')'; ?>
                                         &mdash; <?php echo (int) array_sum(array_column($grp['batches'], 'quantity')); ?> <?php echo htmlspecialchars($grp['unit']); ?> across <?php echo count($grp['batches']); ?> batch<?php echo count($grp['batches']) === 1 ? '' : 'es'; ?>
                                     </option>
@@ -541,7 +645,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                             </div>
                         </div>
 
-                        <div class="form-group" style="margin-bottom: 15px;">
+                        <div class="form-group" id="patientGroup" style="margin-bottom: 15px;">
                             <label>Select Patient <span style="color:red;">*</span></label>
                             <select name="patient_id" id="patientSelect" required style="width: 100%;">
                                 <option value="" disabled selected>Search registered patient...</option>
@@ -554,6 +658,25 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                                 ?>
                             </select>
                         </div>
+
+                        <?php if ($staff_issue_ready): ?>
+                        <div class="form-group" id="staffGroup" style="margin-bottom: 15px; display: none;">
+                            <label>Select Staff Member <span style="color:red;">*</span></label>
+                            <select name="recipient_staff_id" id="staffSelect" style="width: 100%;" disabled>
+                                <option value="" disabled selected>Search doctor, midwife, dentist, BHW...</option>
+                                <?php foreach ($staff_recipients as $role_label => $members): ?>
+                                    <optgroup label="<?php echo htmlspecialchars($role_label); ?>">
+                                        <?php foreach ($members as $m): ?>
+                                            <option value="<?php echo (int) $m['id']; ?>"><?php echo htmlspecialchars($m['last_name'] . ', ' . $m['first_name'] . ' (' . $role_label . ')'); ?></option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                <?php endforeach; ?>
+                            </select>
+                            <label style="margin-top: 12px; display: block;">Purpose / Note <span style="color:red;">*</span></label>
+                            <input type="text" name="purpose" id="purposeInput" maxlength="255" disabled placeholder="e.g., Home-visit kit, outreach activity, clinic use" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1); box-sizing: border-box;">
+                            <div class="stock-readout">Only Medical Supplies can be issued to staff. No patient record is needed; the stock-out is logged with the staff member and purpose.</div>
+                        </div>
+                        <?php endif; ?>
 
                         <div class="form-group packaging-config-box" id="packagingCalcWrap">
                             <label class="section-label"><?php echo mh_icon('calculator'); ?> Unit Dispensing Calculator</label>
@@ -586,7 +709,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                             <div id="cartList"></div>
                         </div>
 
-                        <button type="button" class="btn-submit" onclick="confirmDispense()" style="width: 100%; padding: 12px; font-size: 1rem; background: #10b981; border:none; color:white; border-radius:6px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);"><?php echo mh_icon('check-circle'); ?> Dispense to Patient</button>
+                        <button type="button" class="btn-submit" onclick="confirmDispense()" style="width: 100%; padding: 12px; font-size: 1rem; background: #10b981; border:none; color:white; border-radius:6px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);"><?php echo mh_icon('check-circle'); ?> <span id="dispenseBtnText">Dispense to Patient</span></button>
                     </form>
                 </div>
                 <?php endif; ?>
@@ -595,7 +718,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                 <div class="unified-panel" style="margin: 0;">
                     <div class="panel-controls">
                         <h3 style="margin:0; font-size: 1.1rem; color: var(--heading-color, #1e293b);"><?php echo mh_icon('file-text'); ?> Dispensing Records</h3>
-                        <input type="text" id="searchLog" class="search-box" placeholder="Search patient, ID #, item, lot, staff, date..." oninput="debouncedLoadLog()" autocomplete="off" style="width: 260px; max-width: 100%; padding: 6px 12px;">
+                        <input type="text" id="searchLog" class="search-box" placeholder="Search patient, staff, ID #, item, lot, date..." oninput="debouncedLoadLog()" autocomplete="off" style="width: 260px; max-width: 100%; padding: 6px 12px;">
                     </div>
                     
                     <div style="overflow-x: auto;">
@@ -603,7 +726,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                             <thead>
                                 <tr>
                                     <th>Date &amp; Time</th>
-                                    <th>Patient</th>
+                                    <th>Patient / Recipient</th>
                                     <th>Item / Batch</th>
                                     <th>Dispensed By</th>
                                     <th style="text-align: center;">Qty</th>
@@ -633,6 +756,11 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
         const GROUPS_BY_KEY = {};
         MEDICINE_GROUPS.forEach(g => { GROUPS_BY_KEY[g.key] = g; });
+
+        const ALL_MED_OPTIONS = $('#medicineSelect option').filter(function () { return this.value !== ''; })
+            .map(function () { return { value: this.value, text: this.text, cat: this.getAttribute('data-cat') || '' }; }).get();
+        let recipient = 'patient';           // 'patient' | 'staff'  (staff = Medical Staff, supplies only)
+        function isSupply(cat) { return /suppl/i.test(cat || ''); }
 
         let currentGroup = null;
         let currentBatch = null;
@@ -790,8 +918,11 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             if (!batch.units_per_pack) { calcWrap.classList.remove('active'); return; }
 
             calcWrap.classList.add('active');
-            document.getElementById('disp_pack_label').textContent = (batch.pack_label || 'Pack') + 's';
-            if (batch.packs_per_box) {
+            // Medical Supply / Vaccine are counted in boxes of pieces (no blisters): label the one pack level "Boxes".
+            const boxOfPieces = currentGroup && /suppl|vaccine/i.test(currentGroup.category || '');
+            const packWord = boxOfPieces ? 'Box' : (batch.pack_label || 'Pack');
+            document.getElementById('disp_pack_label').textContent = packWord + (/(s|x|ch|sh)$/i.test(packWord) ? 'es' : 's');
+            if (batch.packs_per_box && !boxOfPieces) {
                 boxField.style.display = '';
                 document.getElementById('disp_box_label').textContent = (batch.box_label || 'Box') + 's';
             } else {
@@ -846,16 +977,58 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             return true;
         }
 
+        function rebuildMedicineOptions() {
+            const staff = recipient === 'staff';
+            const $m = $('#medicineSelect');
+            const list = ALL_MED_OPTIONS.filter(o => !staff || isSupply(o.cat));
+            if ($m.data('select2')) { $m.select2('destroy'); }
+            $m.empty().append($('<option>').val('').prop('disabled', true).prop('selected', true).text(staff ? 'Search medical supply...' : 'Search generic or brand name...'));
+            list.forEach(o => { $m.append($('<option>').val(o.value).text(o.text).attr('data-cat', o.cat)); });
+            if (!list.length) { $m.append($('<option>').val('').prop('disabled', true).text(staff ? 'No medical supplies in stock' : 'No active stock available')); }
+            mhSelect2('#medicineSelect', { placeholder: staff ? 'Search medical supply...' : 'Search generic or brand name...' });
+            $m.val('').trigger('change');
+        }
+
+        function setRecipient(mode) {
+            if (mode === recipient || !document.getElementById('recipientType')) return;
+            if (mode === 'staff') {
+                const bad = cart.filter(c => !isSupply(c.cat));
+                if (bad.length) {
+                    cart = cart.filter(c => isSupply(c.cat));
+                    renderCart();
+                    mh_alert('Only Medical Supplies can be issued to staff, so these were removed from the list: ' + bad.map(c => c.name).join(', ') + '.', 'Items Removed', 'warning');
+                }
+            }
+            recipient = mode;
+            const staff = mode === 'staff';
+            document.getElementById('recipientType').value = mode;
+            document.querySelectorAll('.recipient-toggle button').forEach(b => b.classList.toggle('active', b.dataset.recipient === mode));
+            document.getElementById('patientGroup').style.display = staff ? 'none' : '';
+            document.getElementById('staffGroup').style.display = staff ? '' : 'none';
+            $('#patientSelect').prop('disabled', staff);            // disabled fields are not submitted
+            $('#staffSelect').prop('disabled', !staff);
+            $('#purposeInput').prop('disabled', !staff);
+            document.getElementById('issueTitleText').textContent = staff ? 'Issue Supplies to Staff' : 'Issue Medicine';
+            document.getElementById('medLabelText').textContent = staff ? 'Select Medical Supply' : 'Select Medicine';
+            document.getElementById('dispenseBtnText').textContent = staff ? 'Issue to Staff' : 'Dispense to Patient';
+            rebuildMedicineOptions();
+        }
+
         function restoreForm(o) {
+            if (o.recipient_type === 'staff') {
+                setRecipient('staff');
+                if (o.staff_id) { $('#staffSelect').val(String(o.staff_id)).trigger('change'); }
+                document.getElementById('purposeInput').value = o.purpose || '';
+            }
             (o.lines || []).forEach(function (ln) {
                 const g = MEDICINE_GROUPS.find(x => x.batches.some(b => b.id === ln.inventory_id));
                 if (!g) return;
                 const b = g.batches.find(x => x.id === ln.inventory_id);
                 cart.push({ id: ln.inventory_id, qty: parseInt(ln.quantity, 10) || 0, unit: b.unit, lot: b.batch_number,
-                            name: g.item_name + ' (' + g.brand_name + ')', override: false });
+                            name: g.item_name + ' (' + g.brand_name + ')', override: false, cat: g.category });
             });
             renderCart();
-            if (o.patient_id) { $('#patientSelect').val(String(o.patient_id)).trigger('change'); }
+            if (o.patient_id && o.recipient_type !== 'staff') { $('#patientSelect').val(String(o.patient_id)).trigger('change'); }
         }
 
         window.onload = function() {
@@ -865,6 +1038,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             <?php endif; ?>
 
             mhSelect2('#medicineSelect', { placeholder: 'Search generic or brand name...' });
+            if (document.getElementById('staffSelect')) { mhSelect2('#staffSelect', { placeholder: 'Search staff...' }); }
 
             <?php if ($error_msg !== '' && !empty($old['lines'])): ?>
             restoreForm(<?php echo json_encode($old, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>);
@@ -939,7 +1113,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             if (hit) { hit.qty += qty; hit.override = hit.override || override; }
             else {
                 cart.push({ id: currentBatch.id, qty: qty, unit: currentBatch.unit, lot: currentBatch.batch_number,
-                            name: currentGroup.item_name + ' (' + currentGroup.brand_name + ')', override: override });
+                            name: currentGroup.item_name + ' (' + currentGroup.brand_name + ')', override: override, cat: currentGroup.category });
             }
             renderCart();
             clearLineEditor();
@@ -954,21 +1128,31 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                 mh_alert('Add at least one medicine (choose a medicine, a batch / lot and a quantity).', 'Nothing to Dispense', 'warning');
                 return;
             }
-            if (!patientSelect.value) {
-                mh_alert('Please select the patient receiving the medicine.', 'Incomplete Form', 'warning');
-                return;
+            const toStaff = recipient === 'staff';
+            let recipientLine;
+            if (toStaff) {
+                const staffSelect = document.getElementById('staffSelect');
+                const purpose = document.getElementById('purposeInput').value.trim();
+                if (!staffSelect.value) { mh_alert('Please select the medical staff member receiving the supplies.', 'Incomplete Form', 'warning'); return; }
+                if (purpose.length < 3) { mh_alert('Please enter a brief purpose or note (for example: home visit kit, outreach, clinic use).', 'Purpose Needed', 'warning'); return; }
+                recipientLine = 'Issue to <strong>' + escHtml(staffSelect.options[staffSelect.selectedIndex].text) + '</strong><br><span style="opacity:.85;">Purpose: ' + escHtml(purpose) + '</span>';
+            } else {
+                if (!patientSelect.value) {
+                    mh_alert('Please select the patient receiving the medicine.', 'Incomplete Form', 'warning');
+                    return;
+                }
+                recipientLine = 'Dispense to <strong>' + escHtml(patientSelect.options[patientSelect.selectedIndex].text) + '</strong>';
             }
-            const patientName = patientSelect.options[patientSelect.selectedIndex].text;
             const anyOverride = cart.some(c => c.override);
             const rows = cart.map(c => '<li><strong>' + escHtml(Number(c.qty).toLocaleString()) + ' ' + escHtml(c.unit || '') + '</strong> of <strong>' + escHtml(c.name) + '</strong> (Lot ' + escHtml(c.lot || 'N/A') + ')' + (c.override ? ' <em>- FEFO override</em>' : '') + '</li>').join('');
 
             mh_confirm(
-                'Dispense to <strong>' + escHtml(patientName) + '</strong>:<ul style="margin:10px 0 0 18px; text-align:left;">' + rows + '</ul>' +
+                recipientLine + ':<ul style="margin:10px 0 0 18px; text-align:left;">' + rows + '</ul>' +
                 (cart.length > 1 ? '<br><span style="opacity:.8;">All medicines are dispensed together; if one cannot be, nothing is dispensed.</span>' : '') +
                 (anyOverride ? '<br><br><span class="mh-text-warning">An earlier-expiring batch still has stock for at least one item - this will be logged as a FEFO override.</span>' : ''),
-                anyOverride ? 'Confirm Dispensing (FEFO Override)' : 'Confirm Dispensing',
+                (toStaff ? 'Confirm Issuance' : 'Confirm Dispensing') + (anyOverride ? ' (FEFO Override)' : ''),
                 anyOverride ? 'warning' : 'info',
-                'Yes, Dispense',
+                toStaff ? 'Yes, Issue' : 'Yes, Dispense',
                 { html: true }
             ).then(function (ok) {
                 if (ok) {
