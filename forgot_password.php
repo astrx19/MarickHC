@@ -18,12 +18,13 @@ if ($scope === '') {
     }
     $_SESSION['pr_for'] = $scope;
 }
+$mode      = (($_GET['mode'] ?? '') === 'username') ? 'username' : 'password';
 $forQuery  = '?for=' . $scope;
 $loginHref = $scope === 'staff' ? 'admin/login.php' : 'patient_login.php';
 
 if (isset($_GET['restart'])) {
-    unset($_SESSION['pr'], $_SESSION['pr_done'], $_SESSION['pr_sms'], $_SESSION['pr_debug']);
-    header('Location: forgot_password.php' . $forQuery);
+    unset($_SESSION['pr'], $_SESSION['pr_done'], $_SESSION['pr_sms'], $_SESSION['pr_debug'], $_SESSION['pr_user_done']);
+    header('Location: forgot_password.php' . $forQuery . ($mode === 'username' ? '&mode=username' : ''));
     exit;
 }
 
@@ -31,10 +32,22 @@ $flash = $_SESSION['pr_flash'] ?? null; unset($_SESSION['pr_flash']);
 $debug = $_SESSION['pr_debug'] ?? null; unset($_SESSION['pr_debug']);
 $state = $_SESSION['pr'] ?? null;
 if ($state && (time() - (int) ($state['at'] ?? 0)) > 900) { unset($_SESSION['pr']); $state = null; }
+if ($state && (($state['table'] ?? '') === 'staff') !== ($scope === 'staff')) { unset($_SESSION['pr']); $state = null; } // never carry one portal's recovery into the other
 $done = $_SESSION['pr_done'] ?? null;
-$step = $done ? 3 : ($state ? 2 : 1);
+if ($done && ($done['scope'] ?? $scope) !== $scope) { unset($_SESSION['pr_done']); $done = null; }
+$userDone = $_SESSION['pr_user_done'] ?? null;
+if ($userDone && ($userDone['scope'] ?? $scope) !== $scope) { unset($_SESSION['pr_user_done']); $userDone = null; }
+if ($userDone && (time() - (int) ($userDone['at'] ?? 0)) > 900) { unset($_SESSION['pr_user_done']); $userDone = null; }
+if ($mode === 'username') {
+    // The username flow is its own thing: never mix it with a half-finished password reset.
+    $step = $userDone ? 3 : 1;
+    $state = null; $done = null;
+} else {
+    $userDone = null;
+    $step = $done ? 3 : ($state ? 2 : 1);
+}
 $csrf = mh_pr_csrf_token();
-$no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
+$no_option = $step === 2 && $state && !$state['email_ok'] && !$state['sms_ok'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -43,7 +56,7 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer">
-    <title>Forgot Password - <?php echo mh_pr_h($system_name); ?></title>
+    <title><?php echo $mode === 'username' ? 'Forgot Username' : 'Forgot Password'; ?> - <?php echo mh_pr_h($system_name); ?></title>
     <link rel="stylesheet" href="assets/css/password_recovery.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/password_recovery.css'); ?>">
 </head>
 <body class="pr-body">
@@ -52,14 +65,22 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
 
     <div class="pr-head">
         <img src="assets/images/logo.png" alt="Clinic logo">
-        <h1>Forgot Password?</h1>
+        <h1><?php echo $mode === 'username' ? 'Forgot Username?' : 'Forgot Password?'; ?></h1>
         <div style="margin: 6px 0 10px;">
             <span style="display:inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: var(--pr-accent-soft); color: var(--pr-accent);">
                 <?php echo $scope === 'staff' ? 'Staff Portal Recovery' : 'Patient Portal Recovery'; ?>
             </span>
         </div>
         <p><?php
-            if ($step === 1) {
+            if ($mode === 'username') {
+                if ($step === 1) {
+                    echo $scope === 'staff'
+                        ? 'Enter the email or mobile number registered to your staff account and we\'ll send you your username.'
+                        : 'Enter the email or mobile number registered to your patient account and we\'ll send you your username.';
+                } else {
+                    echo 'Check your email or phone for your username.';
+                }
+            } elseif ($step === 1) {
                 echo $scope === 'staff'
                     ? 'Enter your staff username or registered staff email to reset your account password.'
                     : 'Enter your patient username or registered email and we\'ll help you get back in.';
@@ -76,12 +97,30 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
         <div class="pr-alert err"><?php echo mh_pr_icon('alert'); ?><span><?php echo mh_pr_h($flash); ?></span></div>
     <?php endif; ?>
 
-<?php if ($step === 1): ?>
-    <div class="pr-tabs">
-        <a href="forgot_password.php?for=staff&amp;restart=1" class="pr-tab <?php echo $scope === 'staff' ? 'active' : ''; ?>">Staff Portal</a>
-        <a href="forgot_password.php?for=patient&amp;restart=1" class="pr-tab <?php echo $scope === 'patient' ? 'active' : ''; ?>">Patient Portal</a>
+<?php if ($mode === 'username'): ?>
+    <?php if ($step === 1): ?>
+    <form method="POST" action="forgot_password_process.php" autocomplete="off">
+        <input type="hidden" name="csrf" value="<?php echo mh_pr_h($csrf); ?>">
+        <input type="hidden" name="action" value="username">
+        <input type="hidden" name="for" value="<?php echo mh_pr_h($scope); ?>">
+        <div class="pr-field">
+            <label for="contact"><?php echo $scope === 'staff' ? 'Registered Staff Email or Mobile Number' : 'Registered Patient Email or Mobile Number'; ?></label>
+            <input type="text" id="contact" name="contact" required maxlength="100" autofocus
+                   placeholder="e.g. your@email.com or 09171234567">
+        </div>
+        <button type="submit" class="pr-btn">Send My Username</button>
+    </form>
+    <div class="pr-links"><a href="forgot_password.php<?php echo $forQuery; ?>">Forgot your password instead?</a></div>
+    <?php else: ?>
+    <div class="pr-alert ok"><?php echo mh_pr_icon('check'); ?><span>If that <?php echo ($userDone['kind'] ?? 'email') === 'sms' ? 'mobile number' : 'email address'; ?> belongs to a <?php echo $scope === 'staff' ? 'staff' : 'patient'; ?> account, we've sent the username to it. Please check your <?php echo ($userDone['kind'] ?? 'email') === 'sms' ? 'messages' : 'inbox and spam folder'; ?>.</span></div>
+    <?php if ($debug !== null): ?><div class="pr-debug"><b>Local testing mode</b> (never shown on the live site)<br><?php echo $debug; ?></div><?php endif; ?>
+    <div class="pr-links">
+        <a href="forgot_password.php<?php echo $forQuery; ?>">Reset my password</a>
+        <a href="forgot_password.php?restart=1&amp;for=<?php echo $scope; ?>&amp;mode=username">Send again</a>
     </div>
+    <?php endif; ?>
 
+<?php elseif ($step === 1): ?>
     <form method="POST" action="forgot_password_process.php" autocomplete="off">
         <input type="hidden" name="csrf" value="<?php echo mh_pr_h($csrf); ?>">
         <input type="hidden" name="action" value="lookup">
@@ -93,6 +132,7 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
         </div>
         <button type="submit" class="pr-btn">Continue</button>
     </form>
+    <div class="pr-links"><a href="forgot_password.php<?php echo $forQuery; ?>&amp;mode=username">Forgot your username too? Find it here</a></div>
 
 <?php elseif ($step === 2): ?>
     <div class="pr-summary">
@@ -102,7 +142,7 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
 
     <?php if ($no_option): ?>
         <div class="pr-alert err"><?php echo mh_pr_icon('alert'); ?><span>Password recovery is not available right now for this account. Please visit the health center so staff can help you.</span></div>
-        <div class="pr-links"><a href="forgot_password.php?restart=1<?php echo $forQuery; ?>">Start over</a></div>
+        <div class="pr-links"><a href="forgot_password.php?restart=1&amp;for=<?php echo $scope; ?>">Start over</a></div>
     <?php else: ?>
     <form method="POST" action="forgot_password_process.php">
         <input type="hidden" name="csrf" value="<?php echo mh_pr_h($csrf); ?>">
@@ -124,22 +164,20 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
         </div>
         <button type="submit" class="pr-btn">Send Recovery Instructions</button>
     </form>
-    <div class="pr-links"><a href="forgot_password.php?restart=1<?php echo $forQuery; ?>">Not you? Start over</a></div>
+    <div class="pr-links"><a href="forgot_password.php?restart=1&amp;for=<?php echo $scope; ?>">Not you? Start over</a></div>
     <?php endif; ?>
 
 <?php else: ?>
     <div class="pr-alert ok"><?php echo mh_pr_icon('check'); ?><span>We've sent password reset instructions to your registered email address<?php echo !empty($done['email_masked']) ? ' (<b>' . mh_pr_h($done['email_masked']) . '</b>)' : ''; ?>. It works once and expires in <?php echo MH_PR_TTL_MINUTES; ?> minutes. Please check your inbox and spam folder.</span></div>
     <?php if ($debug !== null): ?><div class="pr-debug"><b>Local testing mode</b> (never shown on the live site)<br><?php echo $debug; ?></div><?php endif; ?>
-    <div class="pr-links"><a href="forgot_password.php?restart=1<?php echo $forQuery; ?>">Didn't get it? Request again (wait a minute first)</a></div>
+    <div class="pr-links"><a href="forgot_password.php?restart=1&amp;for=<?php echo $scope; ?>">Didn't get it? Request again (wait a minute first)</a></div>
 <?php endif; ?>
 
     <div class="pr-links">
         <?php if ($scope === 'staff'): ?>
             <a href="admin/login.php">&larr; Back to Staff Login</a>
-            <a href="forgot_password.php?for=patient&amp;restart=1">Patient Recovery &rarr;</a>
         <?php else: ?>
             <a href="patient_login.php">&larr; Back to Patient Login</a>
-            <a href="forgot_password.php?for=staff&amp;restart=1">Staff Recovery &rarr;</a>
         <?php endif; ?>
     </div>
 </div>

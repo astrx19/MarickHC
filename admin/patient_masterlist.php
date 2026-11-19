@@ -62,13 +62,6 @@ function mh_ml_update_patient(mysqli $conn, array $in, array $streets)
         $email = mh_pm_is_placeholder_email($current['email']) ? (string) $current['email'] : mh_pm_placeholder_email($first, $last);
     } elseif (!mh_pm_valid_email($email)) {
         return [false, 'Please enter a valid email address ending strictly with .com (e.g. user@example.com).'];
-    } elseif (strcasecmp($email, (string) $current['email']) !== 0) {
-        $dup = $conn->prepare("SELECT id FROM patients WHERE email = ? AND id <> ? LIMIT 1");
-        $dup->bind_param('si', $email, $id);
-        $dup->execute();
-        $taken = $dup->get_result()->num_rows > 0;
-        $dup->close();
-        if ($taken) { return [false, 'That email address is already used by another patient.']; }
     }
 
     $up = $conn->prepare("UPDATE patients SET first_name = ?, last_name = ?, birthdate = ?, contact_number = ?, email = ?, address_type = ?, address = ? WHERE id = ? AND status = 1");

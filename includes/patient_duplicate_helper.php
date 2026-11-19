@@ -63,18 +63,20 @@ function mh_pd_check_new_patient(mysqli $conn, array $np, $confirmedDifferent = 
             'message' => mh_pd_describe($hit) . ' has an archived record. Do not create a new one - ask an Administrator to restore the archived record, then use the "Existing Patient" tab.'];
     }
 
-    if ($np['real_email'] !== '') {
-        $stmt = $conn->prepare("SELECT $cols FROM patients WHERE email = ? LIMIT 1" . $suffix);
+    // Same email is allowed (parents often give one email for children / siblings), but staff must confirm it.
+    if ($np['real_email'] !== '' && !$confirmedDifferent) {
+        $stmt = $conn->prepare("SELECT $cols FROM patients WHERE email = ? ORDER BY status DESC, id ASC LIMIT 1" . $suffix);
         $stmt->bind_param('s', $np['real_email']);
         $stmt->execute();
         $hit = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($hit) {
             $active = ((int) $hit['status'] === 1);
-            return ['level' => 'block', 'select_id' => $active ? (int) $hit['id'] : 0,
-                'title' => 'This email is already linked to another patient',
-                'message' => 'The email ' . $np['real_email'] . ' belongs to ' . mh_pd_describe($hit) . ($active ? '' : ' (archived record)') . '. '
-                           . 'If that is the same person, use the "Existing Patient" tab. If not, enter a different email or leave the email blank.'];
+            return ['level' => 'confirm', 'select_id' => $active ? (int) $hit['id'] : 0,
+                'title' => 'This email is already used by another patient',
+                'message' => 'The email ' . $np['real_email'] . ' is already on the record of ' . mh_pd_describe($hit) . ($active ? '' : ' [archived]') . '. '
+                           . 'If this is the same person, select them in the "Existing Patient" tab. '
+                           . 'If this is a different person who shares the email (for example a child or sibling using a parent\'s email), tick the confirmation box below and submit again.'];
         }
     }
 

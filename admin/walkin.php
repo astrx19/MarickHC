@@ -257,7 +257,7 @@ $closedAttr = $clinic_closed !== null ? ' disabled title="The clinic is closed t
                             <input type="email" name="email" id="req_email" placeholder="patient@email.com" pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$" title="Email must end strictly with .com"></div>
 
                         <?php if ($dup && $dup['level'] === 'confirm'): ?>
-                        <div class="wk-confirm"><label><input type="checkbox" name="confirm_not_duplicate" value="1"> <span>I checked the existing record above. This is a different person.</span></label></div>
+                        <div class="wk-confirm"><label><input type="checkbox" name="confirm_not_duplicate" value="1"> <span>I checked the existing record above. This is a different person (for example, a family member sharing the same email or number).</span></label></div>
                         <?php endif; ?>
 
                         <div class="form-group pm-span wk-rule"><label for="req_address_type">Location type <span class="pm-req">*</span></label>

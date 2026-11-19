@@ -89,7 +89,7 @@ require_once __DIR__ . '/includes/queue_helper.php';
 
             <details>
                 <summary>I forgot my password. What do I do?</summary>
-                <p>Use "Forgot password" on the login page. We send a reset link to your email or a code by SMS. It expires after 15 minutes.</p>
+                <p>Use "Forgot Password?" on the login page. We send a reset link to your email or a code by SMS. It expires after 15 minutes. If you also forgot your username, choose "Forgot your username too?" on that same page and we will send it to your registered email or mobile number.</p>
             </details>
 
             <details>

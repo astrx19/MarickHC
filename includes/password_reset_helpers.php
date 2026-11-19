@@ -57,13 +57,16 @@ function mh_pr_find_account(mysqli $conn, $identifier, $scope = '')
 
     $table = ($scope === 'staff') ? 'staff' : 'patients';
 
-    $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE (username = ? OR email = ?) LIMIT 1");
+    // Family members may share one email, so an exact username always wins; otherwise prefer
+    // accounts that actually have a portal username, then the oldest record.
+    $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE (username = ? OR email = ?)
+                              ORDER BY (username = ?) DESC, (username IS NOT NULL AND username <> '') DESC, id ASC LIMIT 1");
     if (!$stmt) {
         $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE email = ? LIMIT 1");
         if (!$stmt) { return null; }
         $stmt->bind_param('s', $identifier);
     } else {
-        $stmt->bind_param('ss', $identifier, $identifier);
+        $stmt->bind_param('sss', $identifier, $identifier, $identifier);
     }
 
     $stmt->execute();
@@ -350,6 +353,81 @@ function mh_pr_email_html($firstName, $systemName, $link)
         . "<p style=\"font-size:13px;color:#64748b\">Or paste this link into your browser:<br><span style=\"word-break:break-all\">$l</span></p>"
         . '<p style="font-size:13px;color:#64748b">This link works once and expires in ' . MH_PR_TTL_MINUTES . ' minutes. '
         . 'If you didn\'t request this, ignore this email - your password will not change.</p></div>';
+}
+
+/**
+ * Forgot-username lookup. Searches ONLY the table for the given scope
+ * (staff -> staff, patient -> patients) by registered email or mobile number.
+ * Returns a list of active accounts that have a username.
+ */
+function mh_pr_find_usernames(mysqli $conn, $scope, $input)
+{
+    $input = trim((string) $input);
+    if ($input === '') { return ['kind' => '', 'usernames' => [], 'first_name' => '']; }
+    $table = (mh_pr_scope($scope) === 'staff') ? 'staff' : 'patients';
+
+    $isEmail = strpos($input, '@') !== false;
+    $rows = [];
+    $kind = '';
+
+    if ($isEmail) {
+        $kind = 'email';
+        $stmt = @$conn->prepare("SELECT first_name, username, status FROM `$table` WHERE email = ?");
+        if ($stmt) {
+            $stmt->bind_param('s', $input);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($r = $res->fetch_assoc()) { $rows[] = $r; }
+            $stmt->close();
+        }
+    } else {
+        $kind = 'sms';
+        $phone = function_exists('mh_normalize_ph_mobile') ? mh_normalize_ph_mobile($input) : '';
+        if ($phone !== '') {
+            $v1 = $phone;                       // 09171234567
+            $v2 = substr($phone, 1);            // 9171234567
+            $v3 = '63' . $v2;                   // 639171234567
+            $stmt = @$conn->prepare(
+                "SELECT first_name, username, status FROM `$table`
+                 WHERE REPLACE(REPLACE(REPLACE(REPLACE(contact_number, '-', ''), ' ', ''), '+', ''), '(', '') IN (?, ?, ?)"
+            );
+            if ($stmt) {
+                $stmt->bind_param('sss', $v1, $v2, $v3);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                while ($r = $res->fetch_assoc()) { $rows[] = $r; }
+                $stmt->close();
+            }
+        }
+    }
+
+    $names = [];
+    $first = '';
+    foreach ($rows as $r) {
+        if (isset($r['status']) && $r['status'] !== null && (int) $r['status'] === 0) { continue; }
+        $u = trim((string) ($r['username'] ?? ''));
+        if ($u === '') { continue; }
+        $names[$u] = true;
+        if ($first === '') { $first = trim((string) ($r['first_name'] ?? '')); }
+    }
+    return ['kind' => $kind, 'usernames' => array_keys($names), 'first_name' => $first];
+}
+
+function mh_pr_username_email_html($firstName, $systemName, array $usernames, $scope)
+{
+    $n = mh_pr_h($firstName ?: 'there'); $s = mh_pr_h($systemName);
+    $who = ($scope === 'staff') ? 'staff' : 'patient';
+    $list = '';
+    foreach ($usernames as $u) {
+        $list .= '<p style="margin:8px 0;font-size:18px;font-weight:bold;color:#1e293b;background:#f1f5f9;padding:10px 14px;border-radius:6px;display:inline-block">' . mh_pr_h($u) . '</p><br>';
+    }
+    return '<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;color:#334155;line-height:1.55">'
+        . '<h2 style="color:#1e293b;margin:0 0 12px">Your username</h2>'
+        . "<p>Hello $n,</p>"
+        . "<p>We received a request to remind you of your $s $who username. Here " . (count($usernames) > 1 ? 'are the usernames' : 'is the username') . ' linked to this address:</p>'
+        . $list
+        . '<p style="font-size:13px;color:#64748b">If you also forgot your password, use "Forgot Password?" on the login page. '
+        . 'If you didn\'t request this, you can safely ignore this email.</p></div>';
 }
 
 function mh_pr_icon($name)

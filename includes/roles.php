@@ -462,6 +462,10 @@ if (!function_exists('mh_has_permission')) {
         if ($role === 'health_head') { return true; }
         if ($role === '') { return false; }
 
+        // BHW may only queue patients (walk-in); processing the queue (approve / proceed / reschedule / reject)
+        // is never allowed for BHW, whatever the database or per-staff overrides say.
+        if (strtolower($role) === 'bhw' && $permission_key === 'manage_patient_queue') { return false; }
+
         if ($own && is_array($caps) && function_exists('mh_capability_owners_of')) {
             $allow = false;
             foreach (mh_capability_owners_of($permission_key) as $cap) {

@@ -244,7 +244,7 @@ mh_layout_head(['title' => 'Patient Queueing']);
             <div style="margin-bottom: 25px;">
                 <h1 style="margin: 0 0 5px 0; color: var(--heading-color, #1e293b); font-family: Georgia, serif; font-size: 1.8rem;">Patient Queueing</h1>
                 <p style="margin: 0; color: var(--text-muted, #64748b); font-size: 0.95rem;">
-                    Review, approve, and manage incoming patient queue requests<?php echo ($user_role !== '' && !mh_is_admin_tier($user_role)) ? ' for <strong>' . mh_h(ucfirst($user_role)) . '</strong> department' : ''; ?>.
+                    <?php echo $can_process_queue ? 'Review, approve, and manage incoming patient queue requests' : 'View incoming patient queue requests'; ?><?php echo ($user_role !== '' && !mh_is_admin_tier($user_role)) ? ' for <strong>' . mh_h(ucfirst($user_role)) . '</strong> department' : ''; ?>.
                 </p>
             </div>
 

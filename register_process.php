@@ -12,7 +12,7 @@ const CLAIM_RESEND_COOLDOWN    = 60;
 const CLAIM_MAX_SMS_PER_CLAIM  = 3;
 const CLAIM_MAX_SMS_PER_RECORD = 3;
 const CLAIM_MAX_SMS_PER_IP     = 10;
-const REG_PHONE_MUST_BE_UNIQUE = true;
+const REG_PHONE_MUST_BE_UNIQUE = false; // family members may share one mobile number
 
 function build_patient_address($data) {
     if (mh_is_marick_resident($data['address_type'] ?? '')) {
@@ -266,27 +266,59 @@ if (isset($_POST['register_patient'])) {
         claim_go('index.php?reg_status=error_password');
     }
 
+    // Registered mobile number (the form requires it). Used as a third way to find an existing record.
+    $contact_in = mh_normalize_ph_mobile(trim($_POST['contact_number'] ?? ''));
+    $p1 = $contact_in; $p2 = $contact_in !== '' ? substr($contact_in, 1) : ''; $p3 = $contact_in !== '' ? '63' . $p2 : '';
+
     $stmt = $conn->prepare(
-        "SELECT id, email, username, status, first_name, last_name, birthdate FROM patients
-          WHERE email = ? OR (first_name = ? AND last_name = ? AND birthdate = ?)"
+        "SELECT id, email, username, status, first_name, last_name, birthdate, contact_number FROM patients
+          WHERE email = ?
+             OR (first_name = ? AND last_name = ? AND birthdate = ?)
+             OR (? <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(contact_number, '-', ''), ' ', ''), '+', ''), '(', '') IN (?, ?, ?))"
     );
-    $stmt->bind_param('ssss', $email, $fname, $lname, $bdate);
+    $stmt->bind_param('ssssssss', $email, $fname, $lname, $bdate, $p1, $p1, $p2, $p3);
     $stmt->execute();
     $matches = $stmt->get_result();
-    $by_email = null; $by_identity = null;
+    $email_hits = []; $by_email = null; $by_identity = null; $phone_hits = [];
     while ($m = $matches->fetch_assoc()) {
-        if (strtolower(trim((string) $m['email'])) === strtolower($email)) { $by_email = $by_email ?? $m; }
-        elseif (strtolower(trim($m['first_name'])) === strtolower($fname)
-             && strtolower(trim($m['last_name'])) === strtolower($lname)
-             && trim((string) $m['birthdate']) === $bdate) { $by_identity = $by_identity ?? $m; }
+        $isEmail = strtolower(trim((string) $m['email'])) === strtolower($email);
+        $isIdentity = strtolower(trim($m['first_name'])) === strtolower($fname)
+                   && strtolower(trim($m['last_name'])) === strtolower($lname)
+                   && trim((string) $m['birthdate']) === $bdate;
+        if ($isEmail) { $email_hits[] = $m; }
+        elseif ($isIdentity) { $by_identity = $by_identity ?? $m; }
+        elseif ($contact_in !== '') { $phone_hits[] = $m; }
     }
     $stmt->close();
 
-    if ($by_email || $by_identity) {
+    // Email match: family members may share one email. If several records have it, narrow by
+    // first + last name; still ambiguous -> ignore the email match rather than guess.
+    if (count($email_hits) === 1) {
+        $by_email = $email_hits[0];
+    } elseif (count($email_hits) > 1) {
+        $named = array_values(array_filter($email_hits, fn($m) =>
+            strtolower(trim($m['first_name'])) === strtolower($fname)
+            && strtolower(trim($m['last_name'])) === strtolower($lname)));
+        if (count($named) === 1) { $by_email = $named[0]; }
+    }
+
+    // Phone match: if several records share this number (e.g. family members), narrow by first + last name.
+    // Still ambiguous -> no phone match, so the normal "number already registered" check applies.
+    $by_phone = null;
+    if (count($phone_hits) === 1) {
+        $by_phone = $phone_hits[0];
+    } elseif (count($phone_hits) > 1) {
+        $named = array_values(array_filter($phone_hits, fn($m) =>
+            strtolower(trim($m['first_name'])) === strtolower($fname)
+            && strtolower(trim($m['last_name'])) === strtolower($lname)));
+        if (count($named) === 1) { $by_phone = $named[0]; }
+    }
+
+    if ($by_email || $by_identity || $by_phone) {
         if ($by_email && $by_identity && (int) $by_email['id'] !== (int) $by_identity['id']) {
             claim_go('index.php?reg_status=error_email');
         }
-        $target = $by_email ?? $by_identity;
+        $target = $by_email ?? $by_identity ?? $by_phone;
 
         if (!claim_is_unclaimed($target)) { claim_go('index.php?reg_status=error_claimed'); }
         if ((int) $target['status'] !== 1) { claim_go('index.php?reg_status=error_claimed'); }

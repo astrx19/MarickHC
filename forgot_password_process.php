@@ -88,11 +88,80 @@ if ($action === 'lookup') {
     mh_pr_go('forgot_password.php?for=' . $scope);
 }
 
+if ($action === 'username') {
+    $scope = mh_pr_scope($_POST['for'] ?? ($_SESSION['pr_for'] ?? '')) ?: 'patient';
+    $_SESSION['pr_for'] = $scope;
+    $back = 'forgot_password.php?for=' . $scope . '&mode=username';
+
+    $now = time();
+    $_SESSION['pr_user_reqs'] = array_values(array_filter($_SESSION['pr_user_reqs'] ?? [], fn($t) => $t > $now - 600));
+    $last = $_SESSION['pr_user_reqs'] ? max($_SESSION['pr_user_reqs']) : 0;
+    if (count($_SESSION['pr_user_reqs']) >= 3 || ($now - $last) < MH_PR_COOLDOWN_SECONDS) {
+        mh_pr_flash('Too many requests. Please wait a minute or two and try again.');
+        mh_pr_go($back);
+    }
+
+    $input = trim((string) ($_POST['contact'] ?? ''));
+    if ($input === '' || strlen($input) > 100) {
+        mh_pr_flash('Please enter your registered email address or mobile number.');
+        mh_pr_go($back);
+    }
+    $isEmail = strpos($input, '@') !== false;
+    if ($isEmail && !mh_pr_valid_email($input)) {
+        mh_pr_flash('Please enter a valid email address.');
+        mh_pr_go($back);
+    }
+    if (!$isEmail && (!function_exists('mh_normalize_ph_mobile') || mh_normalize_ph_mobile($input) === '')) {
+        mh_pr_flash('Please enter a valid mobile number (e.g. 09171234567) or your registered email.');
+        mh_pr_go($back);
+    }
+    $_SESSION['pr_user_reqs'][] = $now;
+
+    $found = mh_pr_find_usernames($conn, $scope, $input);
+    $deliver = null;
+    $debug = null;
+
+    if (!empty($found['usernames'])) {
+        $names = $found['usernames'];
+        if ($found['kind'] === 'email') {
+            $firstName = $found['first_name'];
+            $deliver = function () use ($system_name, $input, $firstName, $names, $scope) {
+                $res = mh_send_email(
+                    $input,
+                    $system_name . ' - Your Username',
+                    mh_pr_username_email_html($firstName, $system_name, $names, $scope),
+                    'Your ' . $system_name . ' ' . $scope . ' username: ' . implode(', ', $names)
+                );
+                if (!$res['success']) { error_log('forgot_username: email failed (' . $scope . '): ' . $res['error']); }
+            };
+            if (MAIL_DEBUG_MODE) { $debug = 'Username(s) (local testing only): <b>' . mh_pr_h(implode(', ', $names)) . '</b>'; }
+        } elseif (function_exists('mh_sms_provider_problem') && mh_sms_provider_problem() === null) {
+            $phone = mh_normalize_ph_mobile($input);
+            $text = $system_name . ': Your ' . $scope . ' username is ' . implode(', ', $names) . '. Never share your password with anyone.';
+            $deliver = function () use ($phone, $text, $scope) {
+                $res = mh_send_sms($phone, $text);
+                if (!$res['success']) { error_log('forgot_username: SMS failed (' . $scope . '): ' . $res['error']); }
+            };
+            if (MAIL_DEBUG_MODE) { $debug = 'Username(s) (local testing only): <b>' . mh_pr_h(implode(', ', $names)) . '</b>'; }
+        }
+    }
+
+    // Always the same answer, whether or not an account matched (prevents account guessing).
+    $_SESSION['pr_user_done'] = ['at' => $now, 'kind' => $isEmail ? 'email' : 'sms', 'scope' => $scope];
+    if ($debug !== null) { $_SESSION['pr_debug'] = $debug; }
+
+    mh_pr_redirect_then_continue($back);
+    if ($deliver) { $deliver(); }
+    exit;
+}
+
 if ($action === 'send') {
     $method = $_POST['method'] ?? '';
-    $scope  = mh_pr_scope($_POST['for'] ?? ($_SESSION['pr_for'] ?? ''));
-    if ($scope === '') { $scope = 'staff'; }
     $state  = $_SESSION['pr'] ?? null;
+    // The scope is dictated by the account found in step 1, never by a posted value,
+    // so a patient flow can never send a staff reset (or the other way round).
+    $scope  = $state ? (($state['table'] ?? '') === 'staff' ? 'staff' : 'patient')
+                     : (mh_pr_scope($_POST['for'] ?? ($_SESSION['pr_for'] ?? '')) ?: 'patient');
 
     if (!$state || (time() - (int) ($state['at'] ?? 0)) > 900) {
         unset($_SESSION['pr']);
@@ -182,7 +251,7 @@ if ($action === 'send') {
         $_SESSION['pr_sms'] = $smsRef;
         $next = 'reset_password.php?method=sms';
     } else {
-        $_SESSION['pr_done'] = ['method' => 'email', 'at' => time(), 'email_masked' => $ch['email_masked']];
+        $_SESSION['pr_done'] = ['method' => 'email', 'at' => time(), 'email_masked' => $ch['email_masked'], 'scope' => $scope];
         $next = 'forgot_password.php' . ($scope !== '' ? '?for=' . $scope : '');
     }
 
