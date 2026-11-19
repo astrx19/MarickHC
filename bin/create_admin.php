@@ -1,49 +1,20 @@
 <?php
-/**
- * =====================================================================
- * MARICK HEALTH SYSTEM - SECURE HEALTH HEAD PROVISIONING (CLI ONLY)
- * =====================================================================
- * Replaces the removed setup_admin.php. Cannot run through a web server:
- * it exits with a 404 for any non-CLI SAPI, and /bin/ is also denied by
- * .htaccess.
- *
- * USAGE
- *   php bin/create_admin.php                      interactive (hidden password prompt)
- *   php bin/create_admin.php --generate           random 20-char password, shown ONCE,
- *                                                 and the account must change it at first login
- *   php bin/create_admin.php --username=jdelacruz --email=jdc@example.org \
- *                            --first=Juan --last="Dela Cruz" [--generate]
- *   php bin/create_admin.php --force              allow an ADDITIONAL Health Head
- *
- * SAFETY
- *   - Idempotent: if a health_head already exists it does nothing (exit 0)
- *     unless --force is given.
- *   - The password is never accepted as a command-line argument (it would
- *     leak into shell history / process lists). Interactive input or
- *     --generate only. For automation, set env MH_ADMIN_PASSWORD.
- *   - Password policy: 12+ chars, upper, lower, digit, symbol.
- *   - Stored with password_hash(..., PASSWORD_BCRYPT, ['cost' => 12]).
- *   - All SQL is prepared; the password is never logged or echoed
- *     (except the one-time --generate display).
- */
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;
 }
 
-require_once __DIR__ . '/../config/database.php';   // $conn (+ DB-backed settings)
+require_once __DIR__ . '/../config/database.php';
 
 function out($m)  { fwrite(STDOUT, $m . PHP_EOL); }
 function fail($m, $code = 1) { fwrite(STDERR, 'ERROR: ' . $m . PHP_EOL); exit($code); }
 
-/* ---- arguments ---------------------------------------------------- */
 $opts = getopt('', ['username::', 'email::', 'first::', 'last::', 'generate', 'force', 'help']);
 if (isset($opts['help'])) { out(trim(substr(file_get_contents(__FILE__), 0, 2000))); exit(0); }
 $force    = isset($opts['force']);
 $generate = isset($opts['generate']);
 
-/* ---- idempotency -------------------------------------------------- */
 $res = $conn->query("SELECT COUNT(*) AS c FROM staff WHERE role = 'health_head'");
 $existing = $res ? (int) $res->fetch_assoc()['c'] : 0;
 if ($existing > 0 && !$force) {
@@ -51,7 +22,6 @@ if ($existing > 0 && !$force) {
     exit(0);
 }
 
-/* ---- helpers ------------------------------------------------------ */
 function ask($prompt, $default = '')
 {
     fwrite(STDOUT, $prompt . ($default !== '' ? " [$default]" : '') . ': ');
@@ -84,7 +54,6 @@ function generate_password($len = 20)
     $pw   = '';
     foreach ($sets as $s) { $pw .= $s[random_int(0, strlen($s) - 1)]; }
     while (strlen($pw) < $len) { $pw .= $all[random_int(0, strlen($all) - 1)]; }
-    // Fisher-Yates with random_int (str_shuffle is not cryptographically secure)
     $chars = str_split($pw);
     for ($i = count($chars) - 1; $i > 0; $i--) {
         $j = random_int(0, $i);
@@ -93,7 +62,6 @@ function generate_password($len = 20)
     return implode('', $chars);
 }
 
-/* ---- gather details ----------------------------------------------- */
 $first    = $opts['first']    ?? ask('First name', 'Super');
 $last     = $opts['last']     ?? ask('Last name', 'Admin');
 $email    = $opts['email']    ?? ask('Email');
@@ -109,7 +77,7 @@ $mustChange = 0;
 $envPw = getenv('MH_ADMIN_PASSWORD');
 if ($generate) {
     $password   = generate_password();
-    $mustChange = 1;                       // force a personal password at first login
+    $mustChange = 1;
 } elseif ($envPw !== false && $envPw !== '') {
     $password = $envPw;
 } else {
@@ -119,17 +87,15 @@ if ($generate) {
 }
 if (($problem = password_problem($password)) !== null) { fail('Password needs ' . $problem . '.'); }
 
-/* ---- uniqueness --------------------------------------------------- */
 $chk = $conn->prepare('SELECT id FROM staff WHERE email = ? OR username = ? LIMIT 1');
 $chk->bind_param('ss', $email, $username);
 $chk->execute(); $chk->store_result();
 if ($chk->num_rows > 0) { fail('A staff account with that email or username already exists.'); }
 $chk->close();
 
-/* ---- insert ------------------------------------------------------- */
 $hash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
 if ($hash === false) { fail('Password hashing failed.'); }
-$oneTimePassword = $generate ? $password : null;   // shown once below, never stored
+$oneTimePassword = $generate ? $password : null;
 unset($password, $confirm, $envPw);
 
 $role    = 'health_head';

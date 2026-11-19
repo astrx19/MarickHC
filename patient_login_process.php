@@ -26,13 +26,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         if (password_verify($password, $patient['password'])) {
             mh_lt_clear($conn, 'patient', $username);
-            // New session id on login (session-fixation protection).
             session_regenerate_id(true);
 
             $_SESSION['patient_id'] = $patient['id'];
             $_SESSION['patient_name'] = $patient['first_name'];
-            mh_ss_issue('patient', $patient['id']);   // invalidates this account's other sessions
-            logActivity($conn, (int) $patient['id'], 'patient', 'Patient Login', 'Patient #' . (int) $patient['id'] . ' signed in to the portal.');   // REQ75
+            mh_ss_issue('patient', $patient['id']);
+            logActivity($conn, (int) $patient['id'], 'patient', 'Patient Login', 'Patient #' . (int) $patient['id'] . ' signed in to the portal.');
             
             header("Location: patient/dashboard.php");
             exit();

@@ -1,24 +1,11 @@
 <?php
-/**
- * Default accounts for the restructured roles (Health Head, Encoder, BHW + clinical staff).
- *
- *   CLI :  php bin/seed_role_accounts.php
- *   Web :  not allowed (bin/ is also blocked by bin/.htaccess).
- *
- * - Idempotent: an existing username is skipped, never overwritten.
- * - Passwords are hashed with password_hash(); every account is flagged is_first_login = 1,
- *   so each person must set their own password at first sign-in.
- * - All SQL uses prepared statements.
- * Run database/health_head_rbac_migration.sql first.
- */
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit("CLI only.\n"); }
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/roles.php';
 
-mh_roles_upgrade_health_head($conn);   // makes sure the Health Head role row exists
+mh_roles_upgrade_health_head($conn);
 
-// TEMPORARY passwords - printed once below. Change them / have staff change them at first login.
 $accounts = [
     ['Health',  'Head',      'health_head', 'healthhead',   'healthhead@marick.gov.ph', 'HealthHead@2026'],
     ['Encoder', 'Account',   'inventory',   'encoder1',     'encoder1@marick.gov.ph',   'Encoder@2026'],

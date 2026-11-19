@@ -1,10 +1,3 @@
-/* ==========================================================
-   Disease Statistics - redesigned UI
-   Everything is scoped under .dsx and prefixed dsx-, so it
-   can sit beside the old ds-* rules without clashing.
-   Brand colours come from theme_vars.css when present.
-   ========================================================== */
-
 .dsx {
   --dsx-brand: var(--primary, #4ca1af);
   --dsx-brand-ink: #2f7684;
@@ -58,7 +51,6 @@
   outline-offset: 2px;
 }
 
-/* ---------- Page header ---------- */
 .dsx-head {
   display: flex;
   justify-content: space-between;
@@ -81,7 +73,6 @@
   max-width: 62ch;
 }
 
-/* ---------- Buttons ---------- */
 .dsx-btn {
   display: inline-flex;
   align-items: center;
@@ -146,7 +137,6 @@
   flex: none;
 }
 
-/* ---------- Flash messages ---------- */
 .dsx-flash {
   padding: 12px 16px;
   border-radius: 12px;
@@ -164,7 +154,6 @@
   color: var(--dsx-red);
 }
 
-/* ---------- AI insight ---------- */
 .dsx-ai {
   background: linear-gradient(120deg, #eef7f9 0%, #fff 60%);
   border-radius: var(--dsx-r-card);
@@ -299,7 +288,6 @@
   }
 }
 
-/* ---------- Spike notice (only when spikes > 0) ---------- */
 .dsx-notice {
   display: flex;
   gap: 12px;
@@ -315,7 +303,6 @@
   color: #7a1d14;
 }
 
-/* ---------- KPI cards ---------- */
 .dsx-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -418,7 +405,6 @@
   margin-top: 6px;
 }
 
-/* ---------- Cards / sections ---------- */
 .dsx-card {
   background: var(--dsx-card);
   border-radius: var(--dsx-r-card);
@@ -456,7 +442,6 @@
   color: var(--dsx-muted);
 }
 
-/* ---------- Filter bar ---------- */
 .dsx-filter {
   display: flex;
   align-items: center;
@@ -525,7 +510,6 @@
   color: var(--dsx-faint);
 }
 
-/* ---------- Weekly column chart ---------- */
 .dsx-cols {
   display: flex;
   align-items: stretch;
@@ -582,7 +566,6 @@
   white-space: nowrap;
 }
 
-/* ---------- Horizontal bars ---------- */
 .dsx-split {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -642,7 +625,6 @@
   color: var(--dsx-faint);
 }
 
-/* ---------- Breakdown drawer ---------- */
 .dsx-drawer {
   margin-top: 28px;
 }
@@ -680,7 +662,6 @@
   padding-top: 24px;
 }
 
-/* ---------- Tables ---------- */
 .dsx-table-wrap {
   overflow-x: auto;
   margin: 0 -12px;
@@ -774,7 +755,6 @@
   font-weight: 600;
 }
 
-/* ---------- Pills ---------- */
 .dsx-pill {
   display: inline-flex;
   align-items: center;
@@ -819,7 +799,6 @@
   display: none;
 }
 
-/* ---------- Charts (v2) ---------- */
 .dsx-grid-2 {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
@@ -1002,7 +981,6 @@ tr[hidden] {
   display: none;
 }
 
-/* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
   .dsx-grid-2 {
     grid-template-columns: 1fr;

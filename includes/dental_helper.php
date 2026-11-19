@@ -131,7 +131,6 @@ function mh_dental_code_names($routineCsv, $otherCsv = '')
     return $out;
 }
 
-/** Paper REQ38: dental_records.prescription (added without a migration run; idempotent and portable). */
 function mh_dental_ensure_prescription(mysqli $conn)
 {
     static $done = false;
@@ -803,16 +802,7 @@ function mh_dental_snapshots(mysqli $conn, $patientId)
     return $out;
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Paper "DENTAL RECORD" sheet (Marick Health Center's physical form)
- * Header (Family No., Others, Member No.), patient block, Dental Findings, Remarks and the
- * 4-column Dental Procedure History (Date | Procedure | Tooth No. | Remarks).
- * Everything maps onto existing columns: patients.*, dental_charts.sectors / philhealth_no,
- * dental_records.* and dental_treatments.*  (no schema change).
- * ---------------------------------------------------------------------------------------------- */
-
 if (!function_exists('mh_dental_sheet_names')) {
-    /** Procedure labels as printed on the paper form (Oral Examination = "Routine Check-up", Tooth Extraction = "Extraction"). */
     function mh_dental_sheet_names()
     {
         $all = mh_dental_routine_codes() + mh_dental_other_codes();
@@ -823,10 +813,6 @@ if (!function_exists('mh_dental_sheet_names')) {
 }
 
 if (!function_exists('mh_dental_sheet_info')) {
-    /**
-     * Patient + header block of the paper form. Family No. and Member No. come from the patient's record,
-     * "Others" is the list of sectors ticked on the dental profile (4Ps, IP, PWD, Senior Citizen, Solo Parent).
-     */
     function mh_dental_sheet_info(mysqli $conn, $patientId)
     {
         $blank = ['name' => '', 'address' => '', 'contact' => '', 'birthday' => '', 'birthdate' => '', 'age' => '', 'sex' => '',
@@ -871,7 +857,6 @@ if (!function_exists('mh_dental_sheet_info')) {
 }
 
 if (!function_exists('mh_dental_history_rows')) {
-    /** The patient's Dental Procedure History, oldest first: one row per dental record (Date, Procedure, Tooth No., Remarks). */
     function mh_dental_history_rows(mysqli $conn, $patientId, $limit = 300)
     {
         $patientId = (int) $patientId; $limit = max(1, (int) $limit);
@@ -905,10 +890,6 @@ if (!function_exists('mh_dental_history_rows')) {
 }
 
 if (!function_exists('mh_dental_clean_proc_rows')) {
-    /**
-     * Extra Procedure History rows typed into the form during a visit (prow_date[], prow_proc[], prow_tooth[], prow_remarks[]).
-     * Returns [rows, errors]. Each valid row is saved as its own dental record, the same way the OCR import does.
-     */
     function mh_dental_clean_proc_rows($post)
     {
         $dates = (array) ($post['prow_date'] ?? []);   $procs = (array) ($post['prow_proc'] ?? []);

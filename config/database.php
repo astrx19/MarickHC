@@ -1,20 +1,5 @@
 <?php
-// No blank white pages: unexpected errors become a clear message + reference code, with the detail in the server error log.
 require_once __DIR__ . '/../includes/error_guard.php';
-/**
- * Marick Health - database bootstrap. Works unchanged on XAMPP (macOS) and Hostinger (Linux).
- *
- * Credential precedence (later wins):
- *   1. XAMPP defaults (root / no password / marick_health_db)
- *   2. Environment variables MH_DB_HOST / MH_DB_USER / MH_DB_PASS / MH_DB_NAME
- *      (Hostinger shared hosting cannot set these, so use #3 there)
- *   3. config/database.local.php  -> must `return [...]` an array (see database.local.php.example).
- *      That file is git-ignored and denied to web visitors by config/.htaccess.
- *
- * Production behaviour: PHP errors are logged, never printed, and mysqli does NOT throw
- * (same behaviour as the XAMPP setup this code was written against). Set 'debug' => true in
- * database.local.php on your Mac if you want errors on screen.
- */
 $__mh = ['host' => 'localhost', 'user' => 'root', 'pass' => '', 'name' => 'marick_health_db', 'debug' => false];
 
 foreach (['host' => 'MH_DB_HOST', 'user' => 'MH_DB_USER', 'pass' => 'MH_DB_PASS', 'name' => 'MH_DB_NAME'] as $__k => $__e) {
@@ -24,7 +9,6 @@ foreach (['host' => 'MH_DB_HOST', 'user' => 'MH_DB_USER', 'pass' => 'MH_DB_PASS'
 
 $__mhLocal = __DIR__ . '/database.local.php';
 if (is_file($__mhLocal)) {
-    // Closure keeps any variables the file defines out of the global scope.
     $__o = (static function ($f) { return include $f; })($__mhLocal);
     if (is_array($__o)) { $__mh = array_merge($__mh, array_intersect_key($__o, $__mh)); }
     unset($__o);
@@ -33,7 +17,6 @@ if (is_file($__mhLocal)) {
 error_reporting(E_ALL);
 ini_set('log_errors', '1');
 ini_set('display_errors', !empty($__mh['debug']) ? '1' : '0');
-// PHP 8.1+ makes mysqli throw by default; PHP 7.x / XAMPP-era setups return false. Pin the old behaviour.
 mysqli_report(MYSQLI_REPORT_OFF);
 
 $host     = $__mh['host'];
@@ -44,7 +27,6 @@ unset($__mh, $__mhLocal, $__k, $__e, $__v);
 
 $conn = @new mysqli($host, $user, $password, $database);
 if ($conn->connect_errno) {
-    // Log the real reason (wrong user/pass/db name, host) - never show it to visitors.
     error_log('[MarickHealth] DB connection failed (' . $conn->connect_errno . '): ' . $conn->connect_error
         . " [host=$host user=$user db=$database]");
     http_response_code(503);
@@ -52,12 +34,9 @@ if ($conn->connect_errno) {
 }
 $conn->set_charset('utf8mb4');
 
-// ONE clock for the whole system: Philippine Standard Time (UTC+8, no daylight saving). Without this the web server
-// and MySQL both ran on UTC, so "today", queue numbers and log times were 8 hours behind: between midnight and
-// 8 AM Manila time the queue showed YESTERDAY. PHP and the MySQL session now agree (override with the MH_TIMEZONE env var).
 $__tz = getenv('MH_TIMEZONE') ?: 'Asia/Manila';
 if (!@date_default_timezone_set($__tz)) { $__tz = 'Asia/Manila'; date_default_timezone_set($__tz); }
-$GLOBALS['mh_db_utc_offset'] = (new DateTime('now', new DateTimeZone($__tz)))->format('P');   // e.g. +08:00 (format() output only)
+$GLOBALS['mh_db_utc_offset'] = (new DateTime('now', new DateTimeZone($__tz)))->format('P');
 @$conn->query("SET time_zone = '" . $GLOBALS['mh_db_utc_offset'] . "'");
 unset($__tz);
 
@@ -79,11 +58,6 @@ if (!function_exists('logActivity')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * Load DB-backed settings for this request (branding, credentials, flags).
- * Replaces the old generated config/settings.php et al. Never fatal: if the
- * settings tables do not exist yet, factory defaults apply.
- * ------------------------------------------------------------------ */
 $GLOBALS['conn'] = $conn;
 require_once __DIR__ . '/../includes/settings_helper.php';
 try {

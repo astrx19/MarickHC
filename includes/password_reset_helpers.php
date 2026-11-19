@@ -1,9 +1,8 @@
 <?php
-// Wrapped in a constant-keyed if-block like the other includes (see auth_helpers.php for why).
 if (!defined('MH_LOADED_INCLUDES_PASSWORD_RESET')) {
 define('MH_LOADED_INCLUDES_PASSWORD_RESET', true);
-define('MH_PR_TTL_MINUTES', 15);     // link / OTP lifetime
-define('MH_PR_MAX_OTP_TRIES', 5);    // wrong OTP guesses before the code is dead
+define('MH_PR_TTL_MINUTES', 15);
+define('MH_PR_MAX_OTP_TRIES', 5);
 define('MH_PR_COOLDOWN_SECONDS', 60);
 define('MH_PR_MAX_PER_ACCOUNT_HOUR', 5);
 define('MH_PR_MAX_PER_IP_HOUR', 10);
@@ -21,14 +20,12 @@ function mh_pr_csrf_ok($t)
     return is_string($t) && !empty($_SESSION['pr_csrf']) && hash_equals($_SESSION['pr_csrf'], $t);
 }
 
-/** Server-side secret used only to make decoy (unknown-account) screens stable. */
 function mh_pr_pepper()
 {
     if (defined('PASSWORD_RESET_PEPPER') && PASSWORD_RESET_PEPPER !== '') { return PASSWORD_RESET_PEPPER; }
     return hash('sha256', 'mh-pr|' . ($GLOBALS['database'] ?? '') . '|' . ($GLOBALS['password'] ?? ''));
 }
 
-/* ----------------------------- masking ---------------------------- */
 function mh_pr_mask_email($email)
 {
     $email = (string) $email;
@@ -36,7 +33,6 @@ function mh_pr_mask_email($email)
     if ($at === false || $at < 1) { return '***'; }
     return substr($email, 0, 1) . '***' . substr($email, $at);
 }
-/** 09171234567 -> 09******567 (expects the normalised 11-digit form). */
 function mh_pr_mask_mobile($mobile)
 {
     $m = (string) $mobile;
@@ -44,24 +40,12 @@ function mh_pr_mask_mobile($mobile)
     return substr($m, 0, 2) . str_repeat('*', strlen($m) - 5) . substr($m, -3);
 }
 
-/* ----------------------------- accounts --------------------------- */
-/** Which account type a recovery request is for: 'staff' | 'patient' | '' (unknown -> search both). */
 function mh_pr_scope($value)
 {
     $value = strtolower(trim((string) $value));
     return in_array($value, ['staff', 'patient'], true) ? $value : '';
 }
 
-/**
- * Active staff or patient account by username OR email.
- *
- * $scope: 'staff' (from staff login) or 'patient' (from patient login).
- *
- * For 'staff', strictly queries the `staff` table.
- * For 'patient', strictly queries the `patients` table.
- *
- * @return array{table: string, row: array, archived: bool}|null
- */
 function mh_pr_find_account(mysqli $conn, $identifier, $scope = '')
 {
     $identifier = trim((string) $identifier);
@@ -73,7 +57,6 @@ function mh_pr_find_account(mysqli $conn, $identifier, $scope = '')
 
     $table = ($scope === 'staff') ? 'staff' : 'patients';
 
-    // Strictly query only the target table for the current portal
     $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE (username = ? OR email = ?) LIMIT 1");
     if (!$stmt) {
         $stmt = @$conn->prepare("SELECT * FROM `$table` WHERE email = ? LIMIT 1");
@@ -116,10 +99,6 @@ function mh_pr_get_account(mysqli $conn, $table, $id)
     return $row;
 }
 
-/**
- * One definition of "an address we may send mail to": syntactically valid, no line breaks
- * (header injection), sane length, and not a placeholder (walk-in patients get "@walkin.local").
- */
 function mh_pr_valid_email($email)
 {
     $email = trim((string) $email);
@@ -128,14 +107,12 @@ function mh_pr_valid_email($email)
     return (bool) filter_var($email, FILTER_VALIDATE_EMAIL) && !preg_match('/\.local$/i', $email);
 }
 
-/** Channels the SYSTEM offers to everybody (never depends on whether an account exists). */
 function mh_pr_global_channels()
 {
     $sms = function_exists('mh_sms_provider_problem') && mh_sms_provider_problem() === null;
     return ['email' => true, 'sms' => (bool) $sms];
 }
 
-/** Which recovery channels this account can actually use right now. */
 function mh_pr_channels(array $row)
 {
     $email = trim((string) ($row['email'] ?? ''));
@@ -154,11 +131,6 @@ function mh_pr_channels(array $row)
     ];
 }
 
-/**
- * What step 2 shows for a lookup.
- * Always displays the account's actual registered email/mobile (masked).
- * Never uses fake/decoy addresses.
- */
 function mh_pr_step2_view(array $accountRow)
 {
     $ch = mh_pr_channels($accountRow);
@@ -170,11 +142,6 @@ function mh_pr_step2_view(array $accountRow)
     ];
 }
 
-/**
- * Sends the redirect, closes the connection, and lets the script keep running.
- * Mail/SMS delivery can take seconds for a real account and nothing for an unknown one -
- * doing it AFTER the response removes that timing difference (an account-existence oracle).
- */
 function mh_pr_redirect_then_continue($url)
 {
     if (session_status() === PHP_SESSION_ACTIVE) { session_write_close(); }
@@ -191,7 +158,6 @@ function mh_pr_redirect_then_continue($url)
     }
 }
 
-/** Same-looking step-2 data for identifiers that match nothing (stops username probing). */
 function mh_pr_decoy($identifier)
 {
     $h = hash_hmac('sha256', strtolower(trim((string) $identifier)), mh_pr_pepper());
@@ -205,8 +171,6 @@ function mh_pr_decoy($identifier)
     ];
 }
 
-/* ----------------------------- throttling ------------------------- */
-/** @return bool true when the send should be silently skipped. */
 function mh_pr_throttled(mysqli $conn, $userType, $userId, $ip)
 {
     $checks = [
@@ -216,7 +180,7 @@ function mh_pr_throttled(mysqli $conn, $userType, $userId, $ip)
     ];
     foreach ($checks as [$sql, $types, $params, $limit]) {
         $stmt = $conn->prepare($sql);
-        if (!$stmt) { return true; }   // fail closed
+        if (!$stmt) { return true; }
         $stmt->bind_param($types, ...$params);
         $stmt->execute();
         $n = (int) ($stmt->get_result()->fetch_assoc()['c'] ?? 0);
@@ -226,13 +190,6 @@ function mh_pr_throttled(mysqli $conn, $userType, $userId, $ip)
     return false;
 }
 
-/* ----------------------------- issue ------------------------------ */
-/**
- * Creates a reset for one account. Earlier pending resets for that account are expired
- * (kept for rate-limit counting, purged after a day). Only a HASH is stored.
- *
- * @return array{id:int, secret:string}|null  secret = raw token (email) or 6-digit OTP (sms)
- */
 function mh_pr_issue(mysqli $conn, $table, array $accountRow, $method, $destination)
 {
     $userType = ($table === 'staff') ? 'staff' : 'patient';
@@ -266,7 +223,6 @@ function mh_pr_issue(mysqli $conn, $table, array $accountRow, $method, $destinat
     return $ok ? ['id' => $id, 'secret' => $secret] : null;
 }
 
-/* ----------------------------- validate --------------------------- */
 function mh_pr_load_by_token(mysqli $conn, $token)
 {
     $token = trim((string) $token);
@@ -293,12 +249,10 @@ function mh_pr_load_by_id(mysqli $conn, $id, $method)
     return $row ?: null;
 }
 
-/** @return string 'ok' | 'bad' | 'locked' (expired, missing, or too many wrong guesses) */
 function mh_pr_verify_otp(mysqli $conn, $resetId, $code)
 {
     $resetId = (int) $resetId;
     $max = MH_PR_MAX_OTP_TRIES;
-    // Count the attempt BEFORE checking it, atomically, so parallel requests can't dodge the cap.
     $upd = $conn->prepare("UPDATE password_resets SET attempts = attempts + 1
                            WHERE id = ? AND method = 'sms' AND expires_at > NOW() AND attempts < ?");
     if (!$upd) { return 'locked'; }
@@ -314,20 +268,15 @@ function mh_pr_verify_otp(mysqli $conn, $resetId, $code)
     return ((int) $row['attempts'] >= $max) ? 'locked' : 'bad';
 }
 
-/** @return string|null error message, or null when the password is acceptable */
 function mh_pr_password_error($new, $confirm, $currentHash)
 {
     if (strlen($new) < 8) { return 'Password must be at least 8 characters long.'; }
-    if (strlen($new) > 72) { return 'Password must be 72 characters or fewer.'; }  // bcrypt ignores anything past 72 bytes
+    if (strlen($new) > 72) { return 'Password must be 72 characters or fewer.'; }
     if ($new !== $confirm) { return 'Passwords do not match. Please try again.'; }
     if ($currentHash && password_verify($new, $currentHash)) { return 'Your new password must be different from your current one.'; }
     return null;
 }
 
-/**
- * Sets the new password, signs the account out everywhere, and deletes EVERY reset row for it
- * (the used one and any stragglers) in one transaction.
- */
 function mh_pr_complete(mysqli $conn, array $resetRow, $newPlain)
 {
     $table = ($resetRow['user_type'] === 'staff') ? 'staff' : 'patients';
@@ -337,7 +286,6 @@ function mh_pr_complete(mysqli $conn, array $resetRow, $newPlain)
 
     if (!$conn->begin_transaction()) { return false; }
 
-    // Lock the reset row and re-check it is still valid: two tabs can't both use one token.
     $lock = $conn->prepare("SELECT id FROM password_resets WHERE id = ? AND expires_at > NOW() FOR UPDATE");
     $lock->bind_param('i', $resetId);
     $lock->execute();
@@ -345,9 +293,6 @@ function mh_pr_complete(mysqli $conn, array $resetRow, $newPlain)
     $lock->close();
     if (!$stillValid) { $conn->rollback(); return false; }
 
-    // session_token = NULL kicks out any session that was open with the old password.
-    // Staff also finish first-time setup by resetting (same behaviour as the old flow).
-    // Dynamically check existing columns so updates work regardless of applied migrations.
     $hasCols = [];
     $colRes = $conn->query("SHOW COLUMNS FROM `$table`");
     if ($colRes) {
@@ -394,7 +339,6 @@ function mh_pr_complete(mysqli $conn, array $resetRow, $newPlain)
     return false;
 }
 
-/* ----------------------------- email body ------------------------- */
 function mh_pr_email_html($firstName, $systemName, $link)
 {
     $n = mh_pr_h($firstName ?: 'there'); $s = mh_pr_h($systemName); $l = mh_pr_h($link);
@@ -408,7 +352,6 @@ function mh_pr_email_html($firstName, $systemName, $link)
         . 'If you didn\'t request this, ignore this email - your password will not change.</p></div>';
 }
 
-/* ----------------------------- tiny icons ------------------------- */
 function mh_pr_icon($name)
 {
     $p = [

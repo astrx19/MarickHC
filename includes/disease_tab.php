@@ -1,18 +1,11 @@
 <?php
-/**
- * System Settings -> Disease Statistics & AI Surveillance tab (Health Head only).
- * Manages tracked illnesses, baseline spike thresholds, AI synonym normalization rules,
- * outbreak parameters, and data hygiene stop-words.
- */
 require_once __DIR__ . '/settings_helper.php';
 require_once __DIR__ . '/disease_stats.php';
 
-/** Handles add / edit / delete, then redirects (mh_redirect is defined by system_settings.php). */
 function mh_disease_tab_post(mysqli $conn, int $user_id, string $user_role)
 {
     mh_disease_ensure_tables($conn);
 
-    // 1. Outbreak Thresholds & Surveillance Settings
     if (isset($_POST['save_disease_surveillance_settings'])) {
         $autoNorm   = isset($_POST['disease_auto_normalize_save']) ? '1' : '0';
         $risingPct  = max(5, min(200, (int) ($_POST['disease_rising_threshold_pct'] ?? 25)));
@@ -32,7 +25,6 @@ function mh_disease_tab_post(mysqli $conn, int $user_id, string $user_role)
         mh_redirect('disease', $ok ? 'success' : 'error', $ok ? 'Disease surveillance parameters and outbreak thresholds saved.' : 'Could not save surveillance parameters.');
     }
 
-    // 2. Data Hygiene & Stop-words Filter
     if (isset($_POST['save_disease_stopwords'])) {
         $rawWords = trim((string) ($_POST['disease_stop_words'] ?? ''));
         $parts = array_filter(array_map('trim', explode(',', $rawWords)));
@@ -48,7 +40,6 @@ function mh_disease_tab_post(mysqli $conn, int $user_id, string $user_role)
         mh_redirect('disease', $ok ? 'success' : 'error', $ok ? 'Data hygiene stop-words saved. Non-medical entries matching these terms will be ignored.' : 'Could not save stop-words.');
     }
 
-    // 3. Tracked Conditions CRUD
     $name = trim((string) ($_POST['name'] ?? ''));
     $kw   = mb_substr(trim((string) ($_POST['keywords'] ?? '')), 0, 255);
     $min  = max(1, min(999, (int) ($_POST['min_cases'] ?? 3)));
@@ -82,7 +73,6 @@ function mh_disease_tab_post(mysqli $conn, int $user_id, string $user_role)
         mh_redirect('disease', $ok ? 'success' : 'error', $ok ? 'Condition removed from tracking.' : 'Could not remove it.');
     }
 
-    // 4. AI Standardization & Synonyms Mapping Rules CRUD
     if (isset($_POST['add_synonym_rule'])) {
         $canonical = trim((string) ($_POST['canonical_name'] ?? ''));
         $syns = trim((string) ($_POST['synonyms'] ?? ''));
@@ -131,7 +121,6 @@ function mh_disease_tab_render(mysqli $conn)
     $all = mh_disease_conditions($conn, false);
     $rules = mh_disease_synonyms_rules($conn, false);
 
-    // Current settings
     $autoNorm   = mh_setting('disease_auto_normalize_save', '0') === '1';
     $risingPct  = (int) mh_setting('disease_rising_threshold_pct', '25');
     $spikePct   = (int) mh_setting('disease_spike_threshold_pct', '100');
@@ -159,7 +148,6 @@ function mh_disease_tab_render(mysqli $conn)
         .dtt-card-header p { margin:0; font-size:0.86rem; color:var(--ss-muted, #64748b); line-height:1.45; }
     </style>
 
-    <!-- SECTION 1: Outbreak Threshold & Surveillance Parameters -->
     <div class="card">
         <header class="dtt-card-header">
             <h3>Outbreak Thresholds &amp; Surveillance Parameters</h3>
@@ -195,7 +183,6 @@ function mh_disease_tab_render(mysqli $conn)
         </div>
     </div>
 
-    <!-- SECTION 2: Data Hygiene & Stop-words Filter -->
     <div class="card" style="margin-top:18px;">
         <header class="dtt-card-header">
             <h3>Data Hygiene &amp; Stop-words Filter</h3>
@@ -218,7 +205,6 @@ function mh_disease_tab_render(mysqli $conn)
         </div>
     </div>
 
-    <!-- SECTION 3: Tracked Conditions Manager -->
     <div class="card" style="margin-top:18px;">
         <header class="dtt-card-header">
             <h3>Track a New Condition</h3>
@@ -261,7 +247,6 @@ function mh_disease_tab_render(mysqli $conn)
         </div>
     </div>
 
-    <!-- SECTION 4: AI Standardization & Synonyms Mapping Rules -->
     <div class="card" style="margin-top:18px;">
         <header class="dtt-card-header">
             <h3>Add AI Standardization &amp; Synonym Mapping Rule</h3>

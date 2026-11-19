@@ -1,21 +1,7 @@
 <?php
-/* ------------------------------------------------------------------
-   DROP-IN REPLACEMENT for the <div class="dashboard-container"> ... </div>
-   block in admin/disease_statistics.php (between mh_layout_open() and
-   mh_layout_close()). Uses only variables your page already defines:
-   $h, $stats, $ov, $conds, $ai_summary, $dominantCondition,
-   $dominantCount, $outbreakBadge, $status_style, $is_head, $detail,
-   $hidden_count, $msg_ok, $msg_err.
-
-   1. Add to <head> (or the mh_layout_head call):
-        <link rel="stylesheet" href="../assets/css/disease_stats_ui.css">
-   2. Keep your existing <style> block, the quick-track modal and the
-      <script> at the bottom. They don't conflict (new classes are dsx-*).
-   ------------------------------------------------------------------ */
 
 $dsx_state = $stats['spikes'] > 0 ? 'spike' : ($stats['rising'] > 0 ? 'rising' : 'normal');
 
-// Horizontal bar list (replaces the old $bars closure)
 $dsx_bars = function ($title, array $data) use ($h) {
     $tot = max(1, array_sum($data));
     echo '<div><h3 class="dsx-h3">' . $h($title) . '</h3>';
@@ -28,7 +14,6 @@ $dsx_bars = function ($title, array $data) use ($h) {
     echo '</div>';
 };
 
-// Smooth area chart (inline SVG, no JS library needed)
 $dsx_area = function (array $series) use ($h) {
     $labels = array_keys($series); $vals = array_values($series); $n = count($vals);
     if ($n === 0) { return '<p class="dsx-empty">No data for this period.</p>'; }
@@ -57,7 +42,6 @@ $dsx_area = function (array $series) use ($h) {
     return $o . '</svg>';
 };
 
-// Donut chart + legend (top 5 + "Others")
 $dsx_donut = function (array $data) use ($h) {
     $data = array_filter($data, function ($n) { return $n > 0; }); arsort($data);
     $tot = array_sum($data);
@@ -77,7 +61,6 @@ $dsx_donut = function (array $data) use ($h) {
 ?>
 <div class="dsx">
 
-    <!-- ============ Header ============ -->
     <header class="dsx-head">
         <div>
             <h1 class="dsx-title">Disease Statistics</h1>
@@ -89,7 +72,6 @@ $dsx_donut = function (array $data) use ($h) {
     <?php if ($msg_ok !== ''): ?><div class="dsx-flash dsx-flash--ok"><?php echo $h($msg_ok); ?></div><?php endif; ?>
     <?php if ($msg_err !== ''): ?><div class="dsx-flash dsx-flash--err"><?php echo $h($msg_err); ?></div><?php endif; ?>
 
-    <!-- ============ AI insight (collapsed by default) ============ -->
     <section class="dsx-ai" aria-label="AI health insights">
         <div class="dsx-ai-row">
             <span class="dsx-ai-icon"><?php echo mh_icon('activity', 'dsx-i'); ?></span>
@@ -131,7 +113,6 @@ $dsx_donut = function (array $data) use ($h) {
     </div>
     <?php endif; ?>
 
-    <!-- ============ KPI cards ============ -->
     <section class="dsx-kpis" aria-label="Key figures">
         <article class="dsx-kpi">
             <span class="dsx-kpi-chip"><?php echo mh_icon('users', 'dsx-i'); ?></span>
@@ -170,7 +151,6 @@ $dsx_donut = function (array $data) use ($h) {
         </article>
     </section>
 
-    <!-- ============ Period filter ============ -->
     <div class="dsx-filter no-print">
         <nav class="dsx-seg" aria-label="Quick ranges">
             <?php foreach ([7 => 'Last 7 days', 30 => 'Last 30 days', 90 => 'Last 90 days', 365 => 'Last 12 months'] as $n => $lbl):
@@ -187,7 +167,6 @@ $dsx_donut = function (array $data) use ($h) {
         </form>
     </div>
 
-    <!-- ============ Charts ============ -->
     <div class="dsx-grid-2">
         <section class="dsx-card">
             <div class="dsx-card-head">
@@ -211,7 +190,6 @@ $dsx_donut = function (array $data) use ($h) {
         </div>
     </details>
 
-    <!-- ============ Tracked conditions table ============ -->
     <section class="dsx-card">
         <div class="dsx-card-head">
             <div>
@@ -251,10 +229,8 @@ $dsx_donut = function (array $data) use ($h) {
     </section>
 
     <?php if ($detail): ?>
-        <!-- Keep your existing <?php /* if ($detail) */ ?> breakdown block here (id="detail"). It still works with the old ds-* styles. -->
     <?php endif; ?>
 
-    <!-- ============ Other diagnoses table ============ -->
     <?php if ($stats['unclassified']): ?>
     <section class="dsx-card">
         <div class="dsx-card-head">

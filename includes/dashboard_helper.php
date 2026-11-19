@@ -1,35 +1,12 @@
 <?php
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - DASHBOARD LAYOUT HELPER
- * =====================================================================
- * Loads/saves each staff member's customized dashboard (which widgets
- * they've chosen to show, and in what order), on top of the widget
- * catalog defined in dashboard_widgets.php.
- *
- * USAGE
- * -----
- *   require_once __DIR__ . '/../includes/dashboard_helper.php';
- *   mh_dashboard_install($conn);
- *   $layout = mh_dashboard_get_layout($conn, $user_id, $role);
- *   // $layout = [ ['id' => 'active_queue', 'visible' => true, 'size' => 'small'], ... ]
- *   // in display order, already filtered to widgets this $role may see.
- */
 
-require_once __DIR__ . '/roles.php';   // mh_is_builtin_role()
+require_once __DIR__ . '/roles.php';
 require_once __DIR__ . '/dashboard_widgets.php';
 
-/** The only grid spans a widget may take. small = 1 column, medium = 2
- *  columns, large = full width. Anything else is rejected on save and
- *  falls back to the catalog's default on load. */
 if (!defined('MH_DASHBOARD_SIZES')) {
     define('MH_DASHBOARD_SIZES', ['small', 'medium', 'large']);
 }
 
-/* =====================================================================
- * 1. INSTALL - idempotent, safe to call on every page load. Mirrors
- * mh_settings_install() / mh_sms_install() elsewhere in this project.
- * ================================================================== */
 if (!function_exists('mh_dashboard_install')) {
     function mh_dashboard_install(mysqli $conn)
     {
@@ -45,43 +22,31 @@ if (!function_exists('mh_dashboard_install')) {
     }
 }
 
-/* =====================================================================
- * 2. Widget ids a given role is allowed to see, in catalog (default)
- * order.
- * ================================================================== */
 if (!function_exists('mh_dashboard_allowed_ids')) {
     function mh_dashboard_allowed_ids(string $role)
     {
-        // Health Head sees everything the Admin tier sees.
         if ($role === 'health_head') { $role = 'admin'; }
         $ids = [];
-        $custom = !mh_is_builtin_role($role);   // admin-created role (System Settings -> Staff Roles)
+        $custom = !mh_is_builtin_role($role);
         if ($custom) {
             require_once __DIR__ . '/settings_helper.php';
             $c = function_exists('mh_auth_db') ? mh_auth_db() : null;
-            if ($c instanceof mysqli) { mh_all_settings($c); }   // load Module Access before evaluating it
+            if ($c instanceof mysqli) { mh_all_settings($c); }
         }
         require_once __DIR__ . '/auth.php';
         $isMe = (function_exists('mh_current_role') && mh_current_role() !== '');
         foreach (mh_dashboard_catalog() as $id => $widget) {
-            // Strict sub-permission: a widget that exposes records/stock needs the matching Delegated Function
-            // (an unticked function is an explicit deny, even if the role would normally show the widget).
             if ($isMe && !empty($widget['caps']) && !mh_has_any_capability($widget['caps'])) { continue; }
             if (in_array($role, $widget['roles'], true)) {
                 $ids[] = $id;
             } elseif ($custom && !empty($widget['module']) && mh_module_visible($widget['module'], $role)) {
-                $ids[] = $id;   // custom roles get the widgets of modules Module Access opens for them
+                $ids[] = $id;
             }
         }
         return $ids;
     }
 }
 
-/* =====================================================================
- * 3. Fallback default layout: every widget the role may see, visible,
- * at its catalog default size, in catalog order. Used when a user has
- * no saved preferences yet.
- * ================================================================== */
 if (!function_exists('mh_dashboard_default_layout')) {
     function mh_dashboard_default_layout(string $role)
     {
@@ -94,15 +59,6 @@ if (!function_exists('mh_dashboard_default_layout')) {
     }
 }
 
-/* =====================================================================
- * 4. LOAD - merges the user's saved JSON with the catalog: saved
- * widgets keep their saved order/visibility/size, any catalog widget
- * the user has never saved a preference for (a brand new module, or a
- * first-time user) is appended as visible at its catalog default size
- * so new modules aren't silently hidden, and any saved id that no
- * longer exists in the catalog or isn't allowed for the current role
- * is dropped.
- * ================================================================== */
 if (!function_exists('mh_dashboard_get_layout')) {
     function mh_dashboard_get_layout(mysqli $conn, int $user_id, string $role)
     {
@@ -143,7 +99,6 @@ if (!function_exists('mh_dashboard_get_layout')) {
             $seen[$entry['id']] = true;
         }
 
-        // Append any allowed widget the saved layout doesn't mention yet.
         foreach ($allowed_ids as $id) {
             if (!isset($seen[$id])) {
                 $layout[] = ['id' => $id, 'visible' => true, 'size' => $catalog[$id]['size']];
@@ -154,11 +109,6 @@ if (!function_exists('mh_dashboard_get_layout')) {
     }
 }
 
-/* =====================================================================
- * 5. SAVE - validates every id against the catalog + role, and every
- * size against MH_DASHBOARD_SIZES, before writing, so a tampered
- * request can't store arbitrary widget ids or grid spans.
- * ================================================================== */
 if (!function_exists('mh_dashboard_save_layout')) {
     function mh_dashboard_save_layout(mysqli $conn, int $user_id, string $role, array $widgets)
     {
@@ -201,10 +151,6 @@ if (!function_exists('mh_dashboard_save_layout')) {
     }
 }
 
-/* =====================================================================
- * 6. RESET - deletes the saved row so the next load falls back to
- * mh_dashboard_default_layout().
- * ================================================================== */
 if (!function_exists('mh_dashboard_reset_layout')) {
     function mh_dashboard_reset_layout(mysqli $conn, int $user_id)
     {

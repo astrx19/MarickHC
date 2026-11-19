@@ -1,15 +1,3 @@
--- =====================================================================
--- MARICK HEALTH CENTER - STRICT DELEGATED FUNCTIONS (grant / deny overrides)
--- Run once after roles_permissions_migration.sql. Safe to re-run. BACK UP FIRST.
---
--- staff.can_* flags become TRI-STATE:
---     NULL = inherit what the person's ROLE allows (Staff Roles & Permissions matrix)
---     1    = explicitly granted
---     0    = explicitly DENIED (removes a function the role would otherwise give)
--- Existing 1s stay grants; existing 0s ("not delegated") become NULL, so nobody gains or
--- loses access when this runs. (admin/staff_management.php also applies this automatically
--- the first time it is opened, so running the file by hand is optional.)
--- =====================================================================
 USE `marick_health_db`;
 
 ALTER TABLE `staff`

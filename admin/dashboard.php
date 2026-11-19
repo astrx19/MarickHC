@@ -142,9 +142,6 @@ mh_layout_head(['title' => 'Dashboard']);
         .dash-edit-banner { display: none; align-items: center; gap: 10px; background: rgba(59, 130, 246, 0.12); border: 1px dashed #93c5fd; color: var(--text-main); padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; font-weight: 500; }
         .dash-edit-banner .mh-icon { width: 15px; height: 15px; flex-shrink: 0; vertical-align: -2px; }
         body.dashboard-edit-mode .dash-edit-banner { display: flex; }
-        /* ---------------------------------------------------------------
-         * Widget grid
-         * ------------------------------------------------------------- */
         .widget-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-flow: dense; gap: 20px; margin-bottom: 30px; }
         @media (max-width: 1024px) { .widget-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 640px) { .widget-grid { grid-template-columns: 1fr; } }
@@ -230,9 +227,6 @@ mh_layout_head(['title' => 'Dashboard']);
         .cal-panel-header span { font-size: 0.78rem; color: var(--text-muted); }
         .cal-widget { background: var(--bg-card); color: var(--heading-color, #1e293b); border-radius: 12px; padding: 15px; font-family: 'Segoe UI', sans-serif; cursor: pointer; transition: 0.2s; border: 1px solid var(--border-color, #e2e8f0); box-shadow: var(--shadow-md); }
         .cal-widget:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); border-color: var(--primary, #4ca1af); }
-        /* Appointment / "current day" chips drawn by renderCalendars() in
-           the script below - classed so they follow the dark-mode tokens
-           instead of a hardcoded light background + dark text pair. */
         .appt-chip { display: block; background: var(--bg-hover); color: var(--text-main); padding: 5px 6px; border-radius: 4px; font-size: 0.8rem; margin-top: 4px; border-left: 2px solid #3b82f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
         .appt-chip strong { color: var(--heading-color, #0f172a); }
         .today-chip { background: rgba(14, 165, 233, 0.16); color: #0369a1; padding: 4px 6px; border-radius: 4px; font-size: 0.75rem; margin-top: 5px; margin-bottom: 5px; border-left: 2px solid #0284c7; font-weight: bold; }

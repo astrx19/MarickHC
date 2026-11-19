@@ -1,12 +1,7 @@
 <?php
-/**
- * Two entry points:
- *   reset_password.php?token=<64 hex>   (link from the email)
- *   reset_password.php?method=sms       (after the code was texted; the session remembers which reset)
- */
 session_start();
 header('Cache-Control: no-store');
-header('Referrer-Policy: no-referrer');   // keep the token out of Referer headers
+header('Referrer-Policy: no-referrer');
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/config/mail.php';
 require_once __DIR__ . '/includes/password_reset_helpers.php';
@@ -15,9 +10,9 @@ $system_name = $system_name ?? mh_setting('system_name');
 $csrf  = mh_pr_csrf_token();
 $debug = $_SESSION['pr_debug'] ?? null; unset($_SESSION['pr_debug']);
 
-$mode = '';          // 'email' | 'sms'
-$view = 'invalid';   // 'invalid' | 'otp' | 'password' | 'success'
-$error = null;       // inline form error
+$mode = '';
+$view = 'invalid';
+$error = null;
 $fatal = 'This reset link or code is invalid, has expired, or was already used.';
 $resetRow = null;
 $token = trim((string) ($_GET['token'] ?? $_POST['token'] ?? ''));
@@ -26,12 +21,10 @@ if ($isPost && !mh_pr_csrf_ok($_POST['csrf'] ?? '')) { $isPost = false; $error =
 $action = $isPost ? ($_POST['action'] ?? '') : '';
 
 if ($token !== '') {
-    /* ------------------------- EMAIL LINK ------------------------- */
     $mode = 'email';
     $resetRow = mh_pr_load_by_token($conn, $token);
     if ($resetRow) { $view = 'password'; }
 } elseif (!empty($_SESSION['pr_sms']) && is_array($_SESSION['pr_sms'])) {
-    /* ------------------------- SMS OTP ---------------------------- */
     $mode = 'sms';
     $sms =& $_SESSION['pr_sms'];
 
@@ -45,7 +38,6 @@ if ($token !== '') {
             if (strlen($code) !== 6) {
                 $error = 'Enter the 6-digit code we texted you.';
             } elseif (!empty($sms['decoy'])) {
-                // Nothing was sent (unknown account / throttled): behave like a wrong code, then lock.
                 $sms['tries'] = (int) ($sms['tries'] ?? 0) + 1;
                 if ($sms['tries'] >= MH_PR_MAX_OTP_TRIES) { unset($_SESSION['pr_sms']); $view = 'invalid'; $fatal = 'Too many incorrect attempts. Please request a new code.'; }
                 else { $error = 'That code is incorrect or has expired.'; }
@@ -66,7 +58,6 @@ if ($token !== '') {
     unset($sms);
 }
 
-/* ------------------------- SET NEW PASSWORD ------------------------- */
 if ($view === 'password' && $action === 'reset_password') {
     $account = mh_pr_get_account($conn, $resetRow['user_type'] === 'staff' ? 'staff' : 'patients', $resetRow['user_id']);
     $new = (string) ($_POST['new_password'] ?? '');
@@ -136,7 +127,7 @@ $loginUrl = $isStaffFlow ? 'admin/login.php' : 'patient_login.php';
     </form>
     <div class="pr-links"><a href="forgot_password.php?restart=1<?php echo $isStaffFlow ? '&amp;for=staff' : '&amp;for=patient'; ?>">Didn't get a code? Start over</a></div>
 
-<?php else: /* password */ ?>
+<?php else: ?>
     <form method="POST" action="<?php echo $mode === 'email' ? 'reset_password.php' : 'reset_password.php?method=sms'; ?>" autocomplete="off">
         <input type="hidden" name="csrf" value="<?php echo mh_pr_h($csrf); ?>">
         <input type="hidden" name="action" value="reset_password">

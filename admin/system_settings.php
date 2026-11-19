@@ -668,7 +668,7 @@ mh_layout_head(['title' => 'System Settings']);
         .switch { position: relative; display: inline-block; width: 50px; height: 26px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; top:0; left:0; right:0; bottom:0; cursor: pointer; background-color: var(--ss-switch-off); transition: .3s; border-radius: 34px; }
-        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: #fff; transition: .3s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.3); } /* knob stays white on purpose */
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: #fff; transition: .3s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
         input:checked + .slider { background-color: #10b981; }
         input:checked + .slider:before { transform: translateX(24px); }
         .feature-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 14px; background: var(--ss-card-head); border: 1px solid var(--ss-border); border-radius: 8px; margin-bottom: 15px; }

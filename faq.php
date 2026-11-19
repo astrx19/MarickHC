@@ -12,7 +12,6 @@ require_once __DIR__ . '/includes/queue_helper.php';
 <link rel="stylesheet" href="assets/css/style.css?v=<?php echo @filemtime(__DIR__ . '/assets/css/style.css'); ?>">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* Specific FAQ Page Styling */
         body { background-color: #f8fbfb; }
         .faq-page-header { text-align: center; padding: 60px 20px 20px; }
         .faq-page-header h1 { color: #004d80; font-size: 2.5rem; }
@@ -20,7 +19,6 @@ require_once __DIR__ . '/includes/queue_helper.php';
         .btn-back { display: inline-block; margin-top: 20px; color: #00bfff; text-decoration: none; font-weight: bold; }
         .btn-back:hover { text-decoration: underline; }
         
-        /* FAQ Dropdowns */
         .faq-section { text-align: center; }
         .faq-container { max-width: 800px; margin: 0 auto; text-align: left; }
         details { background: white; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.03); padding: 20px; cursor: pointer; transition: 0.3s ease; }

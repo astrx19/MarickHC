@@ -1,17 +1,11 @@
 <?php
-/**
- * System Settings -> Departments tab (Health Head only; the page itself enforces require_health_head()).
- * Departments live in the `clinic_departments` masterlist; this adds the "function" each one performs
- * (department_settings) and keeps the sidebar, queue and walk-in registration in sync.
- */
 require_once __DIR__ . '/settings_helper.php';
 
 const MH_DEPT_LIST = 'clinic_departments';
 
-/** Stores which roles may use a department. Matching the defaults = nothing stored (follows module access). */
 function mh_dept_save_roles(mysqli $conn, string $dept, array $postedRoles)
 {
-    mh_department_settings($conn, true);   // use the function just saved when working out the defaults
+    mh_department_settings($conn, true);
     $roles = array_keys(array_filter(mh_role_definitions(), function ($d, $rk) { return $rk !== 'health_head'; }, ARRAY_FILTER_USE_BOTH));
 
     $matches_defaults = true;
@@ -33,7 +27,6 @@ function mh_dept_save_roles(mysqli $conn, string $dept, array $postedRoles)
     unset($GLOBALS['mh_dept_role_cache']);
 }
 
-/** Toggle chips: which roles can use the department. $dept === '' = defaults for a new department. */
 function mh_dept_role_pills(string $dept)
 {
     echo '<div class="dpt-chips">';
@@ -46,7 +39,6 @@ function mh_dept_role_pills(string $dept)
     echo '</div>';
 }
 
-/** Handles add / edit / delete. Always ends with a redirect (mh_redirect is defined by system_settings.php). */
 function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
 {
     mh_department_ensure_table($conn);
@@ -58,7 +50,6 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
     if (!array_key_exists($mod, $choices)) { $mod = ''; }
     $nameLen = mb_strlen($name);
 
-    /* ---------- LOCK / UNLOCK (Health Head / Admin only) ---------- */
     if (isset($_POST['toggle_dept_lock'])) {
         if (!mh_is_admin_tier()) { mh_redirect('departments', 'error', 'Only the Health Head or an Admin can change this policy.'); }
         $lock = ($_POST['toggle_dept_lock'] === 'lock');
@@ -67,7 +58,6 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
         mh_redirect('departments', 'success', $lock ? 'Adding departments is locked again.' : 'Adding departments is now allowed. Lock it again when you are done.');
     }
 
-    /* ---------- ADD ---------- */
     if (isset($_POST['add_department'])) {
         if (mh_departments_locked()) { mh_redirect('departments', 'error', 'Adding departments is disabled by center policy.'); }
         if ($name === '' || $nameLen > 100) { mh_redirect('departments', 'error', 'Enter a department name (up to 100 characters).'); }
@@ -83,7 +73,6 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
         mh_redirect('departments', 'success', "Department \"$name\" added. It now appears in the sidebar, walk-in registration and Patient Queue.");
     }
 
-    /* ---------- EDIT / RENAME / HIDE ---------- */
     if (isset($_POST['edit_department'])) {
         $opt_id = (int) ($_POST['option_id'] ?? 0);
         $active = isset($_POST['is_active']) ? 1 : 0;
@@ -103,7 +92,7 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
         $dup = ($conn->errno === 1062);
         $st->close();
 
-        if ($ok && $name !== $old_name) {   // keep existing queue history attached to the renamed department
+        if ($ok && $name !== $old_name) {
             $st = $conn->prepare("UPDATE appointments SET department = ? WHERE department = ?");
             $st->bind_param('ss', $name, $old_name);
             $ok = $st->execute(); $st->close();
@@ -111,9 +100,9 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
         if ($ok && $name !== $old_name) {
             $st = $conn->prepare("UPDATE department_visits SET department = ? WHERE department = ?");
             $st->bind_param('ss', $name, $old_name);
-            $ok = $st->execute() || $conn->errno === 1146; $st->close();   // 1146 = visits table not created yet: nothing to rename
+            $ok = $st->execute() || $conn->errno === 1146; $st->close();
         }
-        if ($ok && $name !== $old_name) {   // per-account exceptions follow the rename
+        if ($ok && $name !== $old_name) {
             $st = $conn->prepare("UPDATE staff_department_access SET dept_name = ? WHERE dept_name = ?");
             $st->bind_param('ss', $name, $old_name); $ok = $st->execute(); $st->close();
         }
@@ -141,7 +130,6 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
         mh_redirect('departments', 'success', "Department \"$name\" saved.");
     }
 
-    /* ---------- DELETE (only when never used) ---------- */
     if (isset($_POST['delete_department'])) {
         $opt_id = (int) ($_POST['option_id'] ?? 0);
         $lk = MH_DEPT_LIST;
@@ -159,7 +147,7 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
         [$ok, $msg] = mh_delete_option($conn, $opt_id);
         if ($ok) {
             foreach (['department_settings', 'department_access', 'staff_department_access'] as $tbl) {
-                $st = $conn->prepare("DELETE FROM $tbl WHERE dept_name = ?");   // fixed table names, value bound
+                $st = $conn->prepare("DELETE FROM $tbl WHERE dept_name = ?");
                 $st->bind_param('s', $dn); $st->execute(); $st->close();
             }
             logActivity($conn, $user_id, $user_role, 'Department Deleted', "Deleted department \"$dn\".");
@@ -168,7 +156,6 @@ function mh_depts_handle_post(mysqli $conn, int $user_id, string $user_role)
     }
 }
 
-/** Renders the tab body. */
 function mh_depts_render(mysqli $conn)
 {
     mh_department_ensure_table($conn);

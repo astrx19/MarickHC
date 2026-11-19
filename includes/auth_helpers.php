@@ -1,28 +1,7 @@
 <?php
-// Definitions are wrapped in a constant-keyed if-block ON PURPOSE: PHP registers top-level functions at
-// compile time, so require_once cannot stop a redeclare when one file is reached by two paths that differ
-// only in letter case (/MARICK-HEALTH-SYSTEM-v2/ vs /marick-health-system-v2/ on macOS/Windows).
 if (!defined('MH_LOADED_INCLUDES_AUTH_HELPERS')) {
 define('MH_LOADED_INCLUDES_AUTH_HELPERS', true);
-/**
- * =====================================================================
- * SHARED USERNAME + PASSWORD-RESET HELPERS
- * =====================================================================
- * Used by:
- *   - register_process.php   (username uniqueness at signup)
- *   - admin/staff_management.php (auto-generated staff usernames)
- *   - forgot_password.php / reset_password.php use includes/password_reset_helpers.php
- *
- * This project has two separate login tables - `staff` and `patients` -
- * with no shared "users" table, so every helper here that deals with an
- * account takes/returns which table it came from.
- */
 
-/**
- * Builds an absolute URL to another script at the project root (this
- * project has no router - forgot_password.php / reset_password.php
- * both live at the repo root, same level as index.php).
- */
 function mh_absolute_url($relativePath)
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -31,16 +10,6 @@ function mh_absolute_url($relativePath)
     return $scheme . '://' . $host . $dir . '/' . ltrim($relativePath, '/');
 }
 
-/**
- * True if $username is free in BOTH staff and patients (login has to be
- * unambiguous across the whole system, not just within one table).
- *
- * @param mysqli $conn
- * @param string $username
- * @param string|null $excludeTable  Skip this table's own row when checking...
- * @param int|null    $excludeId     ...specifically this id (for "is my current
- *                                    username still available" on an edit form).
- */
 function mh_username_available(mysqli $conn, $username, $excludeTable = null, $excludeId = null)
 {
     $username = trim((string) $username);
@@ -67,10 +36,6 @@ function mh_username_available(mysqli $conn, $username, $excludeTable = null, $e
     return true;
 }
 
-/**
- * Slugifies then de-duplicates a candidate username (used to
- * auto-generate staff usernames in admin/staff_management.php).
- */
 function mh_generate_unique_username(mysqli $conn, $baseText)
 {
     $base = strtolower(trim((string) $baseText));
@@ -88,13 +53,6 @@ function mh_generate_unique_username(mysqli $conn, $baseText)
     return $candidate;
 }
 
-/**
- * Looks up an account by username OR email, checking patients first
- * then staff. Used by both the login pages' "does this look valid"
- * validation path and the forgot-password flow.
- *
- * @return array{table:string, row:array}|null
- */
 function mh_find_account_by_identifier(mysqli $conn, $identifier)
 {
     $identifier = trim((string) $identifier);
@@ -116,5 +74,4 @@ function mh_find_account_by_identifier(mysqli $conn, $identifier)
     return null;
 }
 
-/* Password-reset token functions moved to includes/password_reset_helpers.php (unified email/SMS table). */
 }

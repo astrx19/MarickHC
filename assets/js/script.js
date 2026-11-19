@@ -29,8 +29,6 @@ function toggleDropdown() {
 }
 
 window.onclick = function(event) {
-    // A modal marked data-static (the registration form) ignores clicks on the dark backdrop,
-    // so half-typed details are never lost by a stray click. Use the X / Back button instead.
     if (event.target.classList.contains('modal-overlay') && !event.target.hasAttribute('data-static')) {
         event.target.classList.remove('active');
         document.body.style.overflow = '';
@@ -54,7 +52,6 @@ function togglePassword(inputId) {
     }
 }
 
-/** Step 1 of the registration form. Returns the list of problems (empty = fine). */
 function mhRegStep1Errors() {
     var $ = function (id) { return document.getElementById(id); };
     var errs = [];
@@ -72,7 +69,6 @@ function mhRegStep1Errors() {
     return errs;
 }
 
-/** Step 2 (account + location). */
 function mhRegStep2Errors() {
     var $ = function (id) { return document.getElementById(id); };
     var form = $('regForm'), errs = [];
@@ -129,11 +125,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var regForm = document.getElementById('regForm');
     if (!regForm) { return; }
     regForm.addEventListener('submit', async function (e) {
-        if (this.dataset.mhBypass === '1') { return; } // already validated, let it through
+        if (this.dataset.mhBypass === '1') { return; }
         e.preventDefault();
         const submitter = e.submitter;
 
-        // Pressing Enter while still on step 1 must not submit a half-filled form.
         if (document.getElementById('step1').style.display !== 'none') { await nextStep(); return; }
 
         window.mhClearErrors && window.mhClearErrors(document.getElementById('step2'));
@@ -141,13 +136,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (errs.length) { await window.mhReport(errs, 'Please check your account details'); return; }
 
         this.dataset.mhBypass = '1';
-        // requestSubmit(submitter) preserves the button's name="register_patient" in the POST data,
-        // unlike form.submit() which would drop it.
         this.requestSubmit(submitter);
     });
 });
 
-/** X button on the registration modal: ask first if something was typed, because the backdrop no longer closes it. */
 async function closeRegisterModal() {
     var form = document.getElementById('regForm');
     var dirty = false;
@@ -166,10 +158,6 @@ async function closeRegisterModal() {
     closeModal('registerModal');
 }
 
-/**
- * Which Location Type means "resident" is a System Setting (Home Address Type), not a literal:
- * the server puts it on the <select> as data-home-type (see mh_home_type_attr() in settings_helper.php).
- */
 function mhIsHomeType(selectEl, value) {
     var home = (selectEl && selectEl.dataset && selectEl.dataset.homeType) || window.MH_HOME_ADDRESS_TYPE || '';
     return home.trim() !== '' && String(value).trim().toLowerCase() === home.trim().toLowerCase();
@@ -179,15 +167,13 @@ function toggleRegAddress() {
     var typeSelect = document.getElementById('regAddressType');
     if (!typeSelect) { return; }
     var chosen  = typeSelect.value !== '';
-    var isHome  = chosen && mhIsHomeType(typeSelect, typeSelect.value);   // resident: house no. + street dropdown
-    var isOther = chosen && !isHome;                                      // Outsider / any other type: free text
+    var isHome  = chosen && mhIsHomeType(typeSelect, typeSelect.value);
+    var isOther = chosen && !isHome;
 
     function setup(groupId, fieldId, active, group) {
         var g = document.getElementById(groupId), f = document.getElementById(fieldId);
         if (g) { g.style.display = active ? 'block' : 'none'; }
         if (f) {
-            // Hidden fields are DISABLED, not just un-required: disabled controls are skipped by
-            // browser validation ("Please select an item in the list") and are not submitted.
             f.disabled = !active;
             if (active) { f.setAttribute('required', 'required'); } else { f.removeAttribute('required'); }
         }
@@ -198,5 +184,5 @@ function toggleRegAddress() {
     if (street && !isHome) { street.selectedIndex = 0; }
     setup('outsiderAddressGroup', 'outsiderAddress', isOther);
 }
-document.addEventListener('DOMContentLoaded', toggleRegAddress);   // also fixes browser-restored form values
+document.addEventListener('DOMContentLoaded', toggleRegAddress);
 window.addEventListener('pageshow', toggleRegAddress);

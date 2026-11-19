@@ -10,9 +10,6 @@ require_once __DIR__ . '/../config/database.php';
 
 if (function_exists('mh_refresh_staff_authority')) { mh_refresh_staff_authority(); }
 
-
-   1. ROLE -> REPORT SCOPE
-    
 $role = strtolower(trim((string) ($_SESSION['role'] ?? $_SESSION['user_role'] ?? '')));
 
 $scope_map = [
@@ -37,8 +34,6 @@ $scope_label = $scope_labels[$scope];
 
 $system_name = $system_name ?? mh_setting('system_name');
 $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
-
-   2. MONTH / YEAR FILTER (validated)
 $this_year = (int) date('Y');
 $month = (int) ($_GET['month'] ?? date('n'));
 $year  = (int) ($_GET['year'] ?? $this_year);
@@ -59,7 +54,6 @@ if (($_GET['export'] ?? '') === 'csv') {
 $module_title = "Monthly Clinic Report";
 
 
-   3. SMALL DB HELPERS
 $run = function ($sql, $types = '', array $params = []) use ($conn) {
     $st = @$conn->prepare($sql);
     if (!$st) { error_log('monthly_reports query failed: ' . $conn->error); return []; }
@@ -96,7 +90,6 @@ $pk = function ($alias, $table) use ($meta_ok) {
         : "CAST($alias.patient_id AS CHAR)";
 };
 
-   4. REPORT QUERY BUILDING BLOCKS (nothing runs until a branch calls it)
 $visit_stats = function ($table, $alias, $date_col) use ($run, $pk, $P) {
     $k = $pk($alias, $table);
     $r = $run("SELECT COUNT(*) AS visits, COUNT(DISTINCT $k) AS patients FROM `$table` $alias
@@ -220,7 +213,6 @@ $inv_low_rows = function () use ($run, $LOW_STOCK_THRESHOLD) {
                  ORDER BY total ASC, i.item_name ASC", 'i', [$LOW_STOCK_THRESHOLD]);
 };
 
-   5. RENDER HELPERS
 $fmt = function ($v) use ($h) {
     return (is_int($v) || is_float($v)) ? number_format($v) : $h($v);
 };

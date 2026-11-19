@@ -1,24 +1,13 @@
 <?php
-/**
- * LOGIN THROTTLE (Paper REQ73: "limit repeated failed login and verification attempts").
- * Shared by admin/login.php (scope 'staff') and patient_login_process.php (scope 'patient').
- *
- * Rule: within a 15-minute window, 5 failed sign-ins for the same username OR 20 from the same IP
- * lock further attempts until the oldest counted failure ages out. A successful sign-in clears the
- * account's failures. Fails OPEN on any database problem so a DB hiccup can never lock staff out.
- * The reset-link flow and the claim-account OTP already have their own limits.
- */
 if (!defined('MH_LOGIN_THROTTLE_LOADED')) {
 define('MH_LOGIN_THROTTLE_LOADED', true);
 
-// define(), not const: 'const' is illegal inside a conditional block in PHP (fatal compile error).
-define('MH_LT_WINDOW_SECONDS', 900);   // 15 minutes
+define('MH_LT_WINDOW_SECONDS', 900);
 define('MH_LT_MAX_PER_ACCOUNT', 5);
 define('MH_LT_MAX_PER_IP', 20);
 
 function mh_lt_ip(): string
 {
-    // REMOTE_ADDR only: X-Forwarded-For is client-controlled and would let an attacker dodge the limit.
     return substr((string) ($_SERVER['REMOTE_ADDR'] ?? 'cli'), 0, 45);
 }
 
@@ -46,7 +35,6 @@ function mh_lt_norm(string $username): string
     return mb_substr(mb_strtolower(trim($username)), 0, 100);
 }
 
-/** Seconds the caller must still wait (0 = allowed). */
 function mh_lt_blocked_seconds(mysqli $conn, string $scope, string $username): int
 {
     if (!mh_lt_ready($conn)) { return 0; }
@@ -84,7 +72,7 @@ function mh_lt_record_failure(mysqli $conn, string $scope, string $username): vo
         $id = mh_lt_norm($username); $ip = mh_lt_ip();
         $st = $conn->prepare("INSERT INTO login_attempts (scope, identifier, ip_address) VALUES (?, ?, ?)");
         if ($st) { $st->bind_param('sss', $scope, $id, $ip); $st->execute(); $st->close(); }
-        if (random_int(1, 50) === 1) {   // housekeeping: nothing older than a day is ever needed
+        if (random_int(1, 50) === 1) {
             $conn->query("DELETE FROM login_attempts WHERE attempted_at < (NOW() - INTERVAL 1 DAY)");
         }
     } catch (Throwable $e) { error_log('mh_lt_record_failure: ' . $e->getMessage()); }

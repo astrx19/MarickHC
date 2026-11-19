@@ -1,7 +1,4 @@
 <?php
-/**
- * Active SMS provider - DATABASE BACKED (system_settings.sms_provider).
- */
 require_once __DIR__ . '/database.php';
 
 if (!defined('SMS_ACTIVE_PROVIDER')) {

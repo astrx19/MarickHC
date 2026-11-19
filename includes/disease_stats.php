@@ -1,12 +1,4 @@
 <?php
-/**
- * Disease statistics engine (aggregate counts only - no patient names ever leave this file).
- *
- * Cases come from consultations (diagnosis, else chief complaints) and child consultation logs.
- * A "tracked condition" matches a case when one of its keywords appears as a whole word.
- * Spike rule: this week (last 7 days) has at least `min_cases` AND at least `spike_factor` x the average
- * of the previous 4 weeks (or the previous 4 weeks had none). "Rising": 2+ cases and 25% above that average.
- */
 
 const MH_DISEASE_WEEKS = 12;
 require_once __DIR__ . '/ai_helper.php';
@@ -93,14 +85,6 @@ function mh_disease_ensure_tables(mysqli $conn)
     }
 }
 
-/**
- * Validates whether a diagnosis or complaint string is a clinically meaningful entry.
- * Filters out test entries ('test', 'qwe', 'asd'), gibberish key-smashing ('skhdajgf...'),
- * conversational filler ('wala', 'checkup', 'ok'), and short non-medical strings (< 3 chars).
- *
- * @param string $text Raw input string from diagnosis or complaint field
- * @return bool True if valid clinical text; false if garbage / test data
- */
 function mh_disease_is_valid_diagnosis(string $text): bool
 {
     $clean = trim($text);
@@ -108,13 +92,11 @@ function mh_disease_is_valid_diagnosis(string $text): bool
         return false;
     }
 
-    // Strip out common wrapping quotes and symbols for analysis
     $clean = trim($clean, " \t\n\r\0\x0B\"'.,;:-_()[]{}<>!?");
     if ($clean === '') {
         return false;
     }
 
-    // Must contain at least one unicode letter
     if (!preg_match('/\p{L}/u', $clean)) {
         return false;
     }
@@ -122,18 +104,15 @@ function mh_disease_is_valid_diagnosis(string $text): bool
     $normalized = mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]/u', '', $clean));
     $normalized = trim(preg_replace('/\s+/u', ' ', $normalized));
 
-    // Whitelist legitimate 2-letter medical abbreviations
     $valid2Letter = ['tb', 'dm', 'gi', 'gu', 'pt', 'dx', 'rx'];
     if (mb_strlen($normalized) === 2) {
         return in_array($normalized, $valid2Letter, true);
     }
 
-    // Ignore short strings (< 3 characters)
     if (mb_strlen($normalized) < 3) {
         return false;
     }
 
-    // Blacklist of non-medical, test, placeholder, or conversational filler terms
     static $blacklist = [
         'test', 'testing', 'tester', 'test patient', 'test only', 'test1', 'test2', 'tested',
         'qwe', 'qwer', 'qwert', 'qwerty', 'qweqwe', 'qwertyuiop',
@@ -157,7 +136,6 @@ function mh_disease_is_valid_diagnosis(string $text): bool
         return false;
     }
 
-    // Dynamic stop-words configured in System Settings
     if (function_exists('mh_setting')) {
         $customStopWords = (string) mh_setting('disease_stop_words', '');
         if ($customStopWords !== '') {
@@ -171,7 +149,6 @@ function mh_disease_is_valid_diagnosis(string $text): bool
         }
     }
 
-    // Substring check for non-medical phrases (e.g. "broken hearted", "no condom included")
     static $phraseBlacklist = ['broken hearted', 'brokenhearted', 'no condom included', 'test patient', 'sample diagnosis'];
     foreach ($phraseBlacklist as $pb) {
         if (mb_strpos($normalized, $pb) !== false) {
@@ -179,35 +156,29 @@ function mh_disease_is_valid_diagnosis(string $text): bool
         }
     }
 
-    // Repeated characters heuristic (e.g. 'aaaa', 'zzzzz', 'qqqq')
     if (preg_match('/(.)\1{2,}/u', $normalized)) {
         return false;
     }
 
-    // Key-smashing / consonant cluster checks (treating 'y' as vowel)
     if (preg_match('/[bcdfghjklmnpqrstvwxz]{5,}/i', $normalized)) {
         return false;
     }
 
-    // Analyze individual words for unnatural character distributions
     $words = explode(' ', $normalized);
     $validConsonantAbbr = ['htn', 'ptb', 'lbm', 'agw', 'dhf', 'bph', 'copd', 'gerd', 'pcos', 'ckd', 'sle', 'tb', 'cap', 'uri', 'urti'];
     foreach ($words as $w) {
         $wLen = mb_strlen($w);
         if ($wLen >= 3) {
-            // Unnatural 4-consonant cluster (unless standard medical prefix/root)
             if (preg_match('/[bcdfghjklmnpqrstvwxz]{4,}/i', $w)) {
                 if (!preg_match('/(?:phth|diphth|rhythm|bronch|scler|strep|splen|sphing|sphyg|lymph|thromb|psor|asthm|sthm|isch|ophthal|laryng|pharyng|gangr|arthr)/i', $w)) {
                     return false;
                 }
             }
-            // Length >= 6 with <= 1 vowel is almost always keyboard smashing (e.g., 'skhdajgf')
             preg_match_all('/[aeiouy]/i', $w, $vm);
             $vowels = count($vm[0]);
             if ($wLen >= 6 && $vowels <= 1) {
                 return false;
             }
-            // Length >= 4 with 0 vowels
             if ($wLen >= 4 && $vowels === 0 && !in_array($w, $validConsonantAbbr, true)) {
                 return false;
             }
@@ -217,12 +188,6 @@ function mh_disease_is_valid_diagnosis(string $text): bool
     return true;
 }
 
-/**
- * Built-in high-accuracy clinical dictionary for Filipino / Tagalog medical terms,
- * colloquial symptoms, abbreviations and synonyms.
- *
- * @return array<string,array{name:string,category:string,keywords:string}>
- */
 function mh_disease_clinical_dictionary(): array
 {
     static $dict = null;
@@ -231,7 +196,6 @@ function mh_disease_clinical_dictionary(): array
     }
 
     $dict = [
-        // Upper Respiratory Tract
         'trangkaso'         => ['name' => 'Influenza-like Illness', 'category' => 'Influenza / Flu', 'keywords' => 'flu, influenza, ili, trangkaso'],
         'lagnat at trangkaso' => ['name' => 'Influenza-like Illness', 'category' => 'Influenza / Flu', 'keywords' => 'flu, influenza, ili, trangkaso'],
         'sipon at ubo'      => ['name' => 'Upper Respiratory Tract Infection', 'category' => 'Upper Respiratory Tract Infection', 'keywords' => 'urti, uri, cough, colds, sipon, ubo'],
@@ -247,21 +211,18 @@ function mh_disease_clinical_dictionary(): array
         'sore throat'       => ['name' => 'Pharyngitis / Tonsillitis', 'category' => 'Upper Respiratory Tract Infection', 'keywords' => 'pharyngitis, tonsillitis, sore throat'],
         'masakit ang lalamunan' => ['name' => 'Pharyngitis / Tonsillitis', 'category' => 'Upper Respiratory Tract Infection', 'keywords' => 'pharyngitis, tonsillitis, sore throat'],
 
-        // Gastrointestinal
         'pagtatae'          => ['name' => 'Acute Gastroenteritis', 'category' => 'Diarrhea / Gastroenteritis', 'keywords' => 'gastroenteritis, diarrhea, lbm, pagtatae'],
         'nagtatae'          => ['name' => 'Acute Gastroenteritis', 'category' => 'Diarrhea / Gastroenteritis', 'keywords' => 'gastroenteritis, diarrhea, lbm, pagtatae'],
         'lbm'               => ['name' => 'Acute Gastroenteritis', 'category' => 'Diarrhea / Gastroenteritis', 'keywords' => 'gastroenteritis, diarrhea, lbm'],
         'pagsusuka at pagtatae' => ['name' => 'Acute Gastroenteritis', 'category' => 'Diarrhea / Gastroenteritis', 'keywords' => 'gastroenteritis, diarrhea, lbm, age'],
         'age'               => ['name' => 'Acute Gastroenteritis', 'category' => 'Diarrhea / Gastroenteritis', 'keywords' => 'gastroenteritis, diarrhea, lbm, age'],
 
-        // Cardiovascular
         'altapresyon'       => ['name' => 'Hypertension', 'category' => 'Hypertension', 'keywords' => 'hypertension, htn, altapresyon, high blood'],
         'alta presyon'      => ['name' => 'Hypertension', 'category' => 'Hypertension', 'keywords' => 'hypertension, htn, altapresyon, high blood'],
         'high blood'        => ['name' => 'Hypertension', 'category' => 'Hypertension', 'keywords' => 'hypertension, htn, high blood'],
         'highblood'         => ['name' => 'Hypertension', 'category' => 'Hypertension', 'keywords' => 'hypertension, htn, high blood'],
         'htn'               => ['name' => 'Hypertension', 'category' => 'Hypertension', 'keywords' => 'hypertension, htn'],
 
-        // Dental / Oral Cavity
         'sakit ng ngipin'   => ['name' => 'Oral Cavity Disease / Dental Caries', 'category' => 'Oral Cavity Disease', 'keywords' => 'dental, caries, toothache, ngipin'],
         'masakit ang ngipin'=> ['name' => 'Oral Cavity Disease / Dental Caries', 'category' => 'Oral Cavity Disease', 'keywords' => 'dental, caries, toothache, ngipin'],
         'sirang ngipin'     => ['name' => 'Oral Cavity Disease / Dental Caries', 'category' => 'Oral Cavity Disease', 'keywords' => 'dental, caries, tooth decay, ngipin'],
@@ -270,25 +231,21 @@ function mh_disease_clinical_dictionary(): array
         'dental caries'     => ['name' => 'Oral Cavity Disease / Dental Caries', 'category' => 'Oral Cavity Disease', 'keywords' => 'dental, caries, tooth decay'],
         'bunot ng ngipin'   => ['name' => 'Oral Cavity Disease / Extraction', 'category' => 'Oral Cavity Disease', 'keywords' => 'dental, caries, extraction, bunot'],
 
-        // Urinary
         'balisawsaw'        => ['name' => 'Urinary Tract Infection', 'category' => 'UTI', 'keywords' => 'uti, urinary tract infection, balisawsaw'],
         'masakit umihi'     => ['name' => 'Urinary Tract Infection', 'category' => 'UTI', 'keywords' => 'uti, urinary tract infection, dysuria'],
         'uti'               => ['name' => 'Urinary Tract Infection', 'category' => 'UTI', 'keywords' => 'uti, urinary tract infection'],
 
-        // Vector / Viral / Exanthem
         'dengue'            => ['name' => 'Dengue Fever', 'category' => 'Dengue', 'keywords' => 'dengue, dhf'],
         'bulutong'          => ['name' => 'Chickenpox', 'category' => 'Chickenpox', 'keywords' => 'chickenpox, varicella, bulutong'],
         'bulutong tubig'    => ['name' => 'Chickenpox', 'category' => 'Chickenpox', 'keywords' => 'chickenpox, varicella, bulutong'],
         'tigdas'            => ['name' => 'Measles', 'category' => 'Measles', 'keywords' => 'measles, rubeola, tigdas'],
 
-        // Respiratory Lower
         'hika'              => ['name' => 'Bronchial Asthma', 'category' => 'Bronchial Asthma', 'keywords' => 'asthma, hika, bronchospasm'],
         'asthma'            => ['name' => 'Bronchial Asthma', 'category' => 'Bronchial Asthma', 'keywords' => 'asthma, hika, bronchospasm'],
         'pulmonia'          => ['name' => 'Pneumonia', 'category' => 'Pneumonia', 'keywords' => 'pneumonia, cap, pulmonia'],
         'tb'                => ['name' => 'Pulmonary Tuberculosis', 'category' => 'Tuberculosis', 'keywords' => 'tuberculosis, ptb, tb'],
         'ptb'               => ['name' => 'Pulmonary Tuberculosis', 'category' => 'Tuberculosis', 'keywords' => 'tuberculosis, ptb, tb'],
 
-        // Dermatological
         'galis'             => ['name' => 'Skin Infection / Scabies', 'category' => 'Skin infection / Scabies', 'keywords' => 'scabies, impetigo, galis'],
         'galis aso'         => ['name' => 'Skin Infection / Scabies', 'category' => 'Skin infection / Scabies', 'keywords' => 'scabies, impetigo, galis'],
         'kati-kati sa balat'=> ['name' => 'Skin Infection / Dermatitis', 'category' => 'Skin infection / Scabies', 'keywords' => 'dermatitis, skin infection, kati-kati'],
@@ -297,14 +254,6 @@ function mh_disease_clinical_dictionary(): array
     return $dict;
 }
 
-/**
- * Standardizes a clinical diagnosis string into an official medical category.
- * Resolves synonyms, Tagalog terms, abbreviations, and AI-assisted classification.
- *
- * @param string $rawText Raw diagnosis string
- * @param mysqli|null $conn Database handle for cache lookup/save
- * @return array{name:string,category:string,keywords:string,is_standard:bool}
- */
 function mh_disease_standardize_diagnosis(string $rawText, ?mysqli $conn = null): array
 {
     $clean = trim($rawText);
@@ -315,7 +264,6 @@ function mh_disease_standardize_diagnosis(string $rawText, ?mysqli $conn = null)
     $normalized = mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]/u', '', $clean));
     $normalized = trim(preg_replace('/\s+/u', ' ', $normalized));
 
-    // 0. Dynamic Database Synonym Mapping Rules (disease_synonyms_map)
     if ($conn instanceof mysqli) {
         $rules = mh_disease_synonyms_rules($conn, true);
         foreach ($rules as $r) {
@@ -335,7 +283,6 @@ function mh_disease_standardize_diagnosis(string $rawText, ?mysqli $conn = null)
         }
     }
 
-    // 1. Fast Dictionary Lookup
     $dict = mh_disease_clinical_dictionary();
     if (isset($dict[$normalized])) {
         return array_merge($dict[$normalized], ['is_standard' => true]);
@@ -346,7 +293,6 @@ function mh_disease_standardize_diagnosis(string $rawText, ?mysqli $conn = null)
         }
     }
 
-    // 2. Database Cache Lookup
     if ($conn instanceof mysqli) {
         $hash = hash('sha256', $normalized);
         $st = @$conn->prepare("SELECT standard_name, category FROM diagnosis_normalization_cache WHERE raw_hash = ? LIMIT 1");
@@ -367,7 +313,6 @@ function mh_disease_standardize_diagnosis(string $rawText, ?mysqli $conn = null)
         }
     }
 
-    // Fallback title-cased term
     $title = mb_convert_case($clean, MB_CASE_TITLE, 'UTF-8');
     return [
         'name'        => $title,
@@ -377,14 +322,6 @@ function mh_disease_standardize_diagnosis(string $rawText, ?mysqli $conn = null)
     ];
 }
 
-/**
- * Augments raw diagnosis text with standardized medical keywords and Tagalog synonyms
- * so regex matching against tracked condition keywords succeeds automatically.
- *
- * @param string $text
- * @param mysqli|null $conn
- * @return string Normalized text string containing original + standardized keywords
- */
 function mh_disease_normalize_text(string $text, ?mysqli $conn = null): string
 {
     $std = mh_disease_standardize_diagnosis($text, $conn);
@@ -394,7 +331,6 @@ function mh_disease_normalize_text(string $text, ?mysqli $conn = null): string
     return $text;
 }
 
-/** @return array<int,array<string,mixed>> */
 function mh_disease_conditions(mysqli $conn, bool $onlyActive = true)
 {
     mh_disease_ensure_tables($conn);
@@ -406,13 +342,6 @@ function mh_disease_conditions(mysqli $conn, bool $onlyActive = true)
     return $out;
 }
 
-/**
- * Retrieves the AI & clinical synonym mapping rules.
- *
- * @param mysqli $conn
- * @param bool $onlyActive
- * @return array<int,array<string,mixed>>
- */
 function mh_disease_synonyms_rules(mysqli $conn, bool $onlyActive = true): array
 {
     static $cache = [];
@@ -453,7 +382,6 @@ function mh_disease_age_group(?string $birthdate, string $onDate)
     return '60+';
 }
 
-/** One row per case: [date, src (department), pid, text, sex, birthdate, address_type]. */
 function mh_disease_load_cases(mysqli $conn, string $from, string $to)
 {
     $rows = [];
@@ -468,7 +396,6 @@ function mh_disease_load_cases(mysqli $conn, string $from, string $to)
         while ($res && ($r = $res->fetch_assoc())) { $rows[] = $r; }
         $st->close();
     }
-    // Dental visits: the dentist's diagnosis (column added by the dental module; skipped quietly if it does not exist yet).
     $st = @$conn->prepare("SELECT dr.visit_date AS d, 'Dental Clinic' AS src, p.id AS pid,
                                  COALESCE(NULLIF(TRIM(dr.diagnosis), ''), NULLIF(TRIM(dr.chief_complaint), '')) AS txt,
                                  p.sex, p.birthdate, p.address_type
@@ -496,9 +423,6 @@ function mh_disease_load_cases(mysqli $conn, string $from, string $to)
     return $rows;
 }
 
-/**
- * @return array{conditions:array,unclassified:array,week_labels:array,cases_30d:int,spikes:int,rising:int,today:string}
- */
 function mh_disease_compute(mysqli $conn, ?string $today = null)
 {
     $today = $today ?: date('Y-m-d');
@@ -528,7 +452,6 @@ function mh_disease_compute(mysqli $conn, ?string $today = null)
         $bucket = ($W - 1) - intdiv($days, 7);
         $txt = trim((string) $case['txt']);
 
-        // 1. Strict garbage / test data filtering (Requirement 1)
         if (!mh_disease_is_valid_diagnosis($txt)) {
             continue;
         }
@@ -537,7 +460,6 @@ function mh_disease_compute(mysqli $conn, ?string $today = null)
         if ($recent) { $cases_30d++; }
 
         $matched = false;
-        // Direct keyword match
         foreach ($conds as &$c) {
             if ($c['regex'] && preg_match($c['regex'], $txt)) {
                 $matched = true;
@@ -553,7 +475,6 @@ function mh_disease_compute(mysqli $conn, ?string $today = null)
         }
         unset($c);
 
-        // 2. Normalized AI / synonym match (Tagalog, typos, abbreviations)
         if (!$matched) {
             $augmentedTxt = mh_disease_normalize_text($txt, $conn);
             foreach ($conds as &$c) {
@@ -573,7 +494,6 @@ function mh_disease_compute(mysqli $conn, ?string $today = null)
             unset($c);
         }
 
-        // 3. Track unclassified genuine clinical diagnoses only
         if (!$matched && $recent) {
             $std = mh_disease_standardize_diagnosis($txt, $conn);
             $key = $std['name'] ?: mb_substr(preg_replace('/\s+/u', ' ', mb_strtolower($txt)), 0, 60);
@@ -620,7 +540,6 @@ function mh_disease_compute(mysqli $conn, ?string $today = null)
     ];
 }
 
-/** Tiny inline bar sparkline (no JS, no external library). */
 function mh_disease_sparkline(array $values, string $color = '#4ca1af', int $w = 120, int $h = 30)
 {
     $max = max(1, max($values)); $n = count($values); $bw = $w / $n;
@@ -634,11 +553,6 @@ function mh_disease_sparkline(array $values, string $color = '#4ca1af', int $w =
 }
 
 
-/**
- * Overview of a chosen period (Step 8): totals, change against the previous period of the same length,
- * and breakdowns by department, sex, age group, area, week, tracked condition and other diagnoses.
- * Counts only - no names leave this function.
- */
 function mh_disease_overview(mysqli $conn, string $from, string $to)
 {
     $d1 = new DateTime($from); $d2 = new DateTime($to);
@@ -660,7 +574,6 @@ function mh_disease_overview(mysqli $conn, string $from, string $to)
     $by_source = []; $by_sex = []; $by_age = ['0-4' => 0, '5-14' => 0, '15-24' => 0, '25-59' => 0, '60+' => 0, 'Unknown' => 0];
     $by_area = []; $by_week = []; $by_cond = []; $other = []; $patients = [];
 
-    // every week of the period, even empty ones, so the trend has no gaps
     $cur = new DateTime(date('Y-m-d', strtotime('monday this week', strtotime($from))));
     $endW = date('Y-m-d', strtotime('monday this week', strtotime($to)));
     while ($cur->format('Y-m-d') <= $endW) { $by_week[$cur->format('Y-m-d')] = 0; $cur->modify('+7 days'); }
@@ -668,7 +581,6 @@ function mh_disease_overview(mysqli $conn, string $from, string $to)
     $validCaseCount = 0;
     foreach ($casesRaw as $r) {
         $rawTxt = trim((string) ($r['txt'] ?? ''));
-        // Filter out non-medical test entries completely from statistical tracking
         if (!mh_disease_is_valid_diagnosis($rawTxt)) {
             continue;
         }
@@ -717,11 +629,6 @@ function mh_disease_overview(mysqli $conn, string $from, string $to)
     ];
 }
 
-/**
- * Returns available AI configuration (Groq or Gemini) from system_settings.
- *
- * @return array{provider:string,api_key:string,model:string}
- */
 function mh_disease_get_ai_config(): array
 {
     if (function_exists('mh_get_ai_config')) {
@@ -752,13 +659,6 @@ function mh_disease_ai_call(string $prompt, array $config, int $timeout = 8): ?s
     return null;
 }
 
-/**
- * Intelligent rule-based fallback summary when no AI keys are configured or API call times out.
- *
- * @param array $stats
- * @param array $ov
- * @return string
- */
 function mh_disease_generate_rule_based_summary(array $stats, array $ov): string
 {
     $total = (int) ($ov['total'] ?? 0);
@@ -769,7 +669,6 @@ function mh_disease_generate_rule_based_summary(array $stats, array $ov): string
         return "Surveillance Analysis: No patient illnesses recorded for the selected {$ov['days']}-day surveillance window. Community baseline remains quiet with zero epidemic alerts active.";
     }
 
-    // Top condition
     $topCond = 'clinical consultations';
     $topCount = 0;
     $topPct = 0;
@@ -779,7 +678,6 @@ function mh_disease_generate_rule_based_summary(array $stats, array $ov): string
         $topPct   = $total > 0 ? round(($topCount / $total) * 100) : 0;
     }
 
-    // Top area
     $topArea = 'Marick Subdivision residents';
     if (!empty($ov['by_area'])) {
         $ar = (string) key($ov['by_area']);
@@ -808,16 +706,6 @@ function mh_disease_generate_rule_based_summary(array $stats, array $ov): string
     return "{$sentence1} {$sentence2} {$sentence3}";
 }
 
-/**
- * Generates an executive summary for the Health Head using AI (Groq / Gemini)
- * or the intelligent surveillance fallback engine. Caches results to avoid unnecessary latency.
- *
- * @param mysqli $conn
- * @param array $stats Output of mh_disease_compute()
- * @param array $ov Output of mh_disease_overview()
- * @param bool $force Force regeneration, bypassing cache
- * @return array{summary:string,engine:string,engine_label:string,generated_at:string,cached:bool}
- */
 function mh_disease_ai_summary(mysqli $conn, array $stats, array $ov, bool $force = false): array
 {
     $hashData = [
@@ -831,7 +719,6 @@ function mh_disease_ai_summary(mysqli $conn, array $stats, array $ov, bool $forc
     ];
     $dataHash = hash('sha256', json_encode($hashData));
 
-    // 1. Check cache (unless forced)
     if (!$force) {
         $cachedRaw = '';
         if (function_exists('mh_setting')) {
@@ -840,7 +727,6 @@ function mh_disease_ai_summary(mysqli $conn, array $stats, array $ov, bool $forc
         if ($cachedRaw !== '') {
             $cached = json_decode($cachedRaw, true);
             if (is_array($cached) && !empty($cached['summary']) && ($cached['hash'] ?? '') === $dataHash) {
-                // If generated in the last 2 hours
                 if ((time() - (int) ($cached['time'] ?? 0)) < 7200) {
                     return [
                         'summary'      => (string) $cached['summary'],
@@ -854,7 +740,6 @@ function mh_disease_ai_summary(mysqli $conn, array $stats, array $ov, bool $forc
         }
     }
 
-    // 2. Prepare AI prompt
     $aiCfg = mh_disease_get_ai_config();
     $summary = null;
     $engineLabel = 'Surveillance Rules Engine';
@@ -898,12 +783,10 @@ function mh_disease_ai_summary(mysqli $conn, array $stats, array $ov, bool $forc
         }
     }
 
-    // Fallback if AI was unavailable
     if ($summary === null || $summary === '') {
         $summary = mh_disease_generate_rule_based_summary($stats, $ov);
     }
 
-    // 3. Save cache
     $cachePayload = json_encode([
         'summary'      => $summary,
         'engine'       => $engineKey,

@@ -257,7 +257,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (count($teeth) !== count(array_unique($tokens))) { $visit_fail('Tooth No. must be valid tooth numbers (for example 16, 17 or 55).'); }
         list($procRows, $procErrs) = mh_dental_clean_proc_rows($_POST);
         if ($procErrs) { $visit_fail(implode(' ', $procErrs)); }
-        // Only the procedure-history rows were filled in: the first row becomes the visit record itself.
         if (!$routine && !$other && !$teeth && $old['notes'] === '' && $procRows) {
             $first = array_shift($procRows);
             $old['date'] = $first['date']; $routine = $first['routine']; $other = $first['other'];
@@ -299,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                   AND (department LIKE '%Dental%' OR department = 'Dental Clinic')");
             $st->bind_param('i', $pid); $st->execute(); $st->close();
         }
-        if ($old['route'] && $old['rx'] !== '') { $msg .= mh_route_to_dispensing($conn, $pid); }   // REQ38: route to the encoder
+        if ($old['route'] && $old['rx'] !== '') { $msg .= mh_route_to_dispensing($conn, $pid); }
         if ($next !== null) {
             $sms = mh_schedule_followup_sms($conn, $pid, $next, 'Dental Clinic', $rec_id);
             if (!empty($sms['queued'])) { $msg .= ' ' . (int) $sms['queued'] . ' SMS reminder(s) queued for the follow-up.'; }

@@ -63,13 +63,11 @@ if (!function_exists('mh_layout_open')) {
 
         include __DIR__ . '/../modal_assets.php';
 
-        // Pages pass 'late_styles' to mh_layout_head(); accept it there (stored in the state) or here, without duplicates.
         $late = array_values(array_unique(array_merge((array) ($state['late_styles'] ?? []), (array) ($o['late_styles'] ?? []))));
         foreach ($late as $href) {
             echo '<link rel="stylesheet" href="../assets/' . mh_h($href) . '?v=' . mh_layout_version($href) . "\">\n";
         }
 
-        // Universal print stylesheet (screen is untouched): black-and-white report layout for every module.
         echo '<link rel="stylesheet" media="print" href="../assets/css/print.css?v=' . mh_layout_version('css/print.css') . "\">\n";
 
         echo '<script src="../assets/js/shell.js?v=' . mh_layout_version('js/shell.js') . "\" defer></script>\n";
@@ -103,7 +101,6 @@ if (!function_exists('mh_layout_open')) {
         echo "<div class=\"main-content\">\n";
         include __DIR__ . '/topbar.php';
 
-        // Official report header: hidden on screen, printed at the top of every page that uses this layout.
         mh_print_header();
     }
 }

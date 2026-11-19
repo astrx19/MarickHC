@@ -1,8 +1,3 @@
--- ==========================================================
--- MARICK HEALTH CENTER - ULTIMATE MASTER DATABASE SCHEMA V3.1
--- Clean, consolidated deployment script (No duplicates/overlaps)
--- ==========================================================
-
 CREATE DATABASE IF NOT EXISTS `marick_health_db`;
 USE `marick_health_db`;
 
@@ -10,9 +5,6 @@ SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
 
--- --------------------------------------------------------
--- 1. STAFF / USERS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `staff`;
 CREATE TABLE `staff` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -29,9 +21,6 @@ CREATE TABLE `staff` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 2. PATIENTS TABLE 
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `patients`;
 CREATE TABLE `patients` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -52,9 +41,6 @@ CREATE TABLE `patients` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 3. APPOINTMENTS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `appointments`;
 CREATE TABLE `appointments` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -69,9 +55,6 @@ CREATE TABLE `appointments` (
   FOREIGN KEY (`patient_id`) REFERENCES `patients`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 4. GENERAL CONSULTATIONS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `consultations`;
 CREATE TABLE `consultations` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -91,9 +74,6 @@ CREATE TABLE `consultations` (
     FOREIGN KEY (`doctor_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 5. DENTAL RECORDS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `dental_records`;
 CREATE TABLE `dental_records` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -108,9 +88,6 @@ CREATE TABLE `dental_records` (
     FOREIGN KEY (`dentist_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 6. MATERNAL & PRENATAL RECORDS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `maternal_records`;
 CREATE TABLE `maternal_records` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -138,9 +115,6 @@ CREATE TABLE `maternal_records` (
     FOREIGN KEY (`midwife_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 7. CHILD IMMUNIZATION MASTER RECORDS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `child_consultation_logs`;
 DROP TABLE IF EXISTS `child_immunization_records`;
 CREATE TABLE `child_immunization_records` (
@@ -167,7 +141,6 @@ CREATE TABLE `child_immunization_records` (
     `attending_physician` VARCHAR(255) NULL,
     `no_of_children` INT NULL,
     `contact_no` VARCHAR(50) NULL,
-    -- Specific Immunization Dates
     `bcg_date` DATE NULL,
     `hep_b_24hrs_date` DATE NULL,
     `penta_opv_3_date` DATE NULL,
@@ -184,9 +157,6 @@ CREATE TABLE `child_immunization_records` (
     FOREIGN KEY (`attending_staff_id`) REFERENCES `staff`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 8. GENERAL IMMUNIZATION LOGS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `immunization_records`;
 CREATE TABLE `immunization_records` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -201,9 +171,6 @@ CREATE TABLE `immunization_records` (
     FOREIGN KEY (`health_worker_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 9. CHILD CONSULTATION LOGS TABLE
--- --------------------------------------------------------
 CREATE TABLE `child_consultation_logs` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `child_record_id` INT NOT NULL,
@@ -217,9 +184,6 @@ CREATE TABLE `child_consultation_logs` (
     FOREIGN KEY (`child_record_id`) REFERENCES `child_immunization_records`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 10. INVENTORY MANAGEMENT TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `inventory`;
 CREATE TABLE `inventory` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -230,11 +194,6 @@ CREATE TABLE `inventory` (
     `batch_number` VARCHAR(50) NULL COMMENT 'Manufacturer lot / batch number',
     `quantity` INT NOT NULL DEFAULT 0 COMMENT 'Remaining stock in base units (tablets, mL, pcs, etc.)',
     `unit` VARCHAR(20) NOT NULL COMMENT 'Base unit label, e.g. tablet, capsule, mL, piece',
-    -- ---------------------------------------------------------------
-    -- Multi-unit packaging breakdown (Box -> Pack/Blister/Banig -> Base Unit).
-    -- All NULL/0 means "no packaging structure recorded" and the item is
-    -- tracked purely in base units (e.g. a vial, a single piece of equipment).
-    -- ---------------------------------------------------------------
     `units_per_pack` INT NULL DEFAULT NULL COMMENT 'Base units per intermediate pack (e.g. tablets per blister/banig)',
     `pack_label` VARCHAR(40) NULL DEFAULT 'Blister Pack' COMMENT 'Display label for the intermediate pack, e.g. Blister Pack, Banig, Vial',
     `packs_per_box` INT NULL DEFAULT NULL COMMENT 'Intermediate packs per box/carton',
@@ -245,9 +204,6 @@ CREATE TABLE `inventory` (
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 11. DISPENSATIONS LOG TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `dispensations`;
 CREATE TABLE `dispensations` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -262,9 +218,6 @@ CREATE TABLE `dispensations` (
     FOREIGN KEY (`dispensed_by`) REFERENCES `staff`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 12. HOLIDAYS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `holidays`;
 CREATE TABLE `holidays` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -272,9 +225,6 @@ CREATE TABLE `holidays` (
     `description` VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- --------------------------------------------------------
--- 13. SYSTEM ACTIVITY LOGS TABLE
--- --------------------------------------------------------
 DROP TABLE IF EXISTS `activity_logs`;
 CREATE TABLE `activity_logs` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

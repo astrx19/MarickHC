@@ -1,7 +1,7 @@
 <?php 
 session_start();
 require_once __DIR__ . '/includes/icons.php';
-require_once __DIR__ . '/config/database.php';   // loads DB-backed branding ($system_name)
+require_once __DIR__ . '/config/database.php';
 
 $system_name = $system_name ?? mh_setting('system_name');
 ?>
@@ -163,7 +163,6 @@ $system_name = $system_name ?? mh_setting('system_name');
             <?php endif; ?>
 
             if (errorMessage !== "") {
-                // Unified alert modal (assets/js/custom_modal.js) - runs once the deferred scripts are ready.
                 document.addEventListener('DOMContentLoaded', function () {
                     mh_alert(errorMessage, 'Login Failed', 'danger').then(function () {
                         window.history.replaceState(null, null, window.location.pathname);

@@ -32,8 +32,6 @@ if ((isset($_POST['add_item']) || isset($_POST['edit_item']) || isset($_POST['up
 
 function mh_inv_read_item_fields(): array
 {
-    // Auto-correct (server side, in case the browser-side fixes are bypassed):
-    // collapse repeated spaces and keep packaging numbers in a sane range.
     $t = function ($k) { return trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST[$k] ?? ''))); };
     $nullable_int = function ($k) {
         if (!isset($_POST[$k]) || $_POST[$k] === '') { return null; }
@@ -709,8 +707,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         const MH_CAN_EDIT_STOCK = <?php echo $can_edit_stock ? 'true' : 'false'; ?>;   
         const MH_CAN_DISPENSE = <?php echo mh_has_permission('dispense_medicine') ? 'true' : 'false'; ?>;
         
-           // DATA (rendered by PHP once on page load)
-           
         const TODAY_STR   = "<?php echo $today; ?>";
         const CATEGORIES  = <?php echo $js_categories; ?>;
         const RAW_ITEMS   = <?php echo $js_inventory; ?>;
@@ -729,7 +725,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         const expandedGroups = new Set();
 
        
-        // Helpers
         function escapeHtml(str) {
             if (str === null || str === undefined) return '';
             return String(str)
@@ -1218,8 +1213,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             const input = document.getElementById('trackingCodeInput');
             if(!cat) { input.value = ''; applyCategoryMode(''); return; }
             
-            // Single-letter prefix = first letter of the category, except Medical Supply -> 'S'
-            // so it does not collide with Medicine ('M').
             const prefix = /^medical\s+suppl/i.test(cat.trim()) ? 'S' : cat.trim().charAt(0).toUpperCase();
             const today = new Date();
             const yyyy = today.getFullYear();
@@ -1295,9 +1288,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         function openModal(id) { document.getElementById(id).classList.add('active'); }
         function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-        // ---- Auto-correct for typos / mistypes -------------------------------------------
-        // Inputs opt in with data-autofix="name|unit|label|batch|int". Fixes run when the field loses focus
-        // (names, units, labels, batch no.) or as you type (numbers). Anything changed is shown briefly.
         var AutoFix = (function () {
             var UNIT_TOKENS = ['mg', 'mcg', 'g', 'kg', 'ml', 'l', 'cc', 'iu', 'pcs'];
             var SMALL_WORDS = ['of', 'and', 'with', 'for', 'in', 'per', 'to', 'the'];
@@ -1308,15 +1298,14 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
 
             function fixName(v) {
                 v = collapse(v);
-                // "500 MG" / "500Mg" -> "500mg"; "10 iu" -> "10IU"
                 v = v.replace(/(\d)\s*(mg|mcg|g|kg|ml|l|cc|iu)\b/gi, function (_, n, u) { u = u.toLowerCase(); return n + (u === 'iu' ? 'IU' : u); });
                 return v.split(' ').map(function (w, i) {
                     var lw = w.toLowerCase();
                     if (UNIT_TOKENS.indexOf(lw) !== -1) { return lw; }
-                    if (!/^[A-Za-z]+$/.test(w)) { return w; }               // digits, hyphens, brackets: leave alone
+                    if (!/^[A-Za-z]+$/.test(w)) { return w; }
                     if (SMALL_WORDS.indexOf(lw) !== -1 && i > 0) { return lw; }
-                    if (w === lw) { return w.charAt(0).toUpperCase() + w.slice(1); }          // amoxicillin -> Amoxicillin
-                    if (w === w.toUpperCase() && w.length >= 5) { return w.charAt(0) + lw.slice(1); }   // AMOXICILLIN -> Amoxicillin (ORS, BCG stay)
+                    if (w === lw) { return w.charAt(0).toUpperCase() + w.slice(1); }
+                    if (w === w.toUpperCase() && w.length >= 5) { return w.charAt(0) + lw.slice(1); }
                     return w;
                 }).join(' ');
             }
@@ -1337,7 +1326,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 clearTimeout(n._t); n._t = setTimeout(function () { n.remove(); }, 5000);
             }
 
-            // ---- near-duplicate item names (Add Batch only) ----
             function key(v) { return v.toLowerCase().replace(/[^a-z0-9]/g, ''); }
             function nums(v) { return (v.match(/\d+(\.\d+)?/g) || []).join(','); }
             function lev(a, b) {
@@ -1358,10 +1346,9 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 var v = input.value; if (!v) { return; }
                 var names = knownNames(), k = key(v), best = null, bestD = 99;
                 for (var i = 0; i < names.length; i++) {
-                    if (names[i] === v) { return; }                         // exact existing item: nothing to fix
+                    if (names[i] === v) { return; }
                     var nk = key(names[i]);
-                    if (nk === k) { var old = v; input.value = names[i]; flash(input, old, names[i]); return; }   // same name, different spelling of spaces/case
-                    // Never suggest across different strengths: "Paracetamol 250mg" is not a typo of "Paracetamol 500mg".
+                    if (nk === k) { var old = v; input.value = names[i]; flash(input, old, names[i]); return; }
                     if (nums(names[i]) !== nums(v)) { continue; }
                     var a = k.replace(/\d/g, ''), b = nk.replace(/\d/g, '');
                     var dist = lev(a, b), limit = a.length >= 9 ? 2 : (a.length >= 5 ? 1 : 0);
@@ -1390,7 +1377,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             }
             function onKeydown(e) {
                 var t = e.target;
-                if (t && t.dataset && t.dataset.autofix === 'int' && ['-', '+', 'e', 'E', '.', ','].indexOf(e.key) !== -1) { e.preventDefault(); }   // whole, positive numbers only
+                if (t && t.dataset && t.dataset.autofix === 'int' && ['-', '+', 'e', 'E', '.', ','].indexOf(e.key) !== -1) { e.preventDefault(); }
             }
             function onInput(e) {
                 var t = e.target;
@@ -1399,7 +1386,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 var n = parseInt(raw, 10), max = parseInt(t.dataset.max, 10) || 0;
                 if (isNaN(n) || n < 0) { t.value = ''; return; }
                 if (max && n > max) { t.value = max; var nb = noteBox(t); nb.className = 'autofix-note suggest'; nb.textContent = 'Limited to ' + max.toLocaleString() + '. Check for an extra digit.'; clearTimeout(nb._t); nb._t = setTimeout(function () { nb.remove(); }, 5000); }
-                else if (String(n) !== raw) { t.value = n; }                 // "007" -> "7"
+                else if (String(n) !== raw) { t.value = n; }
             }
             function onIntBlur(e) {
                 var t = e.target;
@@ -1408,13 +1395,10 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             document.addEventListener('focusout', onBlur);
             document.addEventListener('focusout', onIntBlur);
             document.addEventListener('keydown', onKeydown);
-            document.addEventListener('input', onInput, true);   // capture: runs before the oninput="calcAddTotal()" handlers
+            document.addEventListener('input', onInput, true);
             return {fixName: fixName, fixUnit: fixUnit, fixLabel: fixLabel, fixBatch: fixBatch};
         })();
 
-        // ---- Auto-suggest existing items (Add Batch -> Generic Name) -----------------------
-        // Type a few letters of a medicine / vaccine / supply / equipment (or its brand) and pick it from the list:
-        // name, category, unit and packing are filled from that item's most recent batch.
         var ItemSuggest = (function () {
             var input, list, active = -1, shown = [];
 
@@ -1429,7 +1413,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 return d[m][n];
             }
 
-            // One entry per item name; packing and brand come from its newest batch (highest id) that has them.
             function catalog() {
                 var map = {};
                 (typeof RAW_ITEMS !== 'undefined' ? RAW_ITEMS : []).forEach(function (r) {
@@ -1448,8 +1431,8 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 var words = e.name.toLowerCase().split(/[^a-z0-9]+/), i;
                 for (i = 0; i < words.length; i++) { if (words[i].indexOf(q) === 0) { return 1; } }
                 if (e.key.indexOf(q) !== -1) { return 2; }
-                if (Object.keys(e.brands).some(function (bk) { return bk.indexOf(q) !== -1; })) { return 3; }   // any brand ever received
-                if (q.length >= 4) {                                   // typo tolerance: "amoxicilin" still finds "Amoxicillin"
+                if (Object.keys(e.brands).some(function (bk) { return bk.indexOf(q) !== -1; })) { return 3; }
+                if (q.length >= 4) {
                     var tol = q.length >= 8 ? 2 : 1;
                     if (dist(q, e.key.slice(0, q.length)) <= tol) { return 4; }
                     for (i = 0; i < words.length; i++) { if (words[i].length >= 4 && dist(q, words[i].slice(0, q.length)) <= tol) { return 4; } }
@@ -1480,7 +1463,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                     var meta = [e.category || 'Uncategorized', fmtNum(e.stock) + ' ' + (e.unit || 'pcs') + ' in stock', e.batches + (e.batches === 1 ? ' batch' : ' batches')];
                     var bl = Object.keys(e.brands).map(function (k) { return e.brands[k]; }); if (bl.length) { meta.push('Brand: ' + bl.slice(0, 3).join(', ')); }
                     d.innerHTML = '<div class="s-name">' + escapeHtml(e.name) + '</div><div class="s-meta">' + escapeHtml(meta.join(' · ')) + '</div>';
-                    d.addEventListener('mousedown', function (ev) { ev.preventDefault(); choose(e); });     // keep focus so the field does not blur first
+                    d.addEventListener('mousedown', function (ev) { ev.preventDefault(); choose(e); });
                     d.addEventListener('mousemove', function () { setActive(i); });
                     list.appendChild(d);
                 });
@@ -1525,12 +1508,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             return {search: search};
         })();
 
-        // ---- Category-driven quantity fields (Add Batch) ---------------------------------
-        // The Category decides which fields appear (and what gets posted):
-        //   Medicine                -> Boxes x Blisters per Box x Tablets per Blister (+ Extra Blisters, Loose pcs)
-        //   Medical Supply/Vaccine  -> Boxes x Pieces per Box (+ Loose pcs)
-        //   Equipment / Inventory   -> one Quantity field
-        // Disabled inputs are not submitted, so units_per_pack / packs_per_box stay NULL when they do not apply.
         function plural(label) { return label + (/(s|x|ch|sh)$/i.test(label) ? 'es' : 's'); }
         function fmtNum(n) { return Number(n).toLocaleString(); }
         function nounCount(n, one, many) { return fmtNum(n) + ' ' + (n === 1 ? one : many); }
@@ -1543,14 +1520,14 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             return 'single';
         }
         function addUnit() { return (document.getElementById('unitInput').value || '').trim() || 'pcs'; }
-        function addUnitWord() { var u = addUnit(); return (u === 'pcs' || u === 'tablets') ? 'tabs' : u; }   // "10 tabs" in the sentence
+        function addUnitWord() { var u = addUnit(); return (u === 'pcs' || u === 'tablets') ? 'tabs' : u; }
 
         function show(id, on) { var el = document.getElementById(id); if (el) { el.style.display = on ? '' : 'none'; } }
         function enable(id, on) { var el = document.getElementById(id); if (el) { el.disabled = !on; } }
 
         function setAddMode(mode) {
             var prev = document.getElementById('add_mode').value;
-            if (prev !== '' && prev !== mode) {          // different category type = different meaning of every number: start clean
+            if (prev !== '' && prev !== mode) {
                 ['add_packs_per_box', 'add_units_per_pack', 'add_box_qty', 'add_pack_qty', 'add_loose_qty'].forEach(function (id) { document.getElementById(id).value = ''; });
             }
             document.getElementById('add_mode').value = mode;
@@ -1562,7 +1539,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             enable('add_packs_per_box', blister); enable('add_units_per_pack', blister || boxes);
             enable('add_pack_label', blister || boxes); enable('add_box_label', blister);
             document.getElementById('add_box_label').value = 'Box';
-            document.getElementById('add_pack_label').value = blister ? 'Blister' : 'Box';   // supplies: the "pack" is the box itself
+            document.getElementById('add_pack_label').value = blister ? 'Blister' : 'Box';
             document.getElementById('add_cfg_row').style.gridTemplateColumns = blister ? '1fr 1fr' : '1fr';
             document.getElementById('add_qty_row').style.gridTemplateColumns = blister ? '1fr 1fr 1fr' : (boxes ? '1fr 1fr' : '1fr');
             syncAddLabels();
@@ -1581,10 +1558,10 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
 
         function calcAddTotal() {
             var mode = document.getElementById('add_mode').value, unit = addUnit(), tabs = addUnitWord();
-            var perBox  = mode === 'blister' ? (parseInt(document.getElementById('add_packs_per_box').value) || 0) : 0;   // blisters per box
-            var perPack = parseInt(document.getElementById('add_units_per_pack').value) || 0;                          // tablets per blister / pieces per box
+            var perBox  = mode === 'blister' ? (parseInt(document.getElementById('add_packs_per_box').value) || 0) : 0;
+            var perPack = parseInt(document.getElementById('add_units_per_pack').value) || 0;
             var boxes   = mode === 'single' || mode === '' ? 0 : (parseInt(document.getElementById('add_box_qty').value) || 0);
-            var xb      = mode === 'blister' ? (parseInt(document.getElementById('add_pack_qty').value) || 0) : 0;      // extra blisters
+            var xb      = mode === 'blister' ? (parseInt(document.getElementById('add_pack_qty').value) || 0) : 0;
             var loose   = parseInt(document.getElementById('add_loose_qty').value) || 0;
             var total = loose, parts = [], hint = [], warn = [];
 
@@ -1655,7 +1632,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 generateTrackingCode();
             }
             
-            // Last-batch prefill: reuse the packing of an existing batch of this item.
             if (prefill.units_per_pack) document.getElementById('add_units_per_pack').value = prefill.units_per_pack;
             if (prefill.packs_per_box) document.getElementById('add_packs_per_box').value = prefill.packs_per_box;
             syncAddLabels();

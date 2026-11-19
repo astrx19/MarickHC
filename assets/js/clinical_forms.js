@@ -289,9 +289,6 @@
         if (form && form.closest && form.closest('.cf-modal')) { form.setAttribute('data-cf-dirty', '1'); }
     });
 
-    /* Age from birthdate: any input with data-cf-age-from="<birthdate field name>" is filled automatically
-       (typing, OCR auto-fill and restored values all fire an 'input' event on the birthdate). The age stays
-       editable for parents whose birthdate is unknown; clearing the birthdate only clears an auto-filled age. */
     function ageFromIso(iso) {
         var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
         if (!m || +m[1] < 1900) { return null; }
@@ -320,7 +317,7 @@
         var t = e.target;
         if (!t || !t.tagName) { return; }
         if (t.type === 'date') { syncAges(t); }
-        else if (t.hasAttribute('data-cf-age-from')) { t.removeAttribute('data-cf-age-auto'); }   // staff typed it: keep their value
+        else if (t.hasAttribute('data-cf-age-from')) { t.removeAttribute('data-cf-age-auto'); }
     });
 
     function init() {

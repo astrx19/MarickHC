@@ -14,7 +14,7 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
 $is_date = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) !== false; };
 $from   = $is_date($_GET['from'] ?? '') ? $_GET['from'] : '';
 $to     = $is_date($_GET['to'] ?? '') ? $_GET['to'] : '';
-if ($from !== '' && $to !== '' && $from > $to) { list($from, $to) = [$to, $from]; }   // typed backwards: just swap
+if ($from !== '' && $to !== '' && $from > $to) { list($from, $to) = [$to, $from]; }
 $action = trim((string) ($_GET['action'] ?? ''));
 $uid    = (int) ($_GET['user'] ?? 0);
 $q      = trim((string) ($_GET['q'] ?? ''));
@@ -74,7 +74,6 @@ $base = ['from' => $from, 'to' => $to, 'action' => $action, 'user' => $uid ?: ''
 $url = function (array $extra = []) use ($base) { return '?' . http_build_query(array_filter(array_merge($base, $extra), function ($v) { return $v !== '' && $v !== null && $v !== 0; })); };
 
 if ($print) {
-    // Printing the audit trail is itself an auditable act.
     logActivity($conn, (int) $_SESSION['user_id'], (string) ($_SESSION['role'] ?? ''), 'Printed System Logs',
         'Printed ' . count($logs) . ' log entr' . (count($logs) === 1 ? 'y' : 'ies') . ' (' . $range_label . ').');
 }
@@ -109,7 +108,6 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
         .lg-pager a, .lg-pager span.cur { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color, #cbd5e1); text-decoration: none; color: var(--text-main, #334155); font-weight: 700; }
         .lg-pager span.cur { background: var(--primary, #4ca1af); color: #fff; border-color: var(--primary, #4ca1af); }
         .lg-pager .off { opacity: .4; pointer-events: none; }
-        /* print layout (also used by ?print=1) */
         .pr-head { margin: 0 0 14px; }
         .pr-head h1 { margin: 0 0 4px; font-size: 1.4rem; }
         .pr-head p { margin: 2px 0; font-size: .9rem; color: #475569; }
@@ -120,7 +118,6 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
     </style>
 <?php if ($print): mh_layout_open(['shell' => false, 'body_class' => 'print-view', 'body_attr' => 'style="background:#fff; color:#000; display:block; padding:24px;"']); ?>
     <?php
-    // Universal report header (clinic, title, date/time, printed by, role) + the active filters as a note line.
     $print_note = 'Period: ' . $range_label
         . ($action !== '' ? ' | Action: ' . $action : '')
         . ($user_label !== '' ? ' | User: ' . $user_label : '')

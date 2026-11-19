@@ -142,7 +142,6 @@ function mh_queue_signature(mysqli $conn)
 
 function mh_queue_active_statuses()
 {
-    // Paper Fig. 60 lifecycle: Waiting -> Serving (staff opened the patient) -> Completed (record saved).
     return ['Waiting', 'Serving', 'Approved'];
 }
 
@@ -240,11 +239,6 @@ function mh_queue_open_context(mysqli $conn, $aptId, $module = null, $patientHin
     return $row;
 }
 
-/**
- * Paper REQ38 / consultation->prescription->dispensing flow: sends the patient to the Dispensing queue
- * (the clinic department whose module is Medicine Inventory / Dispensing) so the Encoder can dispense.
- * Never throws and never blocks the clinical save: returns a short sentence to append to the success message.
- */
 function mh_route_to_dispensing(mysqli $conn, $patientId)
 {
     try {

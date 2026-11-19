@@ -7,13 +7,11 @@ require_once __DIR__ . '/../includes/password_change_helpers.php';
 $system_name = $system_name ?? mh_setting('system_name');
 
 require_once __DIR__ . '/../includes/settings_helper.php';
-$marick_streets = mh_streets($conn);   // Streets / Areas / Purok masterlist (database)
+$marick_streets = mh_streets($conn);
 
 $patient_id = (int)$_SESSION['patient_id'];
 $success_msg = ''; $error_msg = '';
 
-/* Figure 58: "upload Display Photo". Stored as a file (assets/images/patient_pics/<id>.jpg), like staff photos:
-   the ERD's patients table has no photo column, so none is added. Re-encoded with GD when available. */
 if (isset($_POST['upload_photo'])) {
     $f = $_FILES['profile_pic'] ?? null;
     if (!$f || (int) $f['error'] === UPLOAD_ERR_NO_FILE) {
@@ -68,12 +66,11 @@ if (isset($_POST['update_profile'])) {
         if (mh_is_marick_resident($address_type)) {
             $house  = trim($_POST['house_number'] ?? '');
             $street = trim($_POST['marick_street'] ?? '');
-            $address = mh_build_resident_address($house, $street);   // suffix comes from System Settings
+            $address = mh_build_resident_address($house, $street);
         } else {
             $address = trim($_POST['outsider_address'] ?? '');
         }
 
-    // ---- Password section FIRST: if it is wrong, nothing at all is changed ----
     $current_password = (string) ($_POST['current_password'] ?? '');
     $new_password     = (string) ($_POST['new_password'] ?? '');
     $confirm_password = (string) ($_POST['confirm_password'] ?? '');
@@ -103,14 +100,13 @@ if (isset($_POST['update_profile'])) {
                 $pw->execute();
                 $pw->close();
                 mh_pw_change_clear('patient:' . $patient_id);
-                // Sign out every OTHER device that still has the old password's session open.
                 if (function_exists('mh_ss_issue')) { mh_ss_issue('patient', $patient_id); }
                 $success_msg = 'Profile and password updated successfully!';
             } else {
                 $success_msg = 'Profile updated successfully!';
             }
         } else {
-            error_log('patient_edit_profile update failed: ' . $conn->error);   // never show database errors to patients
+            error_log('patient_edit_profile update failed: ' . $conn->error);
             $error_msg = 'We could not save your profile right now. Please try again.';
             $stmt->close();
         }
@@ -230,8 +226,6 @@ mh_pp_layout_start([
 </div>
 
 <script>
-    // The current password becomes required the moment a new one is typed (native validation runs
-    // before the "Save profile?" confirmation, so people are told straight away).
     (function () {
         var cur = document.getElementById('curPw'), nw = document.getElementById('newPw'), cf = document.getElementById('cfmPw'), star = document.getElementById('curPwStar');
         function sync() {

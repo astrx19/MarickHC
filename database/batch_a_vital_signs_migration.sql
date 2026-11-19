@@ -1,6 +1,3 @@
--- BATCH A / G1 - Restore the "Vital Signs Entry" permission (Paper REQ28: BHW records vitals before the
--- patient sees medical staff). database/task4b_migration.sql had deleted it, which locked BHWs out of
--- admin/vital_signs.php. Idempotent. (The app also self-heals this on first request.)
 CREATE TABLE IF NOT EXISTS vital_signs (
   id INT NOT NULL AUTO_INCREMENT,
   patient_id INT NOT NULL,

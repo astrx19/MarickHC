@@ -167,7 +167,6 @@
         });
     }
 
-    /* ---- the center's paper Dental Record: header, patient block, procedure history ---- */
     var SHEET_IDS = { family_no: 'dvsFamily', others: 'dvsOthers', member_no: 'dvsMember', name: 'dvsName', birthday: 'dvsBirthday', address: 'dvsAddress', age: 'dvsAge', sex: 'dvsSex', contact: 'dvsContact' };
     function fillSheet(sh) {
         Object.keys(SHEET_IDS).forEach(function (k) {

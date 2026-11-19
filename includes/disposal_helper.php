@@ -1,18 +1,7 @@
 <?php
-/**
- * Expired / damaged medicine disposal (Step 7).
- *
- *   mh_disp_dispose($conn, $batchId, $input, $staffId)  -> [ok, error|null, newRemainingQty]
- *   mh_disp_history($conn, $filters)                    -> rows for the Disposal History page
- *
- * A disposal removes quantity from ONE inventory batch (a batch that reaches 0 is archived) and writes a permanent,
- * self-contained row to `inventory_disposals` (item details are copied, so the record stays readable after the batch is
- * edited or archived). Compatible with PHP 7.2+.
- */
 
 if (!function_exists('mh_disp_forms')) {
 
-    /** The three kinds of stock a disposal can concern. */
     function mh_disp_forms()
     {
         return ['liquid' => 'Liquid (syrup, drops, injectable)', 'capsule' => 'Capsule / Tablet', 'piece' => 'Item / Piece'];
@@ -29,7 +18,6 @@ if (!function_exists('mh_disp_forms')) {
                 'Sharps / medical waste container' => 'Sharps / medical waste container', 'Other' => 'Other'];
     }
 
-    /** Best guess of the stock type from the batch's unit and category (the dialog lets staff change it). */
     function mh_disp_guess_form($unit, $category = '')
     {
         $u = strtolower(trim((string) $unit)); $c = strtolower(trim((string) $category));
@@ -39,7 +27,6 @@ if (!function_exists('mh_disp_forms')) {
         return 'piece';
     }
 
-    /** Same safety net used by the other modules: the page creates the table itself if the SQL file was never run. */
     function mh_disp_ensure_table(mysqli $conn)
     {
         if (!empty($_SESSION['mh_disp_tbl_v1'])) { return; }
@@ -72,10 +59,6 @@ if (!function_exists('mh_disp_forms')) {
         if ($ok) { $_SESSION['mh_disp_tbl_v1'] = true; } else { error_log('mh_disp_ensure_table: ' . $conn->error); }
     }
 
-    /**
-     * @param array $in amount, item_form, reason, method, disposed_on (Y-m-d), witness, remarks
-     * @return array [ok(bool), error(string|null), remaining(int)]
-     */
     function mh_disp_dispose(mysqli $conn, $batchId, array $in, $staffId)
     {
         mh_disp_ensure_table($conn);
@@ -113,7 +96,7 @@ if (!function_exists('mh_disp_forms')) {
             }
 
             $after  = $before - $amount;
-            $status = $after <= 0 ? 0 : 1;   // a fully disposed batch leaves the active masterlist (the disposal record stays)
+            $status = $after <= 0 ? 0 : 1;
             $st = $conn->prepare("UPDATE inventory SET quantity = ?, status = ? WHERE id = ?");
             $st->bind_param('iii', $after, $status, $batchId);
             if (!$st->execute()) { throw new RuntimeException($st->error); }
@@ -138,7 +121,6 @@ if (!function_exists('mh_disp_forms')) {
         }
     }
 
-    /** Disposal records, newest first. $f: from, to, reason, form, q. At most 500 rows. */
     function mh_disp_history(mysqli $conn, array $f)
     {
         mh_disp_ensure_table($conn);

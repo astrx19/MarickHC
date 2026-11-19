@@ -1,12 +1,4 @@
 <?php
-/**
- * EXCEL EXPORT for the statistical reports (Paper Fig. 62: "Generate PDF / Excel statistical reports").
- * PDF = the browser's Print > Save as PDF (assets/css/print.css). Excel = a UTF-8 .csv that Excel opens directly.
- *
- * Call mh_report_csv_export() BEFORE the page prints anything. It lets the page render normally into a buffer,
- * then at shutdown pulls the report's headings, KPI tiles, bar rows and tables out of that HTML and sends them as
- * CSV instead - so the file always contains exactly the numbers on screen, with no second set of queries to drift.
- */
 if (!function_exists('mh_report_csv_export')) {
     function mh_report_csv_export($filename, $title, $subtitle = '')
     {
@@ -41,7 +33,7 @@ if (!function_exists('mh_report_csv_export')) {
                         if (count($cells) === 1 && stripos($cells[0], 'No records') === 0) { $cells = ['(no records for this period)']; }
                         $rows[] = $cells;
                     }
-                } else {   // KPI tile / bar row / stat tile: one CSV row from its child elements
+                } else {
                     $cells = [];
                     foreach ($n->childNodes as $c) {
                         if ($c instanceof DOMElement && $c->getAttribute('class') !== '' && stripos($c->getAttribute('class'), 'bar') !== false && strpos($cls, 'ds-bar') !== false) { continue; }
@@ -59,7 +51,7 @@ if (!function_exists('mh_report_csv_export')) {
                 header('Cache-Control: no-store');
             }
             $out = fopen('php://output', 'w');
-            fwrite($out, "\xEF\xBB\xBF");   // UTF-8 BOM so Excel reads accents correctly
+            fwrite($out, "\xEF\xBB\xBF");
             fputcsv($out, [$title]);
             if ($subtitle !== '') { fputcsv($out, [$subtitle]); }
             fputcsv($out, ['Generated: ' . date('Y-m-d H:i')]);

@@ -1,25 +1,4 @@
 <?php
-/**
- * print_header.php  -  Reusable official-report header, visible ONLY when printing.
- *
- * It is injected automatically on every page by includes/layout/layout.php
- * (mh_layout_open), so normally you do not call it yourself. To customise one page:
- *
- *   // before mh_layout_open():
- *   mh_layout_state(['print_title' => 'Medicine Inventory Report',
- *                    'print_note'  => 'Filter: Low stock - Category: Antibiotics']);
- *
- * or call it directly, e.g. at the top of a dedicated print view:
- *
- *   require_once __DIR__ . '/../includes/print_header.php';
- *   mh_print_header(['title' => 'System Logs Report', 'note' => 'Period: Nov 1 - Nov 11, 2026']);
- *
- * Options: title, note, clinic, printed_by, role   (all optional)
- *
- * Shows:  Clinic name . Module title . Date & time printed . Printed By . Role
- * The date/time is refreshed in the browser the moment the user presses Print
- * (the server clock / time zone may differ from the user's).
- */
 
 if (!function_exists('mh_print_header')) {
 
@@ -35,7 +14,6 @@ if (!function_exists('mh_print_header')) {
         }
         $is_patient = (($state['portal'] ?? 'staff') === 'patient');
 
-        // ---- Clinic name -------------------------------------------------
         $clinic = trim((string) ($o['clinic'] ?? ($state['system_name'] ?? '')));
         if ($clinic === '' && function_exists('mh_setting')) {
             $clinic = trim((string) mh_setting('system_name'));
@@ -44,7 +22,6 @@ if (!function_exists('mh_print_header')) {
             $clinic = 'Barangay Marick Health Center';
         }
 
-        // ---- Module title ("System Logs Report") -------------------------
         $title = trim((string) ($o['title'] ?? ($state['print_title'] ?? ($state['title'] ?? ''))));
         $title = trim(preg_replace('/\s*-\s*Print\s*$/i', '', $title));
         if ($title === '') {
@@ -54,7 +31,6 @@ if (!function_exists('mh_print_header')) {
         }
         $note = trim((string) ($o['note'] ?? ($state['print_note'] ?? '')));
 
-        // ---- Who is printing --------------------------------------------
         if (isset($o['printed_by'])) {
             $by = trim((string) $o['printed_by']);
         } elseif ($is_patient) {
@@ -87,14 +63,12 @@ if (!function_exists('mh_print_header')) {
         $now_date = date('F j, Y');
         $now_time = date('g:i A');
 
-        // Logo path is relative to the page (all staff pages live in /admin/).
         $logo = '../assets/images/logo.png';
 
         if (!$assets_done) {
             $assets_done = true;
             ?>
 <style>
-    /* Hidden on screen; shown by assets/css/print.css (or on a dedicated print view: <body class="print-view">). */
     .mh-print-header { display: none; }
     body.print-view .mh-print-header { display: block; }
     .mh-print-header { color: #000; font-family: Arial, Helvetica, "Liberation Sans", sans-serif; margin: 0 0 6mm; padding: 0 0 3mm; border-bottom: 2px solid #000; }
@@ -112,13 +86,11 @@ if (!function_exists('mh_print_header')) {
 (function () {
     var reopen = [];
     window.addEventListener('beforeprint', function () {
-        // 1) stamp the real date/time on the header the moment Print is pressed
         var now = new Date();
         var d = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
         var t = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         document.querySelectorAll('[data-print-date]').forEach(function (el) { el.textContent = d; });
         document.querySelectorAll('[data-print-time]').forEach(function (el) { el.textContent = t; });
-        // 2) open collapsed <details> sections so their content is printed
         reopen = [];
         document.querySelectorAll('details:not([open])').forEach(function (el) { el.setAttribute('open', ''); reopen.push(el); });
     });

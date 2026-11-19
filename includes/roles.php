@@ -1,35 +1,8 @@
 <?php
-// Load-once guard keyed on a constant, NOT on the file path: on case-insensitive filesystems
-// (macOS/Windows XAMPP) /MARICK-HEALTH-SYSTEM-v2/ and /marick-health-system-v2/ are different
-// strings to require_once but the same file, which would redeclare every function.
 if (defined('MH_ROLES_LOADED')) { return; }
 define('MH_ROLES_LOADED', true);
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - ROLES & PERMISSIONS (database-driven)
- * =====================================================================
- * Roles live in `system_roles`, feature toggles in `role_permissions`
- * (see database/roles_permissions_migration.sql). Nothing here decides
- * WHO may do something - only WHAT can be toggled (the permission
- * registry) and the factory defaults used to seed an empty database or
- * to keep the app usable if the tables have not been created yet.
- *
- *   mh_get_roles()                  role_key => label (active roles)
- *   mh_has_permission($key,$role)   does a role hold a feature toggle?
- *   mh_permission_registry()        the toggles, grouped for the matrix UI
- *   mh_roles_install($conn)         create + seed tables (idempotent)
- *   mh_add/update/delete_custom_role, mh_save_role_permissions
- *
- * The value stored in staff.role is system_roles.role_key (VARCHAR(50)).
- * Free of session/header side effects, so it is safe in CLI/cron too.
- * =====================================================================
- */
 
-/* ---------------------------------------------------------------------
- * 1. PERMISSION REGISTRY (what can be toggled - single source of truth)
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_permission_registry')) {
-    /** group label => [permission_key => ['label' =>, 'hint' =>]] */
     function mh_permission_registry()
     {
         return [
@@ -74,11 +47,7 @@ if (!function_exists('mh_permission_keys')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * 2. FACTORY DEFAULTS (seed data + fallback when tables are missing)
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_builtin_role_definitions')) {
-    /** Seed roles. key => [label, is_system]. Built-ins (is_system) cannot be deleted/renamed. */
     function mh_builtin_role_definitions()
     {
         return [
@@ -94,15 +63,8 @@ if (!function_exists('mh_builtin_role_definitions')) {
 }
 
 if (!function_exists('mh_default_role_permissions')) {
-    /** permission_key => comma list of roles that hold it by default (health_head implied). */
     function mh_default_role_permissions()
     {
-        // Health Head holds every toggle implicitly (never listed here).
-        // Per Dra. Celma's evaluation:
-        //   inventory - the combined Inventory / Encoder role (the old separate Encoder role was merged into it):
-        //             medicine stock + dispensing, plus walk-in registration intake and OCR.
-        //             NO patient masterlist, NO profile editing, NO admin pages.
-        //   bhw     - physical folders (read-only masterlist + area list) and vital signs entry. Nothing else.
         return [
             'view_patient_masterlist'   => 'admin,doctor,bhw,midwife,dental',
             'edit_patient_profile'      => 'admin,doctor,midwife,dental',
@@ -129,7 +91,6 @@ if (!function_exists('mh_default_role_permissions')) {
 }
 
 if (!function_exists('mh_is_builtin_role')) {
-    /** True for roles flagged is_system (DB when available, else the seed list). */
     function mh_is_builtin_role($role)
     {
         $all = mh_role_definitions(true);
@@ -138,9 +99,6 @@ if (!function_exists('mh_is_builtin_role')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * 3. DATABASE ACCESS + INSTALL
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_roles_conn')) {
     function mh_roles_conn()
     {
@@ -153,7 +111,6 @@ if (!function_exists('mh_roles_conn')) {
 }
 
 if (!function_exists('mh_roles_cache')) {
-    /** Per-request cache. mh_roles_cache(null,true) flushes it. */
     function &mh_roles_cache()
     {
         static $c = ['ready' => null, 'roles' => null, 'perms' => []];
@@ -171,12 +128,6 @@ if (!function_exists('mh_roles_flush')) {
 if (!function_exists('mh_custom_roles_flush')) { function mh_custom_roles_flush() { mh_roles_flush(); } }
 
 if (!function_exists('mh_roles_backfill_missing')) {
-    /**
-     * Self-heal: a permission key that exists in the registry but has NO rows in role_permissions
-     * (e.g. a toggle added after the matrix was first seeded) is seeded from the factory defaults,
-     * so a new/restored feature works without hand-running SQL. Existing rows are never touched.
-     * Runs at most once per request.
-     */
     function mh_roles_backfill_missing(mysqli $conn)
     {
         static $done = false;
@@ -213,7 +164,6 @@ if (!function_exists('mh_roles_backfill_missing')) {
 }
 
 if (!function_exists('mh_roles_db_ready')) {
-    /** Both tables exist AND role_permissions has been seeded. Cached per request. */
     function mh_roles_db_ready()
     {
         $c = &mh_roles_cache();
@@ -227,18 +177,13 @@ if (!function_exists('mh_roles_db_ready')) {
             $c['ready'] = $row && (int) $row['a'] > 0 && (int) $row['b'] > 0;
             if ($c['ready']) { mh_roles_backfill_missing($conn); }
         } catch (Throwable $e) {
-            $c['ready'] = false;   // tables not created yet -> factory defaults apply
+            $c['ready'] = false;
         }
         return $c['ready'];
     }
 }
 
 if (!function_exists('mh_roles_install')) {
-    /**
-     * Creates the tables and seeds them if empty (same result as
-     * database/roles_permissions_migration.sql). Existing Module Access role lists
-     * (system_settings.module_roles_*) and old custom roles (system_options) are carried over.
-     */
     function mh_roles_install(mysqli $conn)
     {
         try {
@@ -262,7 +207,6 @@ if (!function_exists('mh_roles_install')) {
                     $ins->bind_param('ssii', $k, $label, $sys, $sort); $ins->execute(); $sort += 10;
                 }
                 $ins->close();
-                // custom roles from the previous system_options storage
                 try {
                     $res = $conn->query("SELECT option_value, option_label, is_active FROM system_options WHERE list_key = 'staff_roles_custom'");
                     $up = $conn->prepare("INSERT INTO system_roles (role_key, role_name, is_system, status, sort_order) VALUES (?,?,0,?,100)
@@ -272,7 +216,7 @@ if (!function_exists('mh_roles_install')) {
                         $up->bind_param('ssi', $k, $l, $a); $up->execute();
                     }
                     $up->close();
-                } catch (Throwable $e) { /* system_options absent on a brand-new install */ }
+                } catch (Throwable $e) { }
             }
 
             $havePerms = (int) $conn->query("SELECT COUNT(*) AS n FROM role_permissions")->fetch_assoc()['n'];
@@ -309,12 +253,6 @@ if (!function_exists('mh_roles_install')) {
 }
 
 if (!function_exists('mh_roles_upgrade_health_head')) {
-    /**
-     * One-time, idempotent: retire the old Super Admin role. Accounts become Health Head, the old
-     * role rows are removed, and Health Head is registered as a built-in role. Same effect as
-     * database/health_head_rbac_migration.sql (which also tightens Encoder / BHW permissions).
-     * Called automatically the first time a legacy Super Admin session is seen, so nobody is locked out.
-     */
     function mh_roles_upgrade_health_head(mysqli $conn)
     {
         $legacy = 'super' . '_admin';
@@ -334,14 +272,6 @@ if (!function_exists('mh_roles_upgrade_health_head')) {
 }
 
 if (!function_exists('mh_roles_merge_encoder_into_inventory')) {
-    /**
-     * One-time, idempotent: the separate "Encoder / Registrations" role was merged into
-     * "Inventory / Encoder" (role key 'inventory'). Existing Encoder accounts become Inventory / Encoder,
-     * the combined role keeps the Encoder abilities (walk-in registration + OCR) on top of stock and
-     * dispensing, and the old Encoder role is removed. Same effect as
-     * database/merge_encoder_inventory_migration.sql. Safe to call on every request: it does
-     * nothing once no Encoder role, account or permission row is left.
-     */
     function mh_roles_merge_encoder_into_inventory(mysqli $conn)
     {
         static $done = false;
@@ -370,7 +300,6 @@ if (!function_exists('mh_roles_merge_encoder_into_inventory')) {
             $conn->query("DELETE FROM role_permissions WHERE role_key = 'encoder'");
             $conn->query("DELETE FROM system_roles WHERE role_key = 'encoder'");
 
-            // Module Access lists that still name the old role now name the merged one.
             $res = @$conn->query("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'module\\_roles\\_%'");
             while ($res && ($row = $res->fetch_assoc())) {
                 $list = array_values(array_filter(array_map('trim', explode(',', (string) $row['setting_value'])), 'strlen'));
@@ -388,14 +317,7 @@ if (!function_exists('mh_roles_merge_encoder_into_inventory')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * 4. ROLE LISTS
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_role_definitions')) {
-    /**
-     * key => ['label','grid','builtin','active','id']  (built-ins first, then A-Z).
-     * Inactive roles are omitted unless $includeInactive - they stay valid for existing accounts.
-     */
     function mh_role_definitions($includeInactive = false)
     {
         $c = &mh_roles_cache();
@@ -412,7 +334,7 @@ if (!function_exists('mh_role_definitions')) {
                     }
                 } catch (Throwable $e) { error_log('mh_role_definitions: ' . $e->getMessage()); }
             }
-            if (!$rows) {   // tables missing -> seed list keeps login and pages working
+            if (!$rows) {
                 foreach (mh_builtin_role_definitions() as $k => $d) {
                     $rows[$k] = ['id' => 0, 'label' => $d['label'], 'grid' => $d['grid'], 'builtin' => (bool) $d['is_system'], 'active' => true];
                 }
@@ -425,7 +347,6 @@ if (!function_exists('mh_role_definitions')) {
 }
 
 if (!function_exists('mh_custom_roles')) {
-    /** Non-system roles, shaped like the old API: key => [id,key,label,active]. */
     function mh_custom_roles($includeInactive = false)
     {
         $out = [];
@@ -437,7 +358,6 @@ if (!function_exists('mh_custom_roles')) {
 }
 
 if (!function_exists('mh_get_roles')) {
-    /** role key => label from system_roles. Active roles only unless $includeInactive. */
     function mh_get_roles($includeInactive = false)
     {
         $out = [];
@@ -469,7 +389,6 @@ if (!function_exists('mh_is_valid_role')) {
 }
 
 if (!function_exists('mh_has_role')) {
-    /** Is $role (default: signed-in user's role) one of $roles?  (identity check, NOT a permission check) */
     function mh_has_role($roles, $role = null)
     {
         if ($role === null) { $role = $_SESSION['role'] ?? $_SESSION['user_role'] ?? ''; }
@@ -477,11 +396,7 @@ if (!function_exists('mh_has_role')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * 5. PERMISSION CHECKS
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_role_permissions')) {
-    /** @return array<string,bool> permission_key => true for every toggle the role holds. */
     function mh_role_permissions($role)
     {
         $role = (string) $role;
@@ -508,7 +423,6 @@ if (!function_exists('mh_role_permissions')) {
 }
 
 if (!function_exists('mh_roles_with_permission')) {
-    /** @return string[] role keys holding ANY of the listed permissions. */
     function mh_roles_with_permission(array $permissionKeys)
     {
         $out = [];
@@ -521,43 +435,18 @@ if (!function_exists('mh_roles_with_permission')) {
 }
 
 if (!function_exists('mh_role_holds_permission')) {
-    /**
-     * STRICT role-level lookup of ONE feature toggle.
-     * True only when the role's matrix has exactly this key explicitly ON.
-     * Missing row, 0, NULL, unknown role or unknown key => false (fail closed).
-     * Never consults sibling toggles.
-     */
     function mh_role_holds_permission($role, $permission_key)
     {
         $role = (string) $role;
         $permission_key = (string) $permission_key;
         if ($role === '' || $permission_key === '') { return false; }
         if ($role === 'health_head') { return true; }
-        $held = mh_role_permissions($role);          // [key => true] for allowed=1 rows only
+        $held = mh_role_permissions($role);
         return isset($held[$permission_key]) && $held[$permission_key] === true;
     }
 }
 
 if (!function_exists('mh_has_permission')) {
-    /**
-     * Does a role / the signed-in user hold ONE specific feature toggle?
-     *   mh_has_permission('dispense_medicine')                 -> signed-in user
-     *   mh_has_permission('use_ocr_scanner', $row['role'])     -> any role (role matrix only)
-     *
-     * Evaluation order for the signed-in user (3-state override model):
-     *   0. health_head                         -> allow
-     *   1. Per-account override (staff.can_*) that OWNS this exact key:
-     *        0 (explicit deny)  -> DENY   (deny always wins, even if another owner says 1)
-     *        1 (explicit grant) -> ALLOW
-     *        NULL (inherit)     -> go to step 2
-     *   2. The role's default for THIS key only (mh_role_holds_permission):
-     *        explicit ON -> ALLOW;  missing / OFF / NULL -> DENY
-     *
-     * IMPORTANT (the bug this replaces): an inherited (NULL) override used to be resolved through
-     * mh_role_default_grants(), which answered "does the role hold ANY key of the capability bundle?".
-     * A role that only had `view_stock` therefore also passed `add_medicine`. Inheritance now looks
-     * at the single requested key, so sibling toggles can never leak into each other.
-     */
     function mh_has_permission($permission_key, $user_role = null)
     {
         $permission_key = (string) $permission_key;
@@ -566,25 +455,23 @@ if (!function_exists('mh_has_permission')) {
         $own = ($user_role === null);
         $caps = null;
         if ($own && function_exists('mh_refresh_staff_authority')) {
-            $caps = mh_refresh_staff_authority();    // also re-syncs $_SESSION['role'] from the database
+            $caps = mh_refresh_staff_authority();
         }
         $role = $own ? (string) ($_SESSION['role'] ?? $_SESSION['user_role'] ?? '') : (string) $user_role;
 
         if ($role === 'health_head') { return true; }
         if ($role === '') { return false; }
 
-        // Step 1: per-account override (signed-in user only; other roles are matrix-only).
         if ($own && is_array($caps) && function_exists('mh_capability_owners_of')) {
             $allow = false;
             foreach (mh_capability_owners_of($permission_key) as $cap) {
-                if (!array_key_exists($cap, $caps) || $caps[$cap] === null) { continue; }   // NULL = inherit
-                if ((int) $caps[$cap] === 0) { return false; }                                // explicit deny wins
-                if ((int) $caps[$cap] === 1) { $allow = true; }                               // explicit grant
+                if (!array_key_exists($cap, $caps) || $caps[$cap] === null) { continue; }
+                if ((int) $caps[$cap] === 0) { return false; }
+                if ((int) $caps[$cap] === 1) { $allow = true; }
             }
             if ($allow) { return true; }
         }
 
-        // Step 2: the role's own value for exactly this key. Anything but explicit ON is OFF.
         return mh_role_holds_permission($role, $permission_key);
     }
 }
@@ -597,13 +484,6 @@ if (!function_exists('mh_has_any_permission')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * 5b. DELEGATION BOUNDS (who may hand out what)
- * A staff member with `manage_staff` must never be able to give out more than they hold.
- * "Rank" is defined by the permission set: role A outranks-or-equals role B when the
- * signed-in user effectively holds EVERY toggle that B holds (mh_has_permission(), so the
- * actor's own per-account overrides count). Admin/Health Head tiers are Health Head-only.
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_permission_label')) {
     function mh_permission_label($key)
     {
@@ -615,7 +495,6 @@ if (!function_exists('mh_permission_label')) {
 }
 
 if (!function_exists('mh_actor_missing_for_role')) {
-    /** Toggles of $targetRole the signed-in user does NOT hold (labels). Empty = actor may delegate it. */
     function mh_actor_missing_for_role($targetRole)
     {
         $missing = [];
@@ -627,10 +506,6 @@ if (!function_exists('mh_actor_missing_for_role')) {
 }
 
 if (!function_exists('mh_delegation_check_role')) {
-    /**
-     * May the signed-in user ASSIGN $targetRole to an account?
-     * @return array{0:bool,1:string}
-     */
     function mh_delegation_check_role($targetRole)
     {
         $targetRole = (string) $targetRole;
@@ -649,7 +524,6 @@ if (!function_exists('mh_delegation_check_role')) {
 }
 
 if (!function_exists('mh_actor_outranks_target')) {
-    /** May the signed-in user change privileges of / reset the password of an account holding $targetRole? */
     function mh_actor_outranks_target($targetRole)
     {
         if (mh_is_health_head()) { return true; }
@@ -659,21 +533,13 @@ if (!function_exists('mh_actor_outranks_target')) {
 }
 
 if (!function_exists('mh_delegation_check_caps')) {
-    /**
-     * May the signed-in user switch these per-account overrides ON?
-     * Only NEW grants are checked (value 1 where the target does not already have 1); deny (0)
-     * and inherit (NULL) never add access, so they are always allowed.
-     * @param array<string,int|null> $newCaps     column => null|0|1 requested
-     * @param array<string,int|null> $currentCaps column => null|0|1 stored today (empty for a new account)
-     * @return array{0:bool,1:string}
-     */
     function mh_delegation_check_caps(array $newCaps, array $currentCaps = [])
     {
         if (mh_is_health_head()) { return [true, '']; }
         $registry = function_exists('mh_capability_registry') ? mh_capability_registry() : [];
         foreach ($newCaps as $cap => $val) {
             if ($val === null || (int) $val !== 1) { continue; }
-            if (isset($currentCaps[$cap]) && (int) $currentCaps[$cap] === 1) { continue; }   // not a new grant
+            if (isset($currentCaps[$cap]) && (int) $currentCaps[$cap] === 1) { continue; }
             if (!isset($registry[$cap])) { return [false, 'Unknown function.']; }
             $ok = mh_has_capability($cap);
             foreach ($registry[$cap]['grants'] as $perm) { $ok = $ok && mh_has_permission($perm); }
@@ -685,11 +551,7 @@ if (!function_exists('mh_delegation_check_caps')) {
     }
 }
 
-/* ---------------------------------------------------------------------
- * 6. ROLE + MATRIX MANAGEMENT (System Settings -> Staff Roles & Permissions)
- * ------------------------------------------------------------------ */
 if (!function_exists('mh_role_key_from_label')) {
-    /** "Triage Nurse" -> "triage_nurse" (a-z, 0-9, underscore; max 40). */
     function mh_role_key_from_label($label)
     {
         $key = preg_replace('/[^a-z0-9]+/', '_', strtolower(trim((string) $label)));
@@ -698,7 +560,6 @@ if (!function_exists('mh_role_key_from_label')) {
 }
 
 if (!function_exists('mh_add_custom_role')) {
-    /** @return array{0:bool,1:string} */
     function mh_add_custom_role(mysqli $conn, $label)
     {
         $label = trim((string) $label);
@@ -717,7 +578,6 @@ if (!function_exists('mh_add_custom_role')) {
         if ($dup) { return [false, 'A role with that name already exists.']; }
         if (!$ok) { return [false, 'Could not add that role.']; }
 
-        // every toggle starts OFF so a new role has no access until ticked
         $ins = $conn->prepare("INSERT IGNORE INTO role_permissions (role_key, permission_key, allowed) VALUES (?, ?, 0)");
         foreach (mh_permission_keys() as $p) { $ins->bind_param('ss', $key, $p); $ins->execute(); }
         $ins->close();
@@ -727,7 +587,6 @@ if (!function_exists('mh_add_custom_role')) {
 }
 
 if (!function_exists('mh_update_custom_role')) {
-    /** Rename / show-hide a non-system role (key is never changed). */
     function mh_update_custom_role(mysqli $conn, $id, $label, $isActive)
     {
         $label = trim((string) $label);
@@ -742,7 +601,6 @@ if (!function_exists('mh_update_custom_role')) {
 }
 
 if (!function_exists('mh_delete_custom_role')) {
-    /** Deletes a non-system role - refused while any account holds it. */
     function mh_delete_custom_role(mysqli $conn, $id)
     {
         $id = (int) $id;
@@ -767,12 +625,6 @@ if (!function_exists('mh_delete_custom_role')) {
 }
 
 if (!function_exists('mh_save_role_permissions')) {
-    /**
-     * Persists the whole toggle matrix. $posted = [role_key => [permission_key, ...]] (ticked boxes).
-     * health_head is immutable (always everything). Unknown roles/keys are ignored.
-     * Guard rail: Admin can never lose Staff Management here, so the Admin tier can't lock itself out.
-     * @return array{0:bool,1:string}
-     */
     function mh_save_role_permissions(mysqli $conn, array $posted)
     {
         if (!mh_roles_db_ready()) { return [false, 'Roles tables are not installed yet.']; }

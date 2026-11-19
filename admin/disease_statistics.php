@@ -117,14 +117,12 @@ mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Stati
         .ds-form label { display: block; font-size: .78rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted, #64748b); margin-bottom: 4px; }
         .ds-form input[type=text], .ds-form input[type=number] { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; background: var(--card-bg, #fff); color: var(--text-color, #1e293b); }
         .ds-small { font-size: .85rem; padding: 7px 14px; cursor: pointer; }
-        /* Collapsible Drawer for Demographic Micro-Breakdowns */
         .ds-drawer { border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; background: var(--card-bg, #fff); margin: 18px 0; overflow: hidden; }
         .ds-drawer summary { padding: 13px 18px; cursor: pointer; font-weight: 700; font-size: 0.95rem; color: var(--heading-color, #1e293b); display: flex; justify-content: space-between; align-items: center; background: var(--bg-hover, #f8fafc); user-select: none; list-style: none; }
         .ds-drawer summary::-webkit-details-marker { display: none; }
         .ds-drawer summary:hover { background: var(--border-color, #f1f5f9); }
         .ds-drawer-hint { font-size: 0.8rem; font-weight: 600; color: var(--text-muted, #64748b); }
         .ds-drawer-content { padding: 20px; border-top: 1px solid var(--border-color, #e2e8f0); }
-        /* AI Health Insights Card */
         .ds-ai-card {
             background: linear-gradient(135deg, rgba(76, 161, 175, 0.08) 0%, rgba(14, 165, 233, 0.05) 100%);
             border: 1px solid rgba(76, 161, 175, 0.35);
@@ -269,7 +267,6 @@ mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Stati
                 <div class="ds-alert ds-calm">No unusual increases in the tracked conditions this week.</div>
             <?php endif; ?>
 
-            <!-- Unified KPI Metrics Header -->
             <div class="ds-stats ds-kpi-header">
                 <div class="ds-stat">
                     <div>

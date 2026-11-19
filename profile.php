@@ -7,9 +7,6 @@ require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/password_change_helpers.php';
 
-// Any signed-in staff account (built-in or custom role) may open this page; admin_auth.php already
-// verified the login and re-synced the role. What each role SEES is controlled by Module Access.
-
 $system_name = $system_name ?? mh_setting('system_name');
 
 $user_id = (int) $_SESSION['user_id'];
@@ -96,7 +93,6 @@ if(isset($_POST['update_profile']) && mh_is_admin_tier()){
     }
 }
 
-// ---- Change password: needs the CURRENT password (a stolen/unattended session alone is not enough) ----
 if (isset($_POST['change_password'])) {
     if (!mh_csrf_check()) {
         $error_msg = 'Your session expired. Please reload the page and try again.';
@@ -123,7 +119,6 @@ if (isset($_POST['change_password'])) {
             if ($up->execute()) {
                 mh_pw_change_clear('staff:' . $user_id);
                 logActivity($conn, $user_id, $_SESSION['role'], "Password Changed", "Changed own password from the profile page.");
-                // Any other device still signed in with the old password is signed out; this one stays.
                 if (function_exists('mh_ss_issue')) { mh_ss_issue('staff', $user_id); }
                 $success_msg = "Password changed successfully. Other devices were signed out.";
             } else {
@@ -348,7 +343,7 @@ if (isset($_POST['change_password'])) {
         function closeModal(id) {
             document.getElementById(id).classList.remove('active');
         }
-        (function () {   // native check runs BEFORE the confirm dialog
+        (function () {
             var n = document.getElementById('staffNewPw'), c = document.getElementById('staffCfmPw');
             if (!n || !c) { return; }
             function sync() { c.setCustomValidity(c.value !== n.value ? 'The new passwords do not match.' : ''); }

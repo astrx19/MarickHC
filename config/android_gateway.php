@@ -1,19 +1,12 @@
 <?php
-/**
- * Android SMS Gateway configuration - DATABASE BACKED.
- * URL and API key come from `system_settings` (System Settings > SMS Reminders).
- * No static settings file is read or written.
- */
 require_once __DIR__ . '/database.php';
 
 if (!defined('ANDROID_GATEWAY_URL')) { define('ANDROID_GATEWAY_URL', mh_get_option('android_gateway_url', '')); }
 if (!defined('ANDROID_GATEWAY_KEY')) { define('ANDROID_GATEWAY_KEY', mh_get_option('android_gateway_key', '')); }
-if (!defined('ANDROID_GATEWAY_HTTP_TIMEOUT')) { define('ANDROID_GATEWAY_HTTP_TIMEOUT', 20); } // legacy
-// Verify TLS by default. Only a plain-http LAN gateway is unaffected by this flag.
+if (!defined('ANDROID_GATEWAY_HTTP_TIMEOUT')) { define('ANDROID_GATEWAY_HTTP_TIMEOUT', 20); }
 if (!defined('ANDROID_GATEWAY_SSL_VERIFY')) { define('ANDROID_GATEWAY_SSL_VERIFY', true); }
 
 if (!function_exists('android_gateway_problem')) {
-    /** @return string|null */
     function android_gateway_problem()
     {
         $url = trim((string) ANDROID_GATEWAY_URL);

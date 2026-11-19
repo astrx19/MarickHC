@@ -1,46 +1,11 @@
 <?php
-// Definitions are wrapped in a constant-keyed if-block ON PURPOSE: PHP registers top-level functions at
-// compile time, so require_once cannot stop a redeclare when one file is reached by two paths that differ
-// only in letter case (/MARICK-HEALTH-SYSTEM-v2/ vs /marick-health-system-v2/ on macOS/Windows).
 if (!defined('MH_LOADED_INCLUDES_OCR_GEMINIOCRCLIENT')) {
 define('MH_LOADED_INCLUDES_OCR_GEMINIOCRCLIENT', true);
-/**
- * Shared helper for calling the Gemini API to extract structured field
- * data from a scanned/photographed paper form.
- *
- * Used by:
- *   - admin/ocr/immunization_scan.php
- *   - admin/ocr/maternal_scan.php
- *   - admin/ocr/checkup_scan.php
- *
- * Requires config/gemini.php to be loaded first.
- *
- * What changed in this revision:
- *   - Model fallback chain: a 404 on one model automatically retries the
- *     next model instead of failing the whole scan (gemini-1.5-flash is
- *     retired and now returns 404 - that was the main bug).
- *   - The API key is sent in the x-goog-api-key header, not the query
- *     string, so it does not end up in server / proxy access logs.
- *   - Key shape is validated up front (must start with "AIzaSy").
- *   - True exponential backoff with jitter + Retry-After support for
- *     503 / 429 / transient network failures.
- *   - Every failure path returns a specific, human-readable message
- *     (plus an "http_code" and "reason" the callers can pass through).
- */
 
 if (!defined('GEMINI_API_ENDPOINT_BASE')) {
     define('GEMINI_API_ENDPOINT_BASE', '');
 }
 
-/* =====================================================================
- * UPLOAD HANDLING
- * ================================================================== */
-
-/**
- * Reads and validates the uploaded file for a given $_FILES field name.
- *
- * @return array{success:bool, path?:string, mime_type?:string, error?:string}
- */
 if (!function_exists('gemini_ocr_get_uploaded_file')) {
 function gemini_ocr_get_uploaded_file($fieldName)
 {
@@ -79,7 +44,6 @@ function gemini_ocr_get_uploaded_file($fieldName)
         $mimeType = (string) mime_content_type($tmpPath);
     }
 
-    // Normalise a couple of aliases browsers still send.
     $aliases = ['image/jpg' => 'image/jpeg', 'image/pjpeg' => 'image/jpeg', 'image/x-png' => 'image/png'];
     if (isset($aliases[$mimeType])) {
         $mimeType = $aliases[$mimeType];
@@ -96,7 +60,6 @@ function gemini_ocr_get_uploaded_file($fieldName)
         return ['success' => false, 'error' => 'The uploaded file appears to be empty. Please try again.'];
     }
 
-    // 15 MB safety cap, well under Gemini's inline-data limits.
     if ($size > 15 * 1024 * 1024) {
         return ['success' => false, 'error' => 'File is too large (' . round($size / 1048576, 1)
             . ' MB). Please upload a file under 15 MB.'];
@@ -106,16 +69,6 @@ function gemini_ocr_get_uploaded_file($fieldName)
 }
 }
 
-/* =====================================================================
- * MODEL LIST
- * ================================================================== */
-
-/**
- * Ordered list of models to try. The configured model comes first, then
- * the fallbacks, de-duplicated. Retired models such as gemini-1.5-flash
- * are still honoured if explicitly configured, but they will 404 and the
- * client will move on to the next candidate automatically.
- */
 function gemini_ocr_model_candidates()
 {
     $models = [];
@@ -138,15 +91,6 @@ function gemini_ocr_model_candidates()
     return $models ?: ['gemini-2.0-flash'];
 }
 
-/* =====================================================================
- * LOW-LEVEL HTTP
- * ================================================================== */
-
-/**
- * Single POST to the Gemini generateContent endpoint.
- *
- * @return array{http_code:int, body:string|false, curl_error:string, retry_after:int}
- */
 function gemini_ocr_http_post($model, $payloadJson)
 {
     return [
@@ -157,20 +101,12 @@ function gemini_ocr_http_post($model, $payloadJson)
     ];
 }
 
-/**
- * Sleep helper that understands milliseconds.
- */
 function gemini_ocr_sleep_ms($ms)
 {
     if ($ms <= 0) { return; }
     usleep((int) round($ms * 1000));
 }
 
-/**
- * Exponential backoff with full jitter, honouring a server Retry-After.
- *
- * attempt 0 -> ~0.7s, 1 -> ~1.4s, 2 -> ~2.8s, 3 -> ~5.6s (capped at 8s)
- */
 function gemini_ocr_backoff_delay_ms($attempt, $retryAfterSeconds = 0)
 {
     if ($retryAfterSeconds > 0) {
@@ -182,14 +118,9 @@ function gemini_ocr_backoff_delay_ms($attempt, $retryAfterSeconds = 0)
 
     $ideal = min($cap, $base * (int) pow(2, $attempt));
 
-    // Full jitter: random between half and full of the ideal window.
     return random_int((int) ($ideal / 2), $ideal);
 }
 
-/**
- * Turns a Gemini error response into something a barangay health worker
- * can actually act on.
- */
 function gemini_ocr_friendly_error($httpCode, $decoded, $model, $curlError = '')
 {
     $apiMessage = '';
@@ -256,21 +187,6 @@ function gemini_ocr_friendly_error($httpCode, $decoded, $model, $curlError = '')
     return 'The OCR service returned an unexpected response (HTTP ' . $httpCode . '). Please try again in a moment.';
 }
 
-/* =====================================================================
- * MAIN ENTRY POINT
- * ================================================================== */
-
-/**
- * Sends the given file to Gemini with a JSON response schema and returns
- * the extracted fields as an associative array.
- *
- * @param string $filePath   Path to the uploaded file on disk.
- * @param string $mimeType   MIME type of the uploaded file.
- * @param string $promptText Instructions describing what to extract.
- * @param array  $schema     Gemini responseSchema (JSON Schema subset).
- *
- * @return array{success:bool, fields?:array, error?:string, http_code?:int, model?:string, debug?:array}
- */
 function gemini_ocr_extract_fields($filePath, $mimeType, $promptText, array $schema)
 {
     try {
@@ -308,11 +224,6 @@ function gemini_ocr_extract_fields($filePath, $mimeType, $promptText, array $sch
     }
 }
 
-/**
- * Pulls the structured JSON payload out of a successful Gemini response.
- *
- * @return array{success:bool, fields?:array, error?:string}
- */
 function gemini_ocr_parse_candidate(array $decoded)
 {
     $finishReason = $decoded['candidates'][0]['finishReason'] ?? '';
@@ -334,7 +245,6 @@ function gemini_ocr_parse_candidate(array $decoded)
             . 'Try a brighter, straighter photo of the form.'];
     }
 
-    // Strip stray markdown fences if the model wrapped its JSON.
     $clean = trim($rawText);
     if (strpos($clean, '```') === 0) {
         $clean = preg_replace('/^```(?:json)?\s*/i', '', $clean);
@@ -347,8 +257,6 @@ function gemini_ocr_parse_candidate(array $decoded)
             . 'Please try a clearer, well-lit photo taken straight above the form.'];
     }
 
-    // Normalize: trim strings, drop blanks, keep dates as plain strings
-    // for the calling endpoint to reformat as needed.
     $out = [];
     foreach ($fields as $key => $value) {
         if (is_string($value)) {
@@ -364,16 +272,6 @@ function gemini_ocr_parse_candidate(array $decoded)
     return ['success' => true, 'fields' => $out];
 }
 
-/* =====================================================================
- * DIAGNOSTICS
- * ================================================================== */
-
-/**
- * Calls ListModels so an administrator can see exactly which models the
- * configured key may use. Used by admin/ocr/gemini_diagnose.php.
- *
- * @return array{success:bool, models?:array, error?:string, http_code?:int}
- */
 function gemini_ocr_list_models()
 {
     return [
@@ -383,16 +281,6 @@ function gemini_ocr_list_models()
     ];
 }
 
-/* =====================================================================
- * DATE NORMALISATION
- * ================================================================== */
-
-/**
- * Best-effort normalization of a date string (as commonly handwritten on
- * PH clinic forms, e.g. "03/14/2024", "14-03-24", "March 14, 2024") into
- * the yyyy-mm-dd format required by <input type="date">.
- * Returns '' if it cannot confidently parse the value.
- */
 if (!function_exists('gemini_ocr_normalize_date')) {
 function gemini_ocr_normalize_date($rawDate)
 {
@@ -404,23 +292,19 @@ function gemini_ocr_normalize_date($rawDate)
         return '';
     }
 
-    // Already ISO.
     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) {
         return $rawDate;
     }
 
-    // PH clinic forms are overwhelmingly month/day/year. Resolve the
-    // ambiguous n/n/nnnn case explicitly so 03/14/2024 and 14/03/2024
-    // both land on 2024-03-14 instead of silently failing.
     if (preg_match('#^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$#', $rawDate, $m)) {
         $a = (int) $m[1];
         $b = (int) $m[2];
         $y = (int) $m[3];
         if ($y < 100) { $y += ($y > 50) ? 1900 : 2000; }
 
-        if ($a > 12 && $b <= 12) {          // clearly day/month
+        if ($a > 12 && $b <= 12) {
             $month = $b; $day = $a;
-        } else {                             // default to month/day
+        } else {
             $month = $a; $day = $b;
         }
         if (checkdate($month, $day, $y)) {
@@ -436,7 +320,6 @@ function gemini_ocr_normalize_date($rawDate)
 
     $iso = date('Y-m-d', $timestamp);
 
-    // Guard against strtotime turning junk like "ok" into today's date.
     $year = (int) substr($iso, 0, 4);
     if ($year < 1900 || $year > ((int) date('Y') + 2)) {
         return '';
@@ -446,10 +329,6 @@ function gemini_ocr_normalize_date($rawDate)
 }
 }
 
-/* =====================================================================
- * DYNAMIC PATIENT MATCHING
- * ================================================================== */
-
 if (!function_exists('gemini_ocr_match_patient')) {
 function gemini_ocr_match_patient(mysqli $conn, $firstName, $lastName, $birthdate = '')
 {
@@ -458,14 +337,13 @@ function gemini_ocr_match_patient(mysqli $conn, $firstName, $lastName, $birthdat
         $lastName  = trim((string) $lastName);
 
         if ($firstName === '' || $lastName === '') {
-            return null; // not enough signal to search safely
+            return null;
         }
 
         $firstLike = '%' . $firstName . '%';
         $lastLike  = '%' . $lastName . '%';
 
         if ($birthdate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) {
-            // Birthdate was extracted too - use it to disambiguate same-name patients.
             $stmt = $conn->prepare(
                 "SELECT id, first_name, middle_name, last_name, birthdate
                  FROM patients
@@ -491,8 +369,6 @@ function gemini_ocr_match_patient(mysqli $conn, $firstName, $lastName, $birthdat
         $stmt->close();
 
         if (!$row) {
-            // Birthdate-qualified search found nothing - fall back to a
-            // name-only search in case the OCR'd birthdate itself was wrong.
             if ($birthdate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $birthdate)) {
                 return gemini_ocr_match_patient($conn, $firstName, $lastName, '');
             }

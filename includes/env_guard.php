@@ -1,9 +1,4 @@
 <?php
-/**
- * DEV-TOOLS GUARD (Paper REQ74/REQ88). Test-data and diagnostic pages (admin/db_seeder.php, admin/db_check.php)
- * must never run against the live clinic database. They work on localhost / CLI, and on a server only if the
- * file config/allow_dev_tools.flag exists (create it deliberately, delete it afterwards).
- */
 if (!function_exists('mh_is_dev_environment')) {
     function mh_is_dev_environment(): bool
     {

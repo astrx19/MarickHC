@@ -1,21 +1,3 @@
--- =========================================================================
--- MARICK HEALTH CENTER - SMS FOLLOW-UP REMINDERS
--- =========================================================================
--- Run this once against marick_health_db (phpMyAdmin > Import, or:
---   mysql -u root marick_health_db < database/sms_schema.sql
--- ).
---
--- Everything here is written with IF NOT EXISTS / a guarded ADD COLUMN so
--- it is safe to run more than once.
--- =========================================================================
-
--- -------------------------------------------------------------------------
--- 1. Follow-up date on each clinic module's record table
--- -------------------------------------------------------------------------
--- (includes/sms/SemaphoreSmsClient.php's mh_sms_install() and the app
---  itself never touch these ALTER statements - they are schema changes
---  and belong in a migration, run once by hand.)
-
 ALTER TABLE `consultations`
     ADD COLUMN IF NOT EXISTS `next_visit_date` DATE NULL AFTER `notes`;
 
@@ -24,13 +6,6 @@ ALTER TABLE `maternal_records`
 
 ALTER TABLE `child_immunization_records`
     ADD COLUMN IF NOT EXISTS `next_visit_date` DATE NULL AFTER `mmr_date`;
-
--- -------------------------------------------------------------------------
--- 2. scheduled_sms - the outbound queue
--- -------------------------------------------------------------------------
--- One row per reminder to send. A single follow-up date normally
--- produces TWO rows here (day-before + same-day), see
--- includes/sms/sms_scheduler.php.
 
 CREATE TABLE IF NOT EXISTS `scheduled_sms` (
     `id`               INT AUTO_INCREMENT PRIMARY KEY,
@@ -48,13 +23,6 @@ CREATE TABLE IF NOT EXISTS `scheduled_sms` (
     KEY `idx_patient` (`patient_id`),
     FOREIGN KEY (`patient_id`) REFERENCES `patients`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- -------------------------------------------------------------------------
--- 3. sms_logs - permanent record of every send attempt
--- -------------------------------------------------------------------------
--- Written by cron/send_daily_reminders.php AND by the "Run Pending SMS
--- Queue Now" manual trigger on admin/sms_dashboard.php, so admins can see
--- what actually went out and why anything failed.
 
 CREATE TABLE IF NOT EXISTS `sms_logs` (
     `id`               INT AUTO_INCREMENT PRIMARY KEY,

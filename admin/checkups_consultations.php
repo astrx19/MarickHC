@@ -84,7 +84,7 @@ if (isset($_POST['add_consultation'])) {
             'sms_label' => 'Check-up', 'next_visit' => $next_raw,
         ]);
         if (!empty($_POST['route_dispensing']) && $prescription !== '') {
-            $_SESSION['success_msg'] .= mh_route_to_dispensing($conn, $patient_id);   // after the queue entry is completed
+            $_SESSION['success_msg'] .= mh_route_to_dispensing($conn, $patient_id);
         }
     } catch (Throwable $e) {
         error_log('[MarickHealth] consultation save FAILED (staff #' . (int) $user_id . ', patient ' . var_export($patient_id, true) . '): ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());

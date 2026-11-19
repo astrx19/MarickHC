@@ -1,28 +1,4 @@
 <?php
-/**
- * =====================================================================
- * SINGLE ACTIVE SESSION PER ACCOUNT  (staff + patients)
- * =====================================================================
- * "Newest sign-in wins": every successful login stores a fresh random
- * token in the account's row (staff.session_token / patients.session_token)
- * and in the PHP session. Every protected request compares the two. If
- * the account has signed in somewhere else since, the token no longer
- * matches and this session is ended with a clear message.
- *
- * Why "newest wins" instead of "block the second login": a person who
- * closed the browser without logging out (or lost their phone) would
- * otherwise be locked out until someone cleared the row by hand.
- *
- * Rollout safety
- *   - If the session_token column does not exist yet, validation is
- *     skipped (nobody is locked out). mh_ss_issue() also tries to add the
- *     column itself on the next login; database/single_session_migration.sql
- *     is the clean way to do it.
- *   - Sessions that were already open before this feature went live carry
- *     no token and the row has none either, so they stay valid until the
- *     account's next login.
- * =====================================================================
- */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -48,7 +24,6 @@ function mh_ss_account_id($kind)
     return (int) ($_SESSION['staff_id'] ?? $_SESSION['user_id'] ?? 0);
 }
 
-/** Adds the token columns if the migration has not been run. Cached per request. */
 function mh_ss_ensure_column(mysqli $conn, $kind)
 {
     static $done = [];
@@ -71,10 +46,6 @@ function mh_ss_ensure_column(mysqli $conn, $kind)
     return $done[$kind] = $ok;
 }
 
-/**
- * Call right after a successful login (after session_regenerate_id) and
- * after the account's id has been put in $_SESSION. Replaces any older session.
- */
 function mh_ss_issue($kind, $id)
 {
     $key = mh_ss_key($kind);
@@ -97,7 +68,6 @@ function mh_ss_issue($kind, $id)
     }
 }
 
-/** True when this PHP session is still the account's newest sign-in. */
 function mh_ss_is_valid($kind)
 {
     $id = mh_ss_account_id($kind);
@@ -111,16 +81,15 @@ function mh_ss_is_valid($kind)
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
     } catch (Throwable $e) {
-        return true;                      // column not created yet: do not lock anyone out
+        return true;
     }
-    if (!$row) { return true; }           // missing account is handled by the caller's own checks
+    if (!$row) { return true; }
     $db   = (string) ($row['session_token'] ?? '');
     $mine = (string) ($_SESSION[mh_ss_key($kind)] ?? '');
-    if ($db === '' && $mine === '') { return true; }   // legacy session from before this feature
+    if ($db === '' && $mine === '') { return true; }
     return $db !== '' && $mine !== '' && hash_equals($db, $mine);
 }
 
-/** Logout: release the token, but only if it is still OURS (a stale tab must not end the newer session). */
 function mh_ss_clear($kind)
 {
     $mine = (string) ($_SESSION[mh_ss_key($kind)] ?? '');
@@ -159,7 +128,6 @@ function mh_ss_wants_json()
         || (stripos($accept, 'application/json') !== false && stripos($accept, 'text/html') === false);
 }
 
-/** Ends ONLY this kind of login (a staff session and a patient session can share one PHP session). */
 function mh_ss_terminate($kind)
 {
     if ($kind === 'patient') {

@@ -1,36 +1,8 @@
 <?php
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - DASHBOARD WIDGET CATALOG
- * =====================================================================
- * Single source of truth for every widget that can appear on
- * admin/dashboard.php. Each entry in mh_dashboard_catalog() describes
- * one module's widget (title, icon, accent color, which roles may see
- * it, how wide it renders, and which function draws its body), and
- * every widget has a small mh_widget_xxx() renderer below that echoes
- * its inner HTML.
- *
- * Adding a 10th widget later means: add one entry to the catalog array
- * and write one mh_widget_xxx() function. admin/dashboard.php,
- * includes/dashboard_helper.php and admin/api/save_dashboard.php never
- * need to change.
- *
- * Renderers only ECHO the widget body (the scrollable content area).
- * The header (title/icon/drag handle/remove button) is drawn once,
- * generically, by admin/dashboard.php.
- *
- * 'icon' values are names understood by mh_icon() (includes/icons.php),
- * not raw emoji - see that file for the full icon set.
- */
 
 require_once __DIR__ . '/icons.php';
 
 if (!function_exists('mh_wq_all')) {
-    /**
-     * Dashboard query helpers: PREPARED statements on the site's existing mysqli connection ($conn).
-     * (Positional ? only; values are bound as strings and MySQL coerces them.)
-     * Failures are logged with the real MySQL error and return an empty result instead of a blank page.
-     */
     function mh_wq_all(mysqli $conn, $sql, array $params = [])
     {
         $stmt = @$conn->prepare($sql);
@@ -69,16 +41,6 @@ if (!function_exists('mh_wq_value')) {
 }
 
 if (!function_exists('mh_dashboard_catalog')) {
-    /**
-     * @return array<string, array{
-     *   title:string, icon:string, color:string, module_page:string,
-     *   module_label:string, roles:string[], size:string, render:string
-     * }>
-     * Order of this array is the DEFAULT widget order for a user who
-     * has never customized their dashboard. 'size' here is the
-     * fallback/default span - a user's saved layout can override it
-     * per widget (see includes/dashboard_helper.php).
-     */
     function mh_dashboard_catalog()
     {
         return [
@@ -87,9 +49,9 @@ if (!function_exists('mh_dashboard_catalog')) {
                 'icon'          => 'users',
                 'color'         => '#0ea5e9',
                 'module_page'   => 'appointments.php',
-                'module'        => 'walkin',   // kept from the old walk-in widget so custom roles with that Module Access still get it
+                'module'        => 'walkin',
                 'module_label'  => 'Patient Queue',
-                'roles'         => ['admin', 'doctor', 'bhw', 'midwife', 'dental'],   // union of the two widgets it replaces
+                'roles'         => ['admin', 'doctor', 'bhw', 'midwife', 'dental'],
                 'size'          => 'medium',
                 'render'        => 'mh_widget_active_queue',
             ],
@@ -120,7 +82,7 @@ if (!function_exists('mh_dashboard_catalog')) {
                 'module_page'   => 'immunization.php',
                 'module'        => 'immunization',
                 'module_label'  => 'Child Immunization',
-                'caps'          => ['can_view_immunization_records'],   // also needs this Delegated Function (strict sub-permission)
+                'caps'          => ['can_view_immunization_records'],
                 'roles'         => ['admin', 'doctor', 'midwife'],
                 'size'          => 'small',
                 'render'        => 'mh_widget_immunization_due',
@@ -132,7 +94,7 @@ if (!function_exists('mh_dashboard_catalog')) {
                 'module_page'   => 'maternal_care.php',
                 'module'        => 'maternal_care',
                 'module_label'  => 'Maternal Care',
-                'caps'          => ['can_view_maternal_history'],   // also needs this Delegated Function (strict sub-permission)
+                'caps'          => ['can_view_maternal_history'],
                 'roles'         => ['admin', 'doctor', 'midwife'],
                 'size'          => 'small',
                 'render'        => 'mh_widget_maternal_followups',
@@ -144,7 +106,7 @@ if (!function_exists('mh_dashboard_catalog')) {
                 'module_page'   => 'inventory.php',
                 'module'        => 'inventory',
                 'module_label'  => 'Medicine Inventory',
-                'caps'          => ['can_manage_supply_masterlist'],   // also needs this Delegated Function (strict sub-permission)
+                'caps'          => ['can_manage_supply_masterlist'],
                 'roles'         => ['admin', 'inventory'],
                 'size'          => 'medium',
                 'render'        => 'mh_widget_inventory_alerts',
@@ -156,7 +118,7 @@ if (!function_exists('mh_dashboard_catalog')) {
                 'module_page'   => 'dental.php',
                 'module'        => 'dental',
                 'module_label'  => 'Dental Clinic',
-                'caps'          => ['can_view_dental_history'],   // also needs this Delegated Function (strict sub-permission)
+                'caps'          => ['can_view_dental_history'],
                 'roles'         => ['admin', 'doctor', 'midwife', 'dental'],
                 'size'          => 'small',
                 'render'        => 'mh_widget_dental_today',
@@ -197,11 +159,6 @@ if (!function_exists('mh_dashboard_catalog')) {
     }
 }
 
-/* =====================================================================
- * Small shared helper: does a table exist? Used by widgets that read
- * from tables installed lazily by another module (e.g. the SMS tables,
- * which are only created the first time admin/sms_dashboard.php runs).
- * ================================================================== */
 if (!function_exists('mh_table_exists')) {
     function mh_table_exists(mysqli $conn, string $table)
     {
@@ -211,18 +168,10 @@ if (!function_exists('mh_table_exists')) {
             $row = mh_wq_one($conn, 'SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [$table]);
             $cache[$key] = $row && (int) $row['n'] > 0;
         }
-        return $cache[$key];   // cached for the request
+        return $cache[$key];
     }
 }
 
-/**
- * `next_visit_date` on consultations / maternal_records /
- * child_immunization_records is only added by the SMS follow-up
- * migration (database/sms_schema.sql's ALTER TABLE ... ADD COLUMN IF
- * NOT EXISTS), not the base schema.sql. A fresh install that hasn't
- * run that migration yet won't have the column, so any widget that
- * reads it checks first instead of throwing a SQL error.
- */
 if (!function_exists('mh_column_exists')) {
     function mh_column_exists(mysqli $conn, string $table, string $column)
     {
@@ -232,33 +181,24 @@ if (!function_exists('mh_column_exists')) {
             $row = mh_wq_one($conn, 'SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$table, $column]);
             $cache[$key] = $row && (int) $row['n'] > 0;
         }
-        return $cache[$key];   // cached for the request
+        return $cache[$key];
     }
 }
 
-/* =====================================================================
- * 1. TODAY'S ACTIVE QUEUE  (walk-ins + scheduled consultations, one list)
- *
- * Walk-ins and scheduled visits live in the SAME `appointments` table. A walk-in is the row that
- * mh_enqueue_patient() (includes/queue_helper.php) writes with reason = 'Walk-In Queue Registration';
- * everything else is a scheduled consultation. The filter, department visibility and ordering below
- * deliberately mirror admin/appointments.php so this widget can never disagree with the Patient Queue page.
- * ================================================================== */
 if (!defined('MH_WALKIN_REASON')) {
     define('MH_WALKIN_REASON', 'Walk-In Queue Registration');
 }
 if (!function_exists('mh_widget_active_queue')) {
     function mh_widget_active_queue(mysqli $conn, array $ctx)
     {
-        require_once __DIR__ . '/settings_helper.php';   // mh_all_settings(), mh_clinic_departments(), mh_options()
-        require_once __DIR__ . '/queue_helper.php';      // mh_queue_label() -> "GC-001"
+        require_once __DIR__ . '/settings_helper.php';
+        require_once __DIR__ . '/queue_helper.php';
 
         $today    = $ctx['today'];
-        $limit    = 8;                                                    // rows shown; the rest is "+N more"
-        $statuses = ['Pending', 'Rescheduled', 'Waiting', 'Serving', 'Approved'];    // same set the Patient Queue page lists
+        $limit    = 8;
+        $statuses = ['Pending', 'Rescheduled', 'Waiting', 'Serving', 'Approved'];
 
-        // --- Departments this staff member may see (same rule as the Patient Queue page) ---
-        mh_all_settings($conn);   // load Module Access before evaluating it
+        mh_all_settings($conn);
         $cands = mh_clinic_departments($conn);
         foreach (mh_wq_all($conn, "SELECT DISTINCT department FROM appointments WHERE appointment_date = ?", [$today]) as $r) {
             $cands[] = $r['department'];
@@ -270,7 +210,7 @@ if (!function_exists('mh_widget_active_queue')) {
         $visible = mh_departments_visible_to(
             strtolower($_SESSION['role'] ?? ''),
             array_values(array_diff(array_unique($cands), $hidden))
-        );   // null = every department
+        );
 
         $where  = "a.appointment_date = ? AND a.status IN (" . implode(',', array_fill(0, count($statuses), '?')) . ")";
         $params = array_merge([$today], $statuses);
@@ -283,7 +223,6 @@ if (!function_exists('mh_widget_active_queue')) {
             }
         }
 
-        // --- Totals for the chips (walk-in vs scheduled) ---
         $walkin_total = 0; $sched_total = 0;
         foreach (mh_wq_all($conn,
             "SELECT (a.reason = ?) AS is_walkin, COUNT(*) AS c
@@ -296,7 +235,6 @@ if (!function_exists('mh_widget_active_queue')) {
         }
         $total = $walkin_total + $sched_total;
 
-        // --- The list itself, in the same order as the Patient Queue page ---
         $rows = $total === 0 ? [] : mh_wq_all($conn,
             "SELECT a.id, a.department, a.status, a.queue_number,
                     (a.reason = ?) AS is_walkin,
@@ -345,9 +283,6 @@ if (!function_exists('mh_widget_active_queue')) {
     }
 }
 
-/* =====================================================================
- * 2b. DEPARTMENTS - WAITING TODAY (every department, including custom ones)
- * ================================================================== */
 if (!function_exists('mh_widget_department_queues')) {
     function mh_widget_department_queues(mysqli $conn, array $ctx)
     {
@@ -358,7 +293,7 @@ if (!function_exists('mh_widget_department_queues')) {
             $counts[$r['department']] = (int) $r['c'];
         }
         $all     = array_column(mh_options($conn, 'clinic_departments', true), 'option_value');
-        $visible = mh_departments_visible_to($_SESSION['role'] ?? '', $all);   // null = every department
+        $visible = mh_departments_visible_to($_SESSION['role'] ?? '', $all);
         if ($visible !== null) { $all = array_values(array_intersect($all, $visible)); }
         $ids = [];
         foreach (mh_options($conn, 'clinic_departments', true) as $o) { $ids[$o['option_value']] = (int) $o['id']; }
@@ -387,9 +322,6 @@ if (!function_exists('mh_widget_department_queues')) {
     }
 }
 
-/* =====================================================================
- * 2c. DISEASE ALERTS (spikes / rising illnesses, counts only)
- * ================================================================== */
 if (!function_exists('mh_widget_disease_alerts')) {
     function mh_widget_disease_alerts(mysqli $conn, array $ctx)
     {
@@ -416,9 +348,6 @@ if (!function_exists('mh_widget_disease_alerts')) {
     }
 }
 
-/* =====================================================================
- * 3. CHILD IMMUNIZATION - DUE THIS WEEK
- * ================================================================== */
 if (!function_exists('mh_widget_immunization_due')) {
     function mh_widget_immunization_due(mysqli $conn, array $ctx)
     {
@@ -464,9 +393,6 @@ if (!function_exists('mh_widget_immunization_due')) {
     }
 }
 
-/* =====================================================================
- * 4. MATERNAL CARE - PRE/POST-NATAL FOLLOW-UPS
- * ================================================================== */
 if (!function_exists('mh_widget_maternal_followups')) {
     function mh_widget_maternal_followups(mysqli $conn, array $ctx)
     {
@@ -510,14 +436,11 @@ if (!function_exists('mh_widget_maternal_followups')) {
     }
 }
 
-/* =====================================================================
- * 5. MEDICINE INVENTORY - LOW STOCK & EXPIRING
- * ================================================================== */
 if (!function_exists('mh_widget_inventory_alerts')) {
     function mh_widget_inventory_alerts(mysqli $conn, array $ctx)
     {
         $today        = $ctx['today'];
-        $expiry_limit = date('Y-m-d', strtotime($today . ' +90 days'));   // Paper REQ45: 90-day alert window
+        $expiry_limit = date('Y-m-d', strtotime($today . ' +90 days'));
 
         $counts = mh_wq_one($conn, "
             SELECT SUM(quantity <= 20) AS low_stock,
@@ -561,9 +484,6 @@ if (!function_exists('mh_widget_inventory_alerts')) {
     }
 }
 
-/* =====================================================================
- * 6. DENTAL CLINIC - TODAY'S RECORDS
- * ================================================================== */
 if (!function_exists('mh_widget_dental_today')) {
     function mh_widget_dental_today(mysqli $conn, array $ctx)
     {
@@ -599,9 +519,6 @@ if (!function_exists('mh_widget_dental_today')) {
     }
 }
 
-/* =====================================================================
- * 7. SMS REMINDERS - PENDING QUEUE
- * ================================================================== */
 if (!function_exists('mh_widget_sms_queue')) {
     function mh_widget_sms_queue(mysqli $conn, array $ctx)
     {
@@ -619,7 +536,6 @@ if (!function_exists('mh_widget_sms_queue')) {
 
         $failed_today = 0;
         if (mh_table_exists($conn, 'sms_logs')) {
-            // range instead of DATE(created_at) = ... so idx_sms_status_created can be used
             $tomorrow = date('Y-m-d', strtotime($today . ' +1 day'));
             $failed_today = (int) mh_wq_value($conn, 
                 "SELECT COUNT(*) FROM sms_logs WHERE status = 'failed' AND created_at >= ? AND created_at < ?",
@@ -653,9 +569,6 @@ if (!function_exists('mh_widget_sms_queue')) {
     }
 }
 
-/* =====================================================================
- * 8. PATIENT MASTERLIST - RECENT REGISTRATIONS
- * ================================================================== */
 if (!function_exists('mh_widget_patient_registrations')) {
     function mh_widget_patient_registrations(mysqli $conn, array $ctx)
     {
@@ -690,9 +603,6 @@ if (!function_exists('mh_widget_patient_registrations')) {
     }
 }
 
-/* =====================================================================
- * 9. SYSTEM ACTIVITY LOG
- * ================================================================== */
 if (!function_exists('mh_widget_system_activity')) {
     function mh_widget_system_activity(mysqli $conn, array $ctx)
     {

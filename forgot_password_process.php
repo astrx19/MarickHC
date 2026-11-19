@@ -1,9 +1,4 @@
 <?php
-/**
- * Backend for forgot_password.php. POST only; always redirects (Post/Redirect/Get).
- *   action=lookup  -> find the account, store options in the session (step 1 -> 2)
- *   action=send    -> issue an email link or an SMS OTP and dispatch it (step 2 -> 3)
- */
 session_start();
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/config/mail.php';
@@ -24,9 +19,7 @@ if (!mh_pr_csrf_ok($_POST['csrf'] ?? '')) {
 
 $action = $_POST['action'] ?? '';
 
-/* ===================== STEP 1: look the account up ===================== */
 if ($action === 'lookup') {
-    // Session-level brake on username/email guessing (8 lookups per 10 minutes).
     $now = time();
     $_SESSION['pr_lookups'] = array_values(array_filter($_SESSION['pr_lookups'] ?? [], fn($t) => $t > $now - 600));
     if (count($_SESSION['pr_lookups']) >= 8) {
@@ -43,7 +36,6 @@ if ($action === 'lookup') {
 
     unset($_SESSION['pr_done'], $_SESSION['pr_sms'], $_SESSION['pr']);
 
-    // Strictly determine portal scope (staff vs patient)
     $scope = mh_pr_scope($_POST['for'] ?? ($_SESSION['pr_for'] ?? ''));
     if ($scope === '') {
         $ref = $_SERVER['HTTP_REFERER'] ?? '';
@@ -53,7 +45,6 @@ if ($action === 'lookup') {
 
     $found = mh_pr_find_account($conn, $identifier, $scope);
 
-    // Clear error handling if account is not found in the respective table
     if (!$found) {
         if ($scope === 'staff') {
             mh_pr_flash('No staff account found with that username or email address. Please check your credentials or contact the administrator.');
@@ -97,7 +88,6 @@ if ($action === 'lookup') {
     mh_pr_go('forgot_password.php?for=' . $scope);
 }
 
-/* ===================== STEP 2: send the link / code ===================== */
 if ($action === 'send') {
     $method = $_POST['method'] ?? '';
     $scope  = mh_pr_scope($_POST['for'] ?? ($_SESSION['pr_for'] ?? ''));
@@ -203,7 +193,6 @@ if ($action === 'send') {
 
 mh_pr_go('forgot_password.php');
 
-/** Absolute URL for a root-level script (works from this root-level file). */
 function mh_absolute_url_pr($relativePath)
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';

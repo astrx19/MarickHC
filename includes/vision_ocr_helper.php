@@ -1,28 +1,10 @@
 <?php
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - OCR HELPER
- * =====================================================================
- * Reusable helper providing integration with the active OCR engine
- * (Google Cloud Vision, Google Gemini, Groq, OpenAI, or AWS Textract)
- * and document parsing functions.
- * =====================================================================
- */
 
 if (!defined('MH_LOADED_INCLUDES_VISION_OCR_HELPER')) {
 define('MH_LOADED_INCLUDES_VISION_OCR_HELPER', true);
 
 require_once __DIR__ . '/../config/vision.php';
 
-/**
- * Logs an OCR error explicitly to both the PHP server error log and
- * the database activity_logs (System Logs) without throwing or crashing.
- *
- * @param string $engine  'vision' | 'gemini' | 'router' | string
- * @param string $stage   'cURL' | 'JSON' | 'API' | 'File' | 'Config' | 'Exception'
- * @param string $message Error message or description.
- * @param array  $context Additional debug context (HTTP code, curl errno, snippet, etc.)
- */
 function vision_ocr_log_error($engine, $stage, $message, array $context = [])
 {
     static $logged = [];
@@ -36,7 +18,7 @@ function vision_ocr_log_error($engine, $stage, $message, array $context = [])
     $engineLabel = $engineLabels[$engine] ?? ucfirst($engine);
     $key = $engine . '|' . $stage . '|' . $message;
     if (isset($logged[$key])) {
-        return; // Avoid duplicating identical log entries in the same request
+        return;
     }
     $logged[$key] = true;
 
@@ -45,10 +27,8 @@ function vision_ocr_log_error($engine, $stage, $message, array $context = [])
         $logMsg .= ' | Context: ' . json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
-    // 1. Log to server error log
     @error_log($logMsg);
 
-    // 2. Log to database activity_logs (System Logs)
     try {
         $conn = $GLOBALS['conn'] ?? null;
         if ($conn instanceof mysqli && function_exists('logActivity')) {
@@ -64,21 +44,9 @@ function vision_ocr_log_error($engine, $stage, $message, array $context = [])
             @logActivity($conn, $userId, $userRole, 'OCR Error', $details);
         }
     } catch (Throwable $e) {
-        // Logging should never throw
     }
 }
 
-/**
- * Sends an image to the Google Cloud Vision API using DOCUMENT_TEXT_DETECTION.
- *
- * All cURL operations, request building, and JSON handling are safely wrapped
- * in a try-catch block. cURL errors and invalid JSON responses are logged
- * explicitly to system logs, and a clean fallback error structure is returned.
- *
- * @param string $imagePath Local absolute or relative path to the image/document file.
- * @param string|null $apiKey Optional override for the Vision API key.
- * @return array{success:bool, text:string, error?:string, raw?:array}
- */
 function call_google_vision_ocr($imagePath, $apiKey = null)
 {
     try {
@@ -204,7 +172,6 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
         $curlNo   = (int) curl_errno($ch);
         curl_close($ch);
 
-        // Check for cURL / network level errors
         if ($curlNo !== 0) {
             $errDesc = $curlErr ?: ('cURL Error #' . $curlNo);
             vision_ocr_log_error('vision', 'cURL', $errDesc, ['curl_no' => $curlNo, 'http_code' => $httpCode]);
@@ -215,7 +182,6 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
             ];
         }
 
-        // Validate JSON decoding
         $data = json_decode((string) $response, true);
         if (!is_array($data)) {
             $snippet = substr(trim((string) $response), 0, 300);
@@ -230,7 +196,6 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
             ];
         }
 
-        // Check for API-level errors from Google
         if (!empty($data['error'])) {
             $msg  = (string) ($data['error']['message'] ?? 'OCR service error.');
             $code = $data['error']['code'] ?? $httpCode;
@@ -243,7 +208,6 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
             ];
         }
 
-        // Check for response-level error
         if (!empty($data['responses'][0]['error'])) {
             $msg = (string) ($data['responses'][0]['error']['message'] ?? 'Vision API error in image annotation.');
             vision_ocr_log_error('vision', 'API', $msg, ['response_error' => $data['responses'][0]['error']]);
@@ -255,7 +219,6 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
             ];
         }
 
-        // Extract text from fullTextAnnotation or fallback to textAnnotations[0]
         $text = '';
         if (!empty($data['responses'][0]['fullTextAnnotation']['text'])) {
             $text = (string) $data['responses'][0]['fullTextAnnotation']['text'];
@@ -281,12 +244,6 @@ function call_google_vision_ocr($imagePath, $apiKey = null)
     }
 }
 
-/**
- * Validates and reads an uploaded file from $_FILES for OCR scanning.
- *
- * @param string $fieldName Field name in $_FILES.
- * @return array{success:bool, path?:string, mime_type?:string, error?:string}
- */
 function vision_ocr_get_uploaded_file($fieldName)
 {
     if (!isset($_FILES[$fieldName])) {
@@ -346,9 +303,6 @@ function vision_ocr_get_uploaded_file($fieldName)
     ];
 }
 
-/**
- * Normalizes date strings (e.g. "03/14/2024", "14-03-24", "March 14, 2024") to YYYY-MM-DD.
- */
 function vision_ocr_normalize_date($rawDate)
 {
     if (!$rawDate || !is_string($rawDate)) {
@@ -359,12 +313,10 @@ function vision_ocr_normalize_date($rawDate)
         return '';
     }
 
-    // Already ISO yyyy-mm-dd
     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) {
         return $rawDate;
     }
 
-    // Numbers separated by slashes/dashes
     if (preg_match('#^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$#', $rawDate, $m)) {
         $a = (int) $m[1];
         $b = (int) $m[2];
@@ -393,10 +345,6 @@ function vision_ocr_normalize_date($rawDate)
     return $iso;
 }
 
-/**
- * Dynamic patient matching from OCR identity fields.
- * Safely wrapped in try-catch so database exceptions never crash the OCR response.
- */
 function vision_ocr_match_patient(mysqli $conn, $firstName, $lastName, $birthdate = '')
 {
     try {
@@ -452,11 +400,6 @@ function vision_ocr_match_patient(mysqli $conn, $firstName, $lastName, $birthdat
     }
 }
 
-/* ---------------------------------------------------------------------
- * FORM-SPECIFIC TEXT PARSERS (General Consultation, Maternal, Immunization, Dental)
- * ------------------------------------------------------------------ */
-
-/** Helper: splits full name into first and last name */
 function vision_ocr_split_name($fullName)
 {
     $fullName = trim(preg_replace('#^(?:Patient(?:\s*Name)?|Name|Pangalan|Child(?:\'s)?\s*Name|Mother(?:\'s)?\s*Name|Father(?:\'s)?\s*Name)\s*[:=]\s*#i', '', $fullName));
@@ -479,9 +422,6 @@ function vision_ocr_split_name($fullName)
     return ['first_name' => '', 'last_name' => ''];
 }
 
-/**
- * Parses raw text from a General Consultation / Checkup document.
- */
 function vision_parse_checkup_text($text)
 {
     $fields = [
@@ -502,61 +442,50 @@ function vision_parse_checkup_text($text)
         return $fields;
     }
 
-    // 1. Blood Pressure (e.g. "120/80")
     if (preg_match('#(?:BP|B\.P\.|Blood\s*Pressure)\s*[:=]?\s*(\d{2,3}\s*/\s*\d{2,3})#i', $text, $m)) {
         $fields['bp'] = preg_replace('#\s+#', '', $m[1]);
     } elseif (preg_match('#(?<![\d/.\-])(\d{2,3}\s*/\s*\d{2,3})(?![\d/.\-])\s*(?:mmHg)?#i', $text, $m)) {
-        // Bare "120/80" fallback - the lookarounds stop it from matching the "05/14" inside a date like 05/14/1990
         $fields['bp'] = preg_replace('#\s+#', '', $m[1]);
     }
 
-    // 2. Temperature (e.g. "37.2" or "37.2 °C")
     if (preg_match('#(?:Temp(?:erature)?|T)\s*[:=]?\s*([34]\d(?:\.\d)?)\s*(?:°?C)?#i', $text, $m)) {
         $fields['temp'] = $m[1] . ' °C';
     } elseif (preg_match('#\b(3[5-9](?:\.\d)?|4[0-2](?:\.\d)?)\s*(?:°C|deg\s*C)\b#i', $text, $m)) {
         $fields['temp'] = $m[1] . ' °C';
     }
 
-    // 3. Weight (e.g. "65 kg")
     if (preg_match('#(?:Weight|Wt|WT)\s*[:=]?\s*(\d{1,3}(?:\.\d{1,2})?)\s*(kg|kilos|lbs)?#i', $text, $m)) {
         $unit = !empty($m[2]) ? strtolower($m[2]) : 'kg';
         $fields['weight'] = $m[1] . ' ' . $unit;
     }
 
-    // 4. Height (e.g. "160 cm")
     if (preg_match('#(?:Height|Ht|HT)\s*[:=]?\s*(\d{2,3}(?:\.\d{1,2})?)\s*(cm|m)?#i', $text, $m)) {
         $unit = !empty($m[2]) ? strtolower($m[2]) : 'cm';
         $fields['height'] = $m[1] . ' ' . $unit;
     }
 
-    // 5. Patient Name
     if (preg_match('#(?:Patient(?:\s*Name)?|Name|Pangalan)\s*[:=]\s*([^\n\r]+)#i', $text, $m)) {
         $nameInfo = vision_ocr_split_name($m[1]);
         $fields['first_name'] = $nameInfo['first_name'];
         $fields['last_name']  = $nameInfo['last_name'];
     }
 
-    // 6. Birthdate
     if (preg_match('#(?:Birthdate|DOB|Date\s*of\s*Birth|Birthday|Bday|Kapanganakan)\s*[:=]?\s*([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})#i', $text, $m)) {
         $fields['birthdate'] = vision_ocr_normalize_date($m[1]);
     }
 
-    // 7. Chief Complaints
     if (preg_match('#(?:Chief\s*Complaints?|C/?C|Reason\s*for\s*(?:Visit|Consultation)|Reklamo|Dahilan\s*ng\s*Konsulta)\s*[:=]?\s*([^\n\r]+(?:\n(?!(?:Diagnosis|Dx|Assessment|Impression|Rx|Prescription|Plan|Notes|Remarks))[^\n\r]+)*)#i', $text, $m)) {
         $fields['chief_complaints'] = trim($m[1]);
     }
 
-    // 8. Diagnosis
     if (preg_match('#(?:Diagnosis|Dx|Assessment|Impression|Karamdaman)\s*[:=]?\s*([^\n\r]+(?:\n(?!(?:Rx|Prescription|Medications|Plan|Notes|Remarks))[^\n\r]+)*)#i', $text, $m)) {
         $fields['diagnosis'] = trim($m[1]);
     }
 
-    // 9. Prescription
     if (preg_match('#(?:Prescription|Rx|Medications?|Meds|Gamot)\s*[:=]?\s*([^\n\r]+(?:\n(?!(?:Plan|Notes|Remarks|Follow\s*up))[^\n\r]+)*)#i', $text, $m)) {
         $fields['prescription'] = trim($m[1]);
     }
 
-    // 10. Notes / Remarks
     if (preg_match('#(?:Notes?|Remarks?|Plan|Advice|Tagubilin)\s*[:=]?\s*([^\n\r]+(?:\n[^\n\r]+)*)#i', $text, $m)) {
         $fields['notes'] = trim($m[1]);
     }
@@ -564,9 +493,6 @@ function vision_parse_checkup_text($text)
     return $fields;
 }
 
-/**
- * Parses raw text from a Maternal Care / Prenatal card document.
- */
 function vision_parse_maternal_text($text)
 {
     $fields = [
@@ -589,7 +515,6 @@ function vision_parse_maternal_text($text)
         return $fields;
     }
 
-    // 1. Gravida & Para (e.g. G2P1, G: 2, P: 1)
     if (preg_match('#G\s*(\d+)\s*P\s*(\d+)#i', $text, $m)) {
         $fields['gravida'] = $m[1];
         $fields['para']    = $m[2];
@@ -602,56 +527,46 @@ function vision_parse_maternal_text($text)
         }
     }
 
-    // 2. LMP (Last Menstrual Period)
     if (preg_match('#LMP\s*[:=]?\s*([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})#i', $text, $m)) {
         $fields['lmp'] = vision_ocr_normalize_date($m[1]);
     }
 
-    // 3. EDC / EDD
     if (preg_match('#(?:EDC|EDD)\s*[:=]?\s*([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})#i', $text, $m)) {
         $fields['edc'] = vision_ocr_normalize_date($m[1]);
     }
 
-    // 4. AOG (Age of Gestation, e.g. "24 wks")
     if (preg_match('#AOG\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?\s*(?:wks|weeks|wk|months|mos)?)#i', $text, $m)) {
         $fields['aog'] = trim($m[1]);
     }
 
-    // 5. Blood Pressure
     if (preg_match('#(?:BP|B\.P\.|Blood\s*Pressure)\s*[:=]?\s*(\d{2,3}\s*/\s*\d{2,3})#i', $text, $m)) {
         $fields['blood_pressure'] = preg_replace('#\s+#', '', $m[1]);
     } elseif (preg_match('#(?<![\d/.\-])(\d{2,3}\s*/\s*\d{2,3})(?![\d/.\-])#', $text, $m)) {
-        $fields['blood_pressure'] = preg_replace('#\s+#', '', $m[1]);   // lookarounds: never a slice of a date
+        $fields['blood_pressure'] = preg_replace('#\s+#', '', $m[1]);
     }
 
-    // 6. Weight (numeric only as required by form)
     if (preg_match('#(?:Weight|Wt)\s*[:=]?\s*(\d{1,3}(?:\.\d{1,2})?)#i', $text, $m)) {
         $fields['weight'] = $m[1];
     }
 
-    // 7. Height (numeric only as required by form)
     if (preg_match('#(?:Height|Ht)\s*[:=]?\s*(\d{2,3}(?:\.\d{1,2})?)#i', $text, $m)) {
         $fields['height'] = $m[1];
     }
 
-    // 8. FH / FHT
     if (preg_match('#(?:FH\s*[/&]\s*FHT|Fundal\s*Height|Fetal\s*Heart\s*Tone|FH|FHT)\s*[:=]?\s*([^\n\r]+)#i', $text, $m)) {
         $fields['fh_fht'] = trim($m[1]);
     }
 
-    // 9. Mother's Name
     if (preg_match('#(?:Mother(?:\'s)?\s*Name|Patient(?:\s*Name)?|Name|Pangalan(?:\s*ng\s*Ina)?)\s*[:=]\s*([^\n\r]+)#i', $text, $m)) {
         $nameInfo = vision_ocr_split_name($m[1]);
         $fields['first_name'] = $nameInfo['first_name'];
         $fields['last_name']  = $nameInfo['last_name'];
     }
 
-    // 10. Birthdate
     if (preg_match('#(?:Birthdate|DOB|Date\s*of\s*Birth|Birthday|Bday|Kapanganakan)\s*[:=]?\s*([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})#i', $text, $m)) {
         $fields['birthdate'] = vision_ocr_normalize_date($m[1]);
     }
 
-    // 11. Notes
     if (preg_match('#(?:Notes?|Remarks?|Vitamins?|Plan)\s*[:=]?\s*([^\n\r]+(?:\n[^\n\r]+)*)#i', $text, $m)) {
         $fields['notes'] = trim($m[1]);
     }
@@ -659,9 +574,6 @@ function vision_parse_maternal_text($text)
     return $fields;
 }
 
-/**
- * Parses raw text from a Child Immunization Form document.
- */
 function vision_parse_immunization_text($text)
 {
     $fields = [
@@ -703,24 +615,20 @@ function vision_parse_immunization_text($text)
         return $fields;
     }
 
-    // 1. Child Name
     if (preg_match('#(?:Child(?:\'s)?\s*Name|Patient(?:\s*Name)?|Name|Pangalan(?:\s*ng\s*Bata)?)\s*[:=]\s*([^\n\r]+)#i', $text, $m)) {
         $nameInfo = vision_ocr_split_name($m[1]);
         $fields['first_name'] = $nameInfo['first_name'];
         $fields['last_name']  = $nameInfo['last_name'];
     }
 
-    // 2. Child Birthdate
     if (preg_match('#(?:Date\s*of\s*Birth|Birthdate|Birthday|Bday|DOB|Kapanganakan)\s*[:=]?\s*([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})#i', $text, $m)) {
         $fields['birthdate'] = vision_ocr_normalize_date($m[1]);
     }
 
-    // 3. Family No
     if (preg_match('#(?:Family\s*No\.?|Fam\s*No\.?)\s*[:=]?\s*([0-9A-Za-z\-_]+)#i', $text, $m)) {
         $fields['family_no'] = trim($m[1]);
     }
 
-    // 4. Birth Time, Weight, Height
     if (preg_match('#(?:Birth\s*Time|Time\s*of\s*Birth)\s*[:=]?\s*([^\n\r,]+)#i', $text, $m)) {
         $fields['birth_time'] = trim($m[1]);
     }
@@ -731,7 +639,6 @@ function vision_parse_immunization_text($text)
         $fields['birth_height'] = trim($m[1]);
     }
 
-    // 5. Place of birth, delivery, breastfeeding
     if (preg_match('#(?:Place\s*of\s*Birth|Birth\s*Place)\s*[:=]?\s*([^\n\r]+)#i', $text, $m)) {
         $fields['birth_place'] = trim($m[1]);
     }
@@ -742,7 +649,6 @@ function vision_parse_immunization_text($text)
         $fields['type_of_breastfeeding'] = trim($m[1]);
     }
 
-    // 6. Parents info
     if (preg_match('#(?:Mother(?:\'s)?\s*Name|Pangalan\s*ng\s*Ina)\s*[:=]?\s*([^\n\r]+)#i', $text, $m)) {
         $fields['mother_name'] = trim($m[1]);
     }
@@ -767,7 +673,6 @@ function vision_parse_immunization_text($text)
         $fields['contact_no'] = trim($m[1]);
     }
 
-    // 7. Vaccines
     $datePat = '([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})';
 
     if (preg_match('#BCG\b\s*[:=]?\s*' . $datePat . '#i', $text, $m)) {
@@ -808,12 +713,6 @@ function vision_parse_immunization_text($text)
 }
 
 if (!function_exists('vision_parse_dental_treatment_rows')) {
-    /**
-     * Reads the center's paper Dental Record: every line that starts with a date is one row of the
-     * DENTAL PROCEDURE HISTORY table (DATE | PROCEDURE | TOOTH NO. | REMARKS). Returns rows shaped for the
-     * "Scan paper record" review step: date, routine[], other[], teeth, referrals, remarks.
-     * Rows are only suggestions: the dentist checks them and the dates before anything is saved.
-     */
     function vision_parse_dental_treatment_rows($text)
     {
         $rows = [];
@@ -853,9 +752,6 @@ if (!function_exists('vision_parse_dental_treatment_rows')) {
 }
 
 
-/**
- * Parses raw text from a Dental Record document.
- */
 function vision_parse_dental_text($text, array $catalog = [])
 {
     $pageType = 'treatment_record';
@@ -872,7 +768,6 @@ function vision_parse_dental_text($text, array $catalog = [])
     $caries = [];
     $treatments = vision_parse_dental_treatment_rows($text);
 
-    // Patient Name
     if (preg_match('#(?:Patient(?:\s*Name)?|Name|Pangalan)\s*[:=]\s*([^\n\r]+)#i', $text, $m)) {
         $nameInfo = vision_ocr_split_name($m[1]);
         if (!empty($nameInfo['first_name'])) {
@@ -883,7 +778,6 @@ function vision_parse_dental_text($text, array $catalog = [])
         }
     }
 
-    // Birthdate & Age
     if (preg_match('#(?:Birthdate|DOB|Date\s*of\s*Birth|Birthday|Bday)\s*[:=]?\s*([0-9]{1,4}[/\-.][0-9]{1,2}[/\-.][0-9]{1,4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})#i', $text, $m)) {
         $fields['patient.birthdate'] = vision_ocr_normalize_date($m[1]);
     }
@@ -894,13 +788,10 @@ function vision_parse_dental_text($text, array $catalog = [])
         $fields['patient.sex'] = (stripos($m[1], 'f') === 0) ? 'Female' : 'Male';
     }
 
-    // Member No. (PhilHealth) on the paper header
     if (preg_match('#(?:Member\s*No\.?|PhilHealth(?:\s*No\.?)?)\s*[:=]?\s*([0-9][0-9\-\s]{5,20})#i', $text, $m)) {
         $fields['extra.philhealth_no'] = trim($m[1]);
     }
 
-    // Odontogram (Tooth numbers and status/condition)
-    // Matches patterns like "Tooth 16: C / M" or "16: c, s"
     if (preg_match_all('#\b([1-8][1-8])\s*[:=]\s*([a-zA-Z/\+]+)#', $text, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $match) {
             $tooth = $match[1];
@@ -909,7 +800,6 @@ function vision_parse_dental_text($text, array $catalog = [])
         }
     }
 
-    // Caries items (A1..A3, B1..B6, C1..C3)
     if (preg_match_all('#\b([ABC]\d{1,2})\s*[:=]?\s*(yes|no)\b#i', $text, $matches, PREG_SET_ORDER)) {
         foreach ($matches as $match) {
             $caries[strtoupper($match[1])] = strtolower($match[2]);
@@ -932,19 +822,6 @@ function vision_parse_dental_text($text, array $catalog = [])
     ];
 }
 
-/* =====================================================================
- * AWS TEXTRACT OCR ENGINE
- * ===================================================================*/
-
-/**
- * Resolves the AWS Textract credentials and region.
- *
- * Reads the values LIVE from system_settings every time (never from constants that
- * were frozen at include time - config/vision.php is often loaded before the settings
- * cache is booted, which used to leave the keys empty). Explicit arguments win.
- *
- * @return array{0:string,1:string,2:string} [accessKey, secretKey, region]
- */
 function mh_textract_credentials($accessKey = null, $secretKey = null, $region = null)
 {
     if (empty($accessKey)) {
@@ -968,10 +845,6 @@ function mh_textract_credentials($accessKey = null, $secretKey = null, $region =
     return [trim((string) $accessKey), trim((string) $secretKey), $region];
 }
 
-/**
- * True when the AWS SDK for PHP (Aws\Textract\TextractClient) can be used.
- * Looks for Composer's autoloader in the project root (or one level above it).
- */
 function mh_textract_sdk_available()
 {
     if (class_exists('Aws\\Textract\\TextractClient', false)) {
@@ -992,7 +865,6 @@ function mh_textract_sdk_available()
     return false;
 }
 
-/** Turns a Textract error code into a message the staff can act on. */
 function mh_textract_friendly_error($code, $message, $httpCode = 0)
 {
     $code = (string) $code;
@@ -1023,12 +895,6 @@ function mh_textract_friendly_error($code, $message, $httpCode = 0)
     return $message !== '' ? ('AWS Textract: ' . $message) : ('AWS Textract error (HTTP ' . (int) $httpCode . ').');
 }
 
-/**
- * Splits a Textract Blocks array into plain LINE text and a FORMS key => value map.
- * Shared by the SDK path and the raw SigV4 path so both return the same structure.
- *
- * @return array{text:string, kv:array<string,string>}
- */
 function mh_textract_parse_blocks(array $blocks)
 {
     $lines    = [];
@@ -1049,12 +915,6 @@ function mh_textract_parse_blocks(array $blocks)
     ];
 }
 
-/**
- * AnalyzeDocument through the AWS SDK for PHP (Aws\Textract\TextractClient).
- * Pass the RAW image bytes - the SDK base64-encodes the blob itself.
- *
- * @return array{ok:bool, data?:array, error?:string, code?:string, http_code?:int}
- */
 function mh_textract_call_sdk($bytes, $accessKey, $secretKey, $region)
 {
     try {
@@ -1082,12 +942,6 @@ function mh_textract_call_sdk($bytes, $accessKey, $secretKey, $region)
     }
 }
 
-/**
- * AnalyzeDocument through a hand-signed AWS Signature V4 cURL request.
- * Used automatically when the AWS SDK (vendor/autoload.php) is not installed.
- *
- * @return array{ok:bool, data?:array, error?:string, code?:string, http_code?:int}
- */
 function mh_textract_call_sigv4($bytes, $accessKey, $secretKey, $region)
 {
     if (!function_exists('curl_init')) {
@@ -1174,18 +1028,6 @@ function mh_textract_call_sigv4($bytes, $accessKey, $secretKey, $region)
     return ['ok' => true, 'data' => $data];
 }
 
-/**
- * Runs a scanned document through Amazon Textract (AnalyzeDocument: FORMS + TABLES).
- *
- * Uses the AWS SDK for PHP (Aws\Textract\TextractClient) when vendor/autoload.php is
- * present, otherwise an equivalent hand-signed SigV4 request - either way the result is
- * Textract's, and this function NEVER falls back to Vision or Gemini.
- *
- * Credentials and region are read live from System Settings (aws_access_key_id,
- * aws_secret_access_key, aws_region - default ap-southeast-1) unless passed explicitly.
- *
- * @return array{success:bool, text:string, kv:array<string,string>, sdk?:bool, error?:string}
- */
 function call_aws_textract_ocr($imagePath, $accessKey = null, $secretKey = null, $region = null)
 {
     try {
@@ -1272,17 +1114,8 @@ function call_aws_textract_ocr($imagePath, $accessKey = null, $secretKey = null,
     }
 }
 
-/**
- * Builds a flat key => value map from Textract KEY_VALUE_SET blocks.
- * Keys and values are built by walking the child WORD blocks.
- *
- * @param array $kvBlocks  Filtered blocks of type KEY_VALUE_SET keyed by Id.
- * @param array $allBlocks All blocks from the response (for child lookups).
- * @return array<string,string>
- */
 function mh_textract_extract_kv(array $kvBlocks, array $allBlocks)
 {
-    // Build a lookup of all blocks by their Id
     $byId = [];
     foreach ($allBlocks as $b) {
         if (!empty($b['Id'])) {
@@ -1290,9 +1123,6 @@ function mh_textract_extract_kv(array $kvBlocks, array $allBlocks)
         }
     }
 
-    /**
-     * Walks Relationships of type CHILD to collect all WORD text under a block.
-     */
     $getText = function (array $block) use (&$byId): string {
         $words = [];
         foreach ($block['Relationships'] ?? [] as $rel) {
@@ -1315,13 +1145,11 @@ function mh_textract_extract_kv(array $kvBlocks, array $allBlocks)
     $kv = [];
 
     foreach ($kvBlocks as $block) {
-        // Only process KEY blocks
         if (($block['EntityTypes'][0] ?? '') !== 'KEY') { continue; }
 
         $keyText = $getText($block);
         if ($keyText === '') { continue; }
 
-        // Find the VALUE block linked via VALUE relationship
         $valueText = '';
         foreach ($block['Relationships'] ?? [] as $rel) {
             if (($rel['Type'] ?? '') !== 'VALUE') { continue; }
@@ -1333,7 +1161,6 @@ function mh_textract_extract_kv(array $kvBlocks, array $allBlocks)
             }
         }
 
-        // Normalize the key: strip trailing punctuation, lowercase
         $normalizedKey = rtrim(trim($keyText), ':');
         $kv[$normalizedKey] = $valueText;
     }
@@ -1341,29 +1168,11 @@ function mh_textract_extract_kv(array $kvBlocks, array $allBlocks)
     return $kv;
 }
 
-/**
- * Maps Textract key-value pairs and raw LINE text to our standard
- * patient field structure used by vision_parse_checkup_text() and
- * sibling parsers.
- *
- * The KV pairs take precedence over regex matches from the raw text,
- * giving more reliable extraction on form-structured documents.
- *
- * @param array  $kv     Key-value pairs from mh_textract_extract_kv().
- * @param string $text   Raw LINE text joined by newlines (for regex fallback).
- * @param string $formType  'checkup' | 'maternal' | 'immunization' | 'dental'
- * @return array  Standard parsed fields array.
- */
 function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $catalog = [])
 {
-    // Values from the Groq engine are already structured + validated and are AUTHORITATIVE: they replace
-    // whatever the regex parsers guessed from the raw text for the same inputs (that guessing is what put
-    // birthdays into blood pressure and whole pages into chief complaints).
     $groq = (($kv['__source'] ?? '') === 'groq');
     unset($kv['__source']);
 
-    // Dental uses a nested structure ('fields' keyed 'patient.*', odontogram, caries...), so it is
-    // handled on its own - the flat first_name/last_name keys below do not exist there.
     if ($formType === 'dental') {
         $parsed = vision_parse_dental_text($text, $catalog);
         $kvLowerD = [];
@@ -1391,7 +1200,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
             }
         }
         if ($groq) {
-            // Groq's separate name/date keys override the regex guess for the patient block
             foreach (['patient.first_name' => 'First Name', 'patient.last_name' => 'Last Name',
                       'patient.middle_name' => 'Middle Name', 'patient.birthdate' => 'Birthdate'] as $dest => $label) {
                 $val = $pick([$label]);
@@ -1401,7 +1209,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         return $parsed;
     }
 
-    // 1. Parse via existing regex parsers as the baseline
     switch ($formType) {
         case 'maternal':      $fields = vision_parse_maternal_text($text);      break;
         case 'immunization':  $fields = vision_parse_immunization_text($text);  break;
@@ -1409,14 +1216,11 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         default:              $fields = vision_parse_checkup_text($text);       break;
     }
 
-    // 2. Overlay with KV values where Textract found explicit form fields.
-    //    KV keys from Textract are compared case-insensitively.
     $kvLower = [];
     foreach ($kv as $k => $v) {
         $kvLower[strtolower(trim($k))] = $v;
     }
 
-    // Helper: looks up a list of possible KV keys and returns the first match
     $kvGet = function (array $candidates) use ($kvLower): string {
         foreach ($candidates as $c) {
             $c = strtolower(trim($c));
@@ -1427,8 +1231,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         return '';
     };
 
-    // Groq: clear every input Groq owns so a regex guess can't survive where Groq read a blank.
-    // (Fields Groq never returns, e.g. the immunization vaccine dates, keep their regex values.)
     if ($groq) {
         $owned = ['first_name', 'last_name', 'birthdate', 'weight', 'height', 'temp', 'bp', 'blood_pressure',
                   'chief_complaints', 'diagnosis', 'prescription', 'notes', 'gravida', 'para', 'lmp', 'edc',
@@ -1439,19 +1241,15 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         }
     }
 
-    // ---- Shared fields (all form types) -----
-    // Explicit First/Last Name pairs (e.g. from the Groq engine) beat re-splitting a full name,
-    // which would misplace multi-word given names such as "Maria Cristina".
     $kvFirst = $kvGet(['First Name', 'Given Name']);
     $kvLast  = $kvGet(['Last Name', 'Surname', 'Family Name']);
     if ($groq) {
-        // Groq returns separate keys: take each one as-is, never re-split a full name
         if ($kvFirst !== '') { $fields['first_name'] = $kvFirst; }
         if ($kvLast !== '')  { $fields['last_name']  = $kvLast; }
         $fields['middle_name'] = $kvGet(['Middle Name']);
         if (in_array($formType, ['checkup', 'maternal'], true)) {
             $vd = $kvGet(['Consultation Date']);
-            if ($vd !== '') { $fields['visit_date'] = $vd; }   // -> consultations / maternal_records.visit_date
+            if ($vd !== '') { $fields['visit_date'] = $vd; }
         }
     } elseif ($kvFirst !== '' && $kvLast !== '') {
         $fields['first_name'] = $kvFirst;
@@ -1471,7 +1269,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         if ($rawDate !== '') { $fields['birthdate'] = vision_ocr_normalize_date($rawDate); }
     }
 
-    // ---- Checkup-specific fields -----
     if ($formType === 'checkup') {
         if ($fields['bp'] === '')               { $fields['bp']               = $kvGet(['BP', 'Blood Pressure', 'B.P.']); }
         if ($fields['temp'] === '')             { $fields['temp']             = $kvGet(['Temp', 'Temperature', 'T']); }
@@ -1483,7 +1280,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         if ($fields['notes'] === '')            { $fields['notes']            = $kvGet(['Notes', 'Remarks', 'Plan', 'Advice']); }
     }
 
-    // ---- Maternal-specific fields -----
     if ($formType === 'maternal') {
         if ($fields['gravida'] === '')        { $fields['gravida']        = $kvGet(['Gravida', 'G']); }
         if ($fields['para'] === '')           { $fields['para']           = $kvGet(['Para', 'P']); }
@@ -1497,7 +1293,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         if ($fields['notes'] === '')          { $fields['notes']          = $kvGet(['Notes', 'Remarks', 'Vitamins', 'Plan']); }
     }
 
-    // ---- Immunization-specific fields -----
     if ($formType === 'immunization') {
         if ($fields['family_no'] === '')       { $fields['family_no']       = $kvGet(['Family No', 'Fam No']); }
         if ($fields['mother_name'] === '')     { $fields['mother_name']     = $kvGet(["Mother's Name", 'Mother Name']); }
@@ -1508,7 +1303,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
         if ($fields['attending_physician'] === '') { $fields['attending_physician'] = $kvGet(['Attending Physician', 'Physician', 'Doctor']); }
     }
 
-    // The maternal form's weight/height inputs take numbers only ("65", not "65 kg")
     if ($groq && $formType === 'maternal') {
         foreach (['weight', 'height'] as $k) {
             $fields[$k] = (isset($fields[$k]) && preg_match('#\d+(?:\.\d+)?#', $fields[$k], $nm)) ? $nm[0] : '';
@@ -1518,24 +1312,6 @@ function mh_textract_map_fields(array $kv, $text, $formType = 'checkup', array $
     return $fields;
 }
 
-/* =====================================================================
- * OCR ENGINE ROUTER
- * ===================================================================*/
-
-/**
- * Calls the Gemini AI API (generateContent) to perform plain-text OCR
- * on a document image, without a responseSchema — just asking for the
- * raw transcription. This mirrors call_google_vision_ocr()'s contract
- * so callers can be switched transparently.
- *
- * All operations are wrapped in try-catch; cURL errors and invalid JSON
- * responses are logged explicitly to system logs, and a clean fallback
- * error is returned.
- *
- * @param string      $imagePath  Absolute path to the image/document file.
- * @param string|null $apiKey     Optional override for the Gemini API key.
- * @return array{success:bool, text:string, error?:string}
- */
 function call_gemini_vision_ocr($imagePath, $apiKey = null)
 {
     require_once __DIR__ . '/ai_helper.php';
@@ -1614,11 +1390,6 @@ function call_openai_vision_ocr($imagePath, $apiKey = null)
     return call_groq_ocr($imagePath, $groqKey);
 }
 
-/* ---------------------------------------------------------------------
- * Groq JSON -> clean, validated values
- * ------------------------------------------------------------------ */
-
-/** Person-name cleaner: drops digits/symbols, collapses spaces, Title-Cases ALL-CAPS handwriting. */
 function mh_groq_clean_name($v)
 {
     $v = trim((string) $v);
@@ -1630,7 +1401,6 @@ function mh_groq_clean_name($v)
     return $v;
 }
 
-/** Date cleaner -> yyyy-mm-dd or ''. Future dates are rejected unless $allowFuture (e.g. EDC). */
 function mh_groq_clean_date($v, $allowFuture = false)
 {
     $iso = vision_ocr_normalize_date(trim((string) $v));
@@ -1639,7 +1409,6 @@ function mh_groq_clean_date($v, $allowFuture = false)
     return $iso;
 }
 
-/** Blood pressure "120/80" only. A date such as 05/14/1990 can never pass (the lookarounds reject it). */
 function mh_groq_clean_bp($v)
 {
     if (!preg_match('#(?<![\\d/.\\-])(\\d{2,3})\\s*/\\s*(\\d{2,3})(?![\\d/.\\-])#', (string) $v, $m)) { return ''; }
@@ -1649,13 +1418,11 @@ function mh_groq_clean_bp($v)
     return $sys . '/' . $dia;
 }
 
-/** Trims a float for display: 36.80 -> "36.8", 65.0 -> "65". */
 function mh_groq_num($n)
 {
     return rtrim(rtrim(number_format((float) $n, 1, '.', ''), '0'), '.');
 }
 
-/** Temperature in Celsius, formatted like the regex parser ("36.8 °C"); Fahrenheit is converted. */
 function mh_groq_clean_temp($v)
 {
     if (!preg_match('#(\\d{2,3}(?:\\.\\d+)?)\\s*(?:°|º)?\\s*([CF])?#iu', (string) $v, $m)) { return ''; }
@@ -1666,7 +1433,6 @@ function mh_groq_clean_temp($v)
     return mh_groq_num($t) . ' °C';
 }
 
-/** Weight as "65 kg" (lbs converted). */
 function mh_groq_clean_weight($v)
 {
     if (!preg_match('#(\\d{1,3}(?:\\.\\d{1,2})?)\\s*(kgs?|kilos?|lbs?|pounds?)?#i', (string) $v, $m)) { return ''; }
@@ -1676,7 +1442,6 @@ function mh_groq_clean_weight($v)
     return mh_groq_num($w) . ' kg';
 }
 
-/** Height as "160 cm" (metres, feet/inches converted). */
 function mh_groq_clean_height($v)
 {
     $v = (string) $v;
@@ -1693,25 +1458,18 @@ function mh_groq_clean_height($v)
     return mh_groq_num($h) . ' cm';
 }
 
-/**
- * Free-text cleaner for chief complaints / diagnosis / prescription / notes.
- * Strips an echoed leading label, cuts off anything that runs into another form label
- * (so one field can never swallow the rest of the page), and rejects a value that is
- * just the whole transcription or only numbers/dates.
- */
 function mh_groq_clean_text($v, $rawText = '', $ownLabel = '')
 {
     $v = trim(str_replace("\r", '', (string) $v));
     if ($v === '') { return ''; }
     $labels = 'Patient\s*Name|First\s*Name|Last\s*Name|Middle\s*Name|Birth\s*date|Date\s*of\s*Birth|DOB|Consultation\s*Date|Blood\s*Pressure|B\.?P\.?|Temp(?:erature)?|Weight|Height|Chief\s*Complaints?|Diagnosis|Prescription|Rx|Notes?|Remarks?';
-    // Three or more form labels in one value = the model dumped the page into this field
     if (preg_match_all('#\b(?:' . $labels . ')\s*[:=]#i', $v) >= 3) { return ''; }
     if ($ownLabel !== '') {
-        $v = preg_replace('#^\s*(?:' . $ownLabel . ')\s*[:=]\s*#i', '', $v);   // echoed own label: "Diagnosis: URTI"
+        $v = preg_replace('#^\s*(?:' . $ownLabel . ')\s*[:=]\s*#i', '', $v);
     }
     if (preg_match('#\b(?:' . $labels . ')\s*[:=]#i', $v, $m, PREG_OFFSET_CAPTURE)) {
-        if ($m[0][1] === 0) { return ''; }                // starts with some OTHER field's label: wrong field
-        $v = substr($v, 0, $m[0][1]);                     // runs into the next field: keep only its own part
+        if ($m[0][1] === 0) { return ''; }
+        $v = substr($v, 0, $m[0][1]);
     }
     $v = trim(preg_replace(["/[ \t]+/", "/\n{3,}/"], [' ', "\n\n"], $v));
     if ($v === '' || preg_match('#^[\d\s/\-.:,]+$#', $v)) { return ''; }
@@ -1720,20 +1478,6 @@ function mh_groq_clean_text($v, $rawText = '', $ownLabel = '')
     return mb_substr($v, 0, 600, 'UTF-8');
 }
 
-/**
- * Maps the JSON object returned by the Groq model onto the label => value map understood by
- * mh_textract_map_fields(), validating every value on the way so nothing lands in the wrong
- * input (no dates in blood pressure, no whole-page dumps in chief complaints).
- *
- * Expected keys: last_name, first_name, middle_name (or middle_initial), birthdate,
- * consultation_date, weight, height, temperature, blood_pressure, chief_complaints,
- * diagnosis, prescription - plus optional notes and maternal / immunization extras.
- *
- * The reserved '__source' => 'groq' entry tells the mapper these values are authoritative.
- *
- * @param array $data Decoded JSON object from the model.
- * @return array<string,string> label => value (empty values dropped)
- */
 function mh_groq_json_to_kv(array $data)
 {
     $get = function (array $keys) use ($data) {
@@ -1753,12 +1497,11 @@ function mh_groq_json_to_kv(array $data)
     $kv = [];
     $put = function ($label, $value) use (&$kv) { if ($value !== '') { $kv[$label] = $value; } };
 
-    // ---- Identity ----
     $first  = mh_groq_clean_name($get(['first_name']));
     $last   = mh_groq_clean_name($get(['last_name']));
     $middle = mh_groq_clean_name($get(['middle_name', 'middle_initial']));
     if (($first === '' || $last === '') && ($full = $get(['patient_name', 'name'])) !== '') {
-        $n = vision_ocr_split_name($full);   // handles "Santos, Maria" and "Maria Santos"
+        $n = vision_ocr_split_name($full);
         if ($first === '') { $first = mh_groq_clean_name($n['first_name']); }
         if ($last === '')  { $last  = mh_groq_clean_name($n['last_name']); }
     }
@@ -1769,19 +1512,16 @@ function mh_groq_json_to_kv(array $data)
     $put('Birthdate', mh_groq_clean_date($get(['birthdate', 'date_of_birth', 'dob'])));
     $put('Consultation Date', mh_groq_clean_date($get(['consultation_date', 'visit_date'])));
 
-    // ---- Vitals ----
     $put('Blood Pressure', mh_groq_clean_bp($get(['blood_pressure', 'bp'])));
     $put('Temperature', mh_groq_clean_temp($get(['temperature', 'temp'])));
     $put('Weight', mh_groq_clean_weight($get(['weight'])));
     $put('Height', mh_groq_clean_height($get(['height'])));
 
-    // ---- Clinical text ----
     $put('Chief Complaints', mh_groq_clean_text($get(['chief_complaints', 'chief_complaint']), $rawText, 'Chief\s*Complaints?'));
     $put('Diagnosis', mh_groq_clean_text($get(['diagnosis']), $rawText, 'Diagnosis|Dx'));
     $put('Prescription', mh_groq_clean_text($get(['prescription']), $rawText, 'Prescription|Rx'));
     $put('Notes', mh_groq_clean_text($get(['notes']), $rawText, 'Notes?|Remarks?'));
 
-    // ---- Maternal care extras ----
     $put('Gravida', preg_replace('#\\D#', '', $get(['gravida'])));
     $put('Para', preg_replace('#\\D#', '', $get(['para'])));
     $put('LMP', mh_groq_clean_date($get(['lmp'])));
@@ -1789,7 +1529,6 @@ function mh_groq_json_to_kv(array $data)
     $put('AOG', mb_substr($get(['aog']), 0, 40, 'UTF-8'));
     $put('FH / FHT', mb_substr($get(['fh_fht']), 0, 100, 'UTF-8'));
 
-    // ---- Immunization extras ----
     $put('Family No', mb_substr($get(['family_no']), 0, 40, 'UTF-8'));
     $put("Mother's Name", mh_groq_clean_name($get(['mother_name'])));
     $put("Father's Name", mh_groq_clean_name($get(['father_name'])));
@@ -1802,22 +1541,6 @@ function mh_groq_json_to_kv(array $data)
     return $kv;
 }
 
-/**
- * Shrinks a photo for Groq OCR using GD, so users never hit Groq's ~4 MB base64 limit.
- *
- * Triggers when the file is larger than 2 MB or either side exceeds 1600 px. The image is scaled
- * down proportionally (never up), phone-camera EXIF rotation is applied, transparency is flattened
- * onto white, and the result is written as a JPEG (quality 80, stepping down only if still > 2 MB).
- *
- * Never throws and never blocks a scan: on any GD problem it logs and returns the ORIGINAL file,
- * so call_groq_ocr()'s own size check still applies as a safety net.
- *
- * The caller MUST unlink() `path` when `temp` is true.
- *
- * @param string $imagePath Absolute path to the uploaded image.
- * @param string $mimeType  Detected MIME type (image/jpeg | image/png | image/webp).
- * @return array{path:string, mime:string, temp:bool}
- */
 function mh_groq_prepare_image($imagePath, $mimeType)
 {
     $original = ['path' => $imagePath, 'mime' => $mimeType, 'temp' => false];
@@ -1839,7 +1562,7 @@ function mh_groq_prepare_image($imagePath, $mimeType)
         if ($w < 1 || $h < 1) { return $original; }
 
         if ($size <= $maxBytes && $w <= $maxSide && $h <= $maxSide) {
-            return $original; // already small enough
+            return $original;
         }
 
         if (!function_exists('imagecreatetruecolor') || !function_exists('imagejpeg')) {
@@ -1847,7 +1570,6 @@ function mh_groq_prepare_image($imagePath, $mimeType)
             return $original;
         }
 
-        // ---- Load ----
         switch ($mimeType) {
             case 'image/png':  $src = function_exists('imagecreatefrompng')  ? @imagecreatefrompng($imagePath)  : false; break;
             case 'image/webp': $src = function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($imagePath) : false; break;
@@ -1858,7 +1580,6 @@ function mh_groq_prepare_image($imagePath, $mimeType)
             return $original;
         }
 
-        // ---- Honour EXIF orientation (phone photos are often stored sideways) ----
         if ($mimeType === 'image/jpeg' && function_exists('exif_read_data') && function_exists('imagerotate')) {
             $exif  = @exif_read_data($imagePath);
             $orient = (int) ($exif['Orientation'] ?? 1);
@@ -1880,7 +1601,6 @@ function mh_groq_prepare_image($imagePath, $mimeType)
             vision_ocr_log_error('groq_ocr', 'Image', 'GD could not allocate the resized image; sending the original file.');
             return $original;
         }
-        // JPEG has no alpha: flatten PNG/WebP transparency onto white (black would hide text)
         imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
         if (!imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $sw, $sh)) {
             vision_ocr_log_error('groq_ocr', 'Image', 'GD failed while resampling the image; sending the original file.');
@@ -1893,7 +1613,6 @@ function mh_groq_prepare_image($imagePath, $mimeType)
             return $original;
         }
 
-        // ---- Encode: quality 80, step down only if still over the size target ----
         $ok = false;
         foreach ([80, 70, 60, 50] as $q) {
             if (!@imagejpeg($dst, $tmp, $q)) { break; }
@@ -1913,7 +1632,6 @@ function mh_groq_prepare_image($imagePath, $mimeType)
         if ($tmp !== '' && $tmp !== false) { @unlink($tmp); }
         return $original;
     } finally {
-        // Release GD memory promptly (no-op objects on PHP 8, needed on PHP 7)
         if (PHP_VERSION_ID < 80000) {
             if (is_resource($src)) { imagedestroy($src); }
             if (is_resource($dst)) { imagedestroy($dst); }
@@ -1921,22 +1639,6 @@ function mh_groq_prepare_image($imagePath, $mimeType)
     }
 }
 
-/**
- * Sends a document image to Groq's OpenAI-compatible chat completions endpoint
- * with a multimodal vision model and asks for the consultation-form fields as a
- * JSON object.
- *
- * Contract mirrors call_aws_textract_ocr(): on success returns
- *   ['success'=>true, 'text'=>string, 'kv'=>array<label,value>, 'raw'=>array]
- * where `kv` feeds mh_textract_map_fields() and `text` is the model's verbatim
- * transcription (or "Label: value" lines) for the regex-parser fallbacks.
- * On failure returns ['success'=>false, 'text'=>'', 'kv'=>[], 'error'=>string].
- * It never throws and never falls back to another engine.
- *
- * @param string      $image_path    Absolute path to the uploaded JPG/PNG/WebP.
- * @param string|null $groq_api_key  Groq key ("gsk_..."). Blank => read live from system_settings.
- * @return array{success:bool, text:string, kv:array, error?:string, raw?:array}
- */
 function call_groq_ocr($image_path, $groq_api_key = null)
 {
     $fail = function ($stage, $message, array $ctx = []) {
@@ -1962,7 +1664,6 @@ function call_groq_ocr($image_path, $groq_api_key = null)
             return $fail('File', 'The document image file could not be read or does not exist on the server.', ['path' => $image_path]);
         }
 
-        // ---- MIME type (Groq vision accepts images only, not PDFs) ----
         $mimeType = '';
         if (function_exists('finfo_open')) {
             $fi = finfo_open(FILEINFO_MIME_TYPE);
@@ -1978,25 +1679,21 @@ function call_groq_ocr($image_path, $groq_api_key = null)
             return $fail('File', 'Groq OCR supports JPEG, PNG and WebP images only (not PDF). Received: ' . $mimeType . '. Please upload a photo of the form.');
         }
 
-        // Shrink big photos first (GD): >2 MB or >1600 px => proportional resize + JPEG q80.
-        // Falls back to the original file if GD is unavailable or fails.
         $prepared = mh_groq_prepare_image($image_path, $mimeType);
         $mimeType = $prepared['mime'];
         $bytes    = @file_get_contents($prepared['path']);
-        if ($prepared['temp']) { @unlink($prepared['path']); } // temp file no longer needed once in memory
+        if ($prepared['temp']) { @unlink($prepared['path']); }
         if ($bytes === false || $bytes === '') {
             return $fail('File', 'The uploaded document is empty or could not be loaded into memory.');
         }
         $b64 = base64_encode($bytes);
         unset($bytes);
-        // Safety net: Groq rejects base64 images over 4 MB (only reachable if compression was skipped/failed)
         if (strlen($b64) > 4 * 1024 * 1024) {
             return $fail('File', 'The photo is too large for Groq OCR and could not be compressed automatically. Please retake it at a lower resolution.', ['base64_bytes' => strlen($b64)]);
         }
         $dataUrl = 'data:' . $mimeType . ';base64,' . $b64;
         unset($b64);
 
-        // ---- Prompt ----
         $prompt = <<<'PROMPT'
 You are an OCR engine for a barangay health center. The image is a handwritten or printed medical form (general consultation slip, prenatal card, immunization card or dental record). Read it carefully and return ONE JSON object only - no markdown, no commentary.
 
@@ -2048,7 +1745,6 @@ PROMPT;
             return $fail('JSON', 'Failed to prepare the document payload (JSON encoding error).', ['json_error' => json_last_error_msg()]);
         }
 
-        // ---- HTTP call ----
         if (!function_exists('curl_init')) {
             return $fail('cURL', 'The PHP cURL extension is not available on this server.');
         }
@@ -2100,17 +1796,14 @@ PROMPT;
             return $fail('API', $msg, ['http_code' => $httpCode]);
         }
 
-        // ---- Parse the model's JSON answer ----
         $content = $decoded['choices'][0]['message']['content'] ?? '';
-        if (is_array($content)) { // some gateways return content parts
+        if (is_array($content)) {
             $content = implode('', array_map(function ($p) { return is_array($p) ? (string) ($p['text'] ?? '') : (string) $p; }, $content));
         }
         $content = (string) $content;
-        // Reasoning models may prepend <think>...</think>; strip it before decoding
         $content = trim(preg_replace('#<think>.*?</think>#is', '', $content));
         $data = json_decode($content, true);
         if (!is_array($data)) {
-            // Fall back to the outermost {...} in case of stray prose or code fences
             $s = strpos($content, '{');
             $e = strrpos($content, '}');
             if ($s !== false && $e !== false && $e > $s) {
@@ -2131,7 +1824,6 @@ PROMPT;
             $text = trim($text);
         }
         if ($text === '') {
-            // No transcription: synthesise "Label: value" lines so the regex parsers still have input
             $lines = [];
             foreach ($kv as $label => $value) { if (strpos($label, '__') === 0) { continue; } $lines[] = $label . ': ' . $value; }
             $text = implode("\n", $lines);
@@ -2157,39 +1849,16 @@ PROMPT;
     }
 }
 
-/**
- * Unified OCR dispatcher.
- *
- * Reads the `ocr_engine` system setting and routes the image to either:
- *   - Google Cloud Vision API  (ocr_engine = 'vision')
- *   - Google Gemini AI API     (ocr_engine = 'gemini')
- *   - Amazon Textract          (ocr_engine = 'aws_textract')
- *   - Groq vision LLM          (ocr_engine = 'groq_ocr')
- *   - OpenAI Vision            (ocr_engine = 'openai')
- *
- * Always returns a standardized contract:
- *   {success: bool, text: string, engine: string, error?: string, kv?: array}
- *
- * All four scan endpoints (checkup, maternal, immunization, dental) call
- * this function; they never reference a specific engine directly.
- *
- * @param string      $imagePath  Absolute path to the uploaded image file.
- * @param string|null $apiKey     Optional key override (uses config defaults otherwise).
- * @return array{success:bool, text:string, engine:string, error?:string, kv?:array}
- */
 function call_ocr_engine($imagePath, $apiKey = null)
 {
     $engine = 'unknown';
     try {
         require_once __DIR__ . '/../config/vision.php';
 
-        // Read LIVE from system_settings on every scan (see mh_ocr_active_engine()).
         $engine = function_exists('mh_ocr_active_engine') ? mh_ocr_active_engine() : 'vision';
 
         switch ($engine) {
             case 'aws_textract':
-                // Textract only. A Textract failure is reported as a Textract failure;
-                // it never silently retries on another engine.
                 $result = call_aws_textract_ocr($imagePath);
                 break;
 
@@ -2202,9 +1871,6 @@ function call_ocr_engine($imagePath, $apiKey = null)
                 break;
 
             case 'groq_ocr':
-                // Groq only. The key is read LIVE from system_settings on every scan (never a
-                // constant frozen at include time). The returned `kv` map flows through the same
-                // mh_textract_map_fields() pipeline the scan endpoints already use for Textract.                $groqKey = (string) mh_ocr_live_setting('groq_api_key', '');
                 $result  = call_groq_ocr($imagePath, $groqKey);
                 break;
 
@@ -2239,7 +1905,6 @@ function call_ocr_engine($imagePath, $apiKey = null)
     }
 }
 
-// Backwards-compatible aliases if other files reference old Gemini naming
 if (!function_exists('gemini_ocr_get_uploaded_file')) {
     function gemini_ocr_get_uploaded_file($fieldName) { return vision_ocr_get_uploaded_file($fieldName); }
 }
@@ -2252,4 +1917,4 @@ if (!function_exists('gemini_ocr_match_patient')) {
     }
 }
 
-} // End define guard
+}

@@ -1,9 +1,4 @@
 <?php
-/**
- * Scheduled database backup (Paper REQ78). Hostinger hPanel > Cron Jobs, once a day, e.g.:
- *   php /home/USER/domains/YOURSITE/public_html/cron/backup_database.php
- * Writes storage/backups/marick_backup_YYYYMMDD_HHMMSS.sql(.gz) and keeps 14 days. CLI only.
- */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/db_backup.php';

@@ -1,21 +1,5 @@
 <?php
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - OCR ENGINE CONFIGURATION
- * =====================================================================
- * Centralizes API keys and endpoints for both supported OCR engines:
- *   - Google Cloud Vision API  (ocr_engine = 'vision')
- *   - Google Gemini AI API     (ocr_engine = 'gemini')
- *   - Amazon Textract          (ocr_engine = 'aws_textract')
- *   - Groq vision LLM          (ocr_engine = 'groq_ocr')
- *
- * The active engine and API keys are configurable from
- * System Settings > Scanner (OCR). This file sets safe defaults and
- * reads database overrides.
- * =====================================================================
- */
 
-/* ---- Google Cloud Vision ------------------------------------------ */
 if (!defined('GOOGLE_VISION_API_KEY')) {
     $dbKey = '';
     if (function_exists('mh_get_option')) {
@@ -37,7 +21,6 @@ if (!defined('GOOGLE_VISION_API_ENDPOINT')) {
     define('GOOGLE_VISION_API_ENDPOINT', 'https://vision.googleapis.com/v1/images:annotate');
 }
 
-/* ---- Gemini AI API ------------------------------------------------- */
 if (!defined('GEMINI_API_KEY')) {
     $dbGeminiKey = '';
     if (function_exists('mh_get_option')) {
@@ -69,7 +52,6 @@ if (!defined('GEMINI_BACKOFF_CAP_MS')) { define('GEMINI_BACKOFF_CAP_MS',  8000);
 if (!defined('GEMINI_HTTP_TIMEOUT'))   { define('GEMINI_HTTP_TIMEOUT',   60); }
 if (!defined('GEMINI_DEBUG'))          { define('GEMINI_DEBUG',           false); }
 
-/* ---- AWS Textract -------------------------------------------------- */
 if (!defined('AWS_TEXTRACT_ACCESS_KEY_ID')) {
     $dbAwsKey = '';
     if (function_exists('mh_get_option')) {
@@ -97,31 +79,15 @@ if (!defined('AWS_TEXTRACT_REGION')) {
     } elseif (function_exists('mh_setting')) {
         $dbAwsRegion = (string) mh_setting('aws_region', '');
     }
-    // Default to ap-southeast-1 (Singapore) for optimal latency in the Philippines
     $dbAwsRegion = preg_replace('/[^a-z0-9-]/', '', strtolower(trim($dbAwsRegion)));
     define('AWS_TEXTRACT_REGION', $dbAwsRegion !== '' ? $dbAwsRegion : 'ap-southeast-1');
 }
 
-/* ---- Groq (OpenAI-compatible chat completions, vision model) ------- */
-/* NOTE: the Groq API key is deliberately NOT frozen into a constant here - call_groq_ocr()
- * reads `groq_api_key` live from system_settings on every scan. */
 if (!defined('GROQ_API_ENDPOINT'))  { define('GROQ_API_ENDPOINT',  'https://api.groq.com/openai/v1/chat/completions'); }
 if (!defined('GROQ_OCR_MODEL'))     { define('GROQ_OCR_MODEL',     'qwen/qwen3.8-27b'); }
 if (!defined('GROQ_HTTP_TIMEOUT'))  { define('GROQ_HTTP_TIMEOUT',  60); }
 
-/* ---- Live settings reader + active engine helper ----------------- */
 if (!function_exists('mh_ocr_live_setting')) {
-    /**
-     * Reads one value straight from the system_settings table on every call.
-     *
-     * The OCR scan endpoints load this file BEFORE the settings cache is booted, so anything
-     * frozen into a constant at include time can be stale or empty. Reading the table directly
-     * guarantees the engine/keys saved in System Settings are the ones used for this scan.
-     * Falls back to the cached mh_setting()/mh_get_option() accessors if there is no DB handle.
-     *
-     * @param string $key      setting_key in system_settings
-     * @param string $default  returned when the row is missing or blank
-     */
     function mh_ocr_live_setting($key, $default = '')
     {
         $conn = $GLOBALS['conn'] ?? null;
@@ -141,7 +107,6 @@ if (!function_exists('mh_ocr_live_setting')) {
                     return $default;
                 }
             } catch (Throwable $e) {
-                // fall through to the cached accessors below
             }
         }
         if (function_exists('mh_get_option')) {
@@ -156,13 +121,6 @@ if (!function_exists('mh_ocr_live_setting')) {
 }
 
 if (!function_exists('mh_ocr_active_engine')) {
-    /**
-     * Returns the OCR engine currently selected in System Settings, read live from the
-     * database: 'vision', 'gemini', 'aws_textract' or 'groq_ocr'. Anything else (or an unreadable
-     * setting) falls back to 'groq_ocr' - the factory default (Paper: Groq OCR).
-     *
-     * @return string 'vision' | 'gemini' | 'aws_textract' | 'groq_ocr'
-     */
     function mh_ocr_active_engine()
     {
         $engine = strtolower(trim((string) mh_ocr_live_setting('ocr_engine', 'groq_ocr')));

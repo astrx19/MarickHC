@@ -1,12 +1,7 @@
 <?php
-/**
- * Step B screen of the account-claim flow (see register_process.php).
- * Shows the OTP form. Reachable only while a claim is pending in the session.
- * The mobile number is displayed MASKED and is the one already on file - the visitor cannot change it.
- */
 session_start();
 require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/settings_helper.php';   // mh_csrf_field()
+require_once __DIR__ . '/includes/settings_helper.php';
 
 $pending = $_SESSION['claim_pending'] ?? null;
 $otp     = $_SESSION['claim_otp'] ?? null;

@@ -1,15 +1,4 @@
 <?php
-/**
- * Shared rules for "change my password" on the Profile pages (patient + staff).  Step 4.
- *
- *   $err = mh_pw_change_check($storedHash, $current, $new, $confirm, 'patient:12');
- *   if ($err !== null)  -> show it, change nothing
- *   else                -> save password_hash($new, PASSWORD_DEFAULT), then mh_pw_change_clear($bucket)
- *
- * Wrong "current password" guesses are counted per account for 15 minutes (5 allowed), so a
- * hijacked, still-open session cannot be used to guess the old password.
- * Compatible with PHP 7.2+.
- */
 
 if (!defined('MH_PWCHG_MAX_FAILS'))   { define('MH_PWCHG_MAX_FAILS', 5); }
 if (!defined('MH_PWCHG_WINDOW_SECS')) { define('MH_PWCHG_WINDOW_SECS', 900); }
@@ -32,7 +21,6 @@ if (!function_exists('mh_pw_change_clear')) {
 }
 
 if (!function_exists('mh_pw_change_check')) {
-    /** @return string|null  a user-facing error, or null when everything is acceptable */
     function mh_pw_change_check($storedHash, $current, $new, $confirm, $bucket)
     {
         if (mh_pw_change_locked($bucket)) {

@@ -1,6 +1,6 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', 0);   // errors go to the log, never to the browser
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
@@ -8,22 +8,19 @@ require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/queue_helper.php';
 
-// Granular: issuing medicine and reading the dispensing log are separate
-// permissions (includes/auth.php). Either one opens the page.
-require_permission(['dispense_medicine', 'view_dispensing_history']);   // page load
+require_permission(['dispense_medicine', 'view_dispensing_history']);
 
 require_once __DIR__ . '/../includes/settings_helper.php';
 mh_check_module_enabled('inventory');
 
 $can_dispense = mh_has_permission('dispense_medicine');
-$can_view_log = mh_has_permission('view_dispensing_history');   // Dispensing Records - NOT implied by dispensing
+$can_view_log = mh_has_permission('view_dispensing_history');
 
 $system_name = $system_name ?? mh_setting('system_name');
 
 $success_msg = ""; $error_msg = "";
-$old = ['patient_id' => 0, 'lines' => [], 'recipient_type' => 'patient', 'staff_id' => 0, 'purpose' => ''];   // posted values, restored after a failed submit
+$old = ['patient_id' => 0, 'lines' => [], 'recipient_type' => 'patient', 'staff_id' => 0, 'purpose' => ''];
 
-/** True once database/staff_supply_issuance_migration.sql has been run (dispensations can then point at a staff member instead of a patient). */
 function mh_dispense_staff_ready(mysqli $conn): bool
 {
     static $ready = null;
@@ -33,7 +30,6 @@ function mh_dispense_staff_ready(mysqli $conn): bool
     }
     return $ready;
 }
-/** Staff roles that can receive supplies, with the label shown in the picker. */
 function mh_staff_recipient_roles(): array
 {
     return ['doctor' => 'Doctor', 'midwife' => 'Midwife', 'dental' => 'Dentist', 'dentist' => 'Dentist', 'bhw' => 'BHW'];
@@ -44,13 +40,11 @@ function mh_staff_has_status(mysqli $conn): bool
     return $r && $r->num_rows > 0;
 }
 
-// Post/Redirect/Get: a successful dispense redirects, so refreshing the page can NEVER dispense twice.
 if (!empty($_SESSION['dispense_flash'])) {
     $success_msg = (string) $_SESSION['dispense_flash'];
     unset($_SESSION['dispense_flash']);
 }
 
-/** Rows of the Dispensing Records table (latest 100 matches). Every word typed must match something. */
 function mh_render_dispense_rows(mysqli $conn, $q)
 {
     $ready = mh_dispense_staff_ready($conn);
@@ -71,7 +65,7 @@ function mh_render_dispense_rows(mysqli $conn, $q)
     $terms = preg_split('/\s+/', trim((string) $q), -1, PREG_SPLIT_NO_EMPTY);
     foreach (array_slice($terms, 0, 6) as $t) {
         $like = '%' . addcslashes($t, '%_\\') . '%';
-        $id = ltrim($t, '#');                      // "#4" finds patient ID 4
+        $id = ltrim($t, '#');
         $parts = [];
         foreach ($cols as $c) { $parts[] = "$c LIKE ?"; $types .= 's'; $params[] = $like; }
         $parts[] = "DATE_FORMAT(d.dispense_date, '%b %d, %Y %l:%i %p') LIKE ?"; $types .= 's'; $params[] = $like;
@@ -147,13 +141,11 @@ function mh_render_dispense_rows(mysqli $conn, $q)
     return ob_get_clean();
 }
 
-// Live lot list for ONE medicine (called when a medicine is picked): only active, non-expired lots with stock,
-// earliest expiry first (First-Expired-First-Out), plus how many expired lots with stock are being hidden.
 if (isset($_GET['batches'])) {
     if (!$can_dispense) { http_response_code(403); exit; }
     $b_item  = trim((string) ($_GET['item'] ?? ''));
     $b_brand = trim((string) ($_GET['brand'] ?? ''));
-    $brand_expr = "IFNULL(NULLIF(TRIM(brand_name), ''), 'Generic')";   // same rule the medicine list uses for blank brands
+    $brand_expr = "IFNULL(NULLIF(TRIM(brand_name), ''), 'Generic')";
 
     $stmt = $conn->prepare(
         "SELECT id, batch_number, tracking_code, quantity, unit, units_per_pack, pack_label, packs_per_box, box_label,
@@ -190,50 +182,39 @@ if (isset($_GET['batches'])) {
 
     header('Content-Type: application/json; charset=UTF-8');
     header('Cache-Control: no-store');
-    header('X-Dispense-Batches: 1');             // lets the JS tell real data from a login-redirect page
+    header('X-Dispense-Batches: 1');
     echo json_encode(['batches' => $out, 'expired_count' => $expired_count], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
     exit;
 }
 
-// Live log refresh / server-side search (called by the page's JavaScript). Same permission as the table itself.
 if (isset($_GET['log_rows'])) {
     if (!$can_view_log) { http_response_code(403); exit; }
     header('Content-Type: text/html; charset=UTF-8');
     header('Cache-Control: no-store');
-    header('X-Dispense-Log: 1');                 // lets the JS tell real rows from a login-redirect page
+    header('X-Dispense-Log: 1');
     echo mh_render_dispense_rows($conn, trim((string) ($_GET['q'] ?? '')));
     exit;
 }
 
 if(isset($_POST['dispense_item']) && !mh_has_permission('dispense_medicine')) {
-    mh_deny_access(); // form submit level: view-only accounts cannot deduct stock
+    mh_deny_access();
 }
 
-/* =====================================================================
- * DISPENSE (atomic)
- *   CSRF -> validate input -> ONE transaction:
- *     lock the batch row -> FEFO audit flag -> conditional stock deduction
- *     (UPDATE ... WHERE quantity >= ?) -> dispensations row -> activity log -> COMMIT.
- *   Zero rows updated = not enough stock (or batch archived by someone else a moment ago):
- *   ROLLBACK and report it. Any exception also ROLLBACKs, so stock can never be deducted
- *   without a matching log row, and two clerks can never both take the last units.
- * ================================================================== */
 if (isset($_POST['dispense_item'])) {
     if (!mh_csrf_check()) {
         http_response_code(403);
         $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
     } else {
         $staff_ready  = mh_dispense_staff_ready($conn);
-        $to_staff     = $staff_ready && (($_POST['recipient_type'] ?? 'patient') === 'staff');   // Medical Staff recipient: no patient needed
+        $to_staff     = $staff_ready && (($_POST['recipient_type'] ?? 'patient') === 'staff');
         $patient_id   = $to_staff ? 0 : (int) ($_POST['patient_id'] ?? 0);
         $recipient_staff_id = $to_staff ? (int) ($_POST['recipient_staff_id'] ?? 0) : 0;
         $purpose      = $to_staff ? mb_substr(trim((string) preg_replace('/\s+/u', ' ', (string) ($_POST['purpose'] ?? ''))), 0, 255) : '';
         $staff_id     = (int) ($_SESSION['user_id'] ?? 0);
 
-        // One or many medicines per visit: parallel arrays inventory_id[] / quantity[]. The same lot listed twice is summed.
         $ids  = (array) ($_POST['inventory_id'] ?? []);
         $qtys = (array) ($_POST['quantity'] ?? []);
-        $lines = [];            // lot id => total quantity
+        $lines = [];
         $line_problem = '';
         foreach ($ids as $i => $rawId) {
             $iid = (int) $rawId; $q = (int) ($qtys[$i] ?? 0);
@@ -263,10 +244,8 @@ if (isset($_POST['dispense_item'])) {
         }
 
         if ($error_msg === '') {
-            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);   // SQL errors become exceptions -> caught below
+            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
             try {
-                // ALL-OR-NOTHING: every medicine is deducted, recorded and logged inside this one transaction.
-                // If any line fails (expired, archived, not enough stock) the whole visit is rolled back and nothing changes.
                 $conn->begin_transaction();
 
                 $patient_row = null; $staff_row = null;
@@ -292,7 +271,7 @@ if (isset($_POST['dispense_item'])) {
                 } elseif (!$to_staff && !$patient_row) {
                     $fail = "That patient record is not active.";
                 } else {
-                    ksort($lines);   // lock lots in a fixed order so two clerks can never deadlock each other
+                    ksort($lines);
                     foreach ($lines as $item_id => $amount) {
                         $ls = $conn->prepare("SELECT item_name, brand_name, category, expiry_date, status, quantity, unit, batch_number, tracking_code FROM inventory WHERE id = ? FOR UPDATE");
                         $ls->bind_param('i', $item_id);
@@ -312,8 +291,6 @@ if (isset($_POST['dispense_item'])) {
                             break;
                         }
 
-                        // FEFO audit flag: is an earlier-expiring active batch of the same item still in stock?
-                        // (Does not block the dispense - staff may have a valid reason - but it is recorded.)
                         $brand = (string) ($item['brand_name'] ?? '');
                         $fs = $conn->prepare(
                             "SELECT 1 FROM inventory
@@ -327,7 +304,6 @@ if (isset($_POST['dispense_item'])) {
                         $is_override = $fs->get_result()->num_rows > 0 ? 1 : 0;
                         $fs->close();
 
-                        // Conditional deduction: only succeeds while enough stock remains.
                         $up = $conn->prepare("UPDATE inventory SET quantity = quantity - ? WHERE id = ? AND status = 1 AND quantity >= ?");
                         $up->bind_param('iii', $amount, $item_id, $amount);
                         $up->execute();
@@ -336,7 +312,6 @@ if (isset($_POST['dispense_item'])) {
                         if ($deducted === 0) { $fail = "Insufficient stock available for $name."; break; }
 
                         if ($to_staff) {
-                            // Stock-out to a staff member: no patient. Who got it, why, and who handed it over are all recorded.
                             $di = $conn->prepare("INSERT INTO dispensations (inventory_id, patient_id, recipient_type, recipient_staff_id, purpose, dispensed_by, quantity, is_fefo_override) VALUES (?, NULL, 'staff', ?, ?, ?, ?, ?)");
                             $di->bind_param('iisiii', $item_id, $recipient_staff_id, $purpose, $staff_id, $amount, $is_override);
                         } else {
@@ -357,7 +332,7 @@ if (isset($_POST['dispense_item'])) {
                             $log_note .= " NOTE: an earlier-expiring active batch of the same item still had stock on hand (FEFO override).";
                         }
                         if (!logActivity($conn, $_SESSION['user_id'], $_SESSION['role'], $to_staff ? "Issued Supply to Staff" : "Dispensed Medicine", $log_note)) {
-                            throw new RuntimeException('Audit log write failed');   // no log = no dispense: roll everything back
+                            throw new RuntimeException('Audit log write failed');
                         }
                         $done[] = "$amount {$item['unit']} of $name";
                     }
@@ -367,20 +342,18 @@ if (isset($_POST['dispense_item'])) {
                     $conn->rollback();
                     $error_msg = $fail . (count($lines) > 1 ? " Nothing was dispensed - fix this line and try again." : '');
                 } else {
-                    // Opened from Patient Queueing > Proceed: the dispense IS the "save record" step, so the queue
-                    // entry closes in the same transaction (only when it is this patient's inventory queue entry).
                     $q_done = false;
                     $queue_ctx_post = $to_staff ? null : mh_queue_open_context($conn, $_POST['apt_id'] ?? 0, 'inventory', $patient_id);
                     if ($queue_ctx_post && mh_queue_complete($conn, $queue_ctx_post['id'], $patient_id)) { $q_done = true; }
 
-                    $conn->commit();   // every deduction + dispensation record + audit log succeed together, or not at all
+                    $conn->commit();
                     $success_msg = $to_staff
                         ? "Successfully issued " . implode('; ', $done) . " to " . $staff_row['first_name'] . " " . $staff_row['last_name'] . "!"
                         : "Successfully dispensed " . implode('; ', $done) . "!";
                     if ($q_done) {
                         $success_msg .= " Queue" . (!empty($queue_ctx_post['queue_number']) ? " " . mh_queue_label($queue_ctx_post['department'] ?? '', $queue_ctx_post['queue_number']) : "") . " marked Completed.";
                     }
-                    $_SESSION['dispense_flash'] = $success_msg;   // PRG: show it after the redirect, never re-POST on refresh
+                    $_SESSION['dispense_flash'] = $success_msg;
                     header('Location: dispense_medicine.php');
                     exit();
                 }
@@ -393,12 +366,6 @@ if (isset($_POST['dispense_item'])) {
     }
 }
 
-// =====================================================================
-// Build FEFO-sorted medicine -> batch groups for the dispense form.
-// Each group is one generic+brand combination; batches within a group
-// are always sorted earliest-expiry-first (nulls/no-expiry last) so
-// the dispense form can auto-select the correct FEFO batch in JS.
-// =====================================================================
 $active_stock_res = $conn->query("
     SELECT id, item_name, brand_name, category, batch_number, tracking_code, quantity, unit,
            units_per_pack, pack_label, packs_per_box, box_label, expiry_date
@@ -411,7 +378,7 @@ $expired_batches = (int) ($conn->query("SELECT COUNT(*) c FROM inventory WHERE s
 $today = date('Y-m-d');
 $today_ts = strtotime($today);
 
-$medicine_groups = []; // keyed by "generic||brand"
+$medicine_groups = [];
 $queue_ctx = null; $queue_patient_id = 0; $queue_label = '';
 if ($can_dispense && (isset($_GET['walkin_id']) || isset($_GET['apt_id']))) {
     $q_patient = (int) ($_GET['walkin_id'] ?? 0);
@@ -465,12 +432,9 @@ if($active_stock_res && $active_stock_res->num_rows > 0) {
     }
 }
 
-// Sort each group's batches FEFO (earliest expiry first, no-expiry last)
-// and flag index 0 as the recommended batch, independent of whatever
-// order the SQL happened to return rows in.
 foreach($medicine_groups as $key => &$grp) {
     usort($grp['batches'], function($a, $b) {
-        if($a['expiry_date'] === $b['expiry_date']) return $a['id'] <=> $b['id'];   // same expiry: oldest received first
+        if($a['expiry_date'] === $b['expiry_date']) return $a['id'] <=> $b['id'];
         if(empty($a['expiry_date'])) return 1;
         if(empty($b['expiry_date'])) return -1;
         return strcmp($a['expiry_date'], $b['expiry_date']);
@@ -491,7 +455,7 @@ $js_medicine_groups = json_encode($medicine_groups, JSON_HEX_TAG | JSON_HEX_AMP 
 $js_preselect_group_key = json_encode($preselect_group_key, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
 $staff_issue_ready = mh_dispense_staff_ready($conn);
-$staff_recipients = [];   // grouped by role label for the picker
+$staff_recipients = [];
 if ($staff_issue_ready && $can_dispense) {
     $role_list = "'" . implode("','", array_keys(mh_staff_recipient_roles())) . "'";
     $sr = $conn->query("SELECT id, first_name, last_name, role FROM staff WHERE role IN ($role_list)" . (mh_staff_has_status($conn) ? " AND status = 1" : "") . " ORDER BY last_name ASC, first_name ASC");
@@ -594,7 +558,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                         <?php endif; ?>
                         <?php echo mh_csrf_field(); ?>
                         <input type="hidden" name="dispense_item" value="1">
-                        <input type="hidden" id="selectedBatchId">   <?php /* line editor only: the posted fields are the inventory_id[] / quantity[] inputs generated from the medicine list */ ?>
+                        <input type="hidden" id="selectedBatchId">   <?php ?>
                         <div id="cartInputs"></div>
                         
                         <?php if ($staff_issue_ready): ?>
@@ -759,7 +723,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
         const ALL_MED_OPTIONS = $('#medicineSelect option').filter(function () { return this.value !== ''; })
             .map(function () { return { value: this.value, text: this.text, cat: this.getAttribute('data-cat') || '' }; }).get();
-        let recipient = 'patient';           // 'patient' | 'staff'  (staff = Medical Staff, supplies only)
+        let recipient = 'patient';
         function isSupply(cat) { return /suppl/i.test(cat || ''); }
 
         let currentGroup = null;
@@ -918,7 +882,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             if (!batch.units_per_pack) { calcWrap.classList.remove('active'); return; }
 
             calcWrap.classList.add('active');
-            // Medical Supply / Vaccine are counted in boxes of pieces (no blisters): label the one pack level "Boxes".
             const boxOfPieces = currentGroup && /suppl|vaccine/i.test(currentGroup.category || '');
             const packWord = boxOfPieces ? 'Box' : (batch.pack_label || 'Pack');
             document.getElementById('disp_pack_label').textContent = packWord + (/(s|x|ch|sh)$/i.test(packWord) ? 'es' : 's');
@@ -1005,7 +968,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             document.querySelectorAll('.recipient-toggle button').forEach(b => b.classList.toggle('active', b.dataset.recipient === mode));
             document.getElementById('patientGroup').style.display = staff ? 'none' : '';
             document.getElementById('staffGroup').style.display = staff ? '' : 'none';
-            $('#patientSelect').prop('disabled', staff);            // disabled fields are not submitted
+            $('#patientSelect').prop('disabled', staff);
             $('#staffSelect').prop('disabled', !staff);
             $('#purposeInput').prop('disabled', !staff);
             document.getElementById('issueTitleText').textContent = staff ? 'Issue Supplies to Staff' : 'Issue Medicine';

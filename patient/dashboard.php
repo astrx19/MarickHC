@@ -10,7 +10,6 @@ $patient_id = (int)$_SESSION['patient_id'];
 $patient    = mh_pp_patient($conn, $patient_id);
 
 if (!$patient) {
-    // Session points at a patient row that no longer exists.
     header("Location: ../patient_logout.php");
     exit();
 }

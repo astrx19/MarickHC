@@ -17,7 +17,7 @@ $viewer_is_super = mh_is_health_head();
 
 
 
-mh_roles_merge_encoder_into_inventory($conn);   // Encoder + Inventory are one role now
+mh_roles_merge_encoder_into_inventory($conn);
 $role_labels = mh_get_roles(true);   
 $active_role_labels = mh_get_roles();   
 $assignable_roles = $viewer_is_super
@@ -426,7 +426,7 @@ mh_layout_head(['title' => 'Staff Management']);
 ?>
     <style>
         .staff-grid { display: block; width: 100%; }   
-        .role-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border: 1px solid; display: inline-block; background: #f1f5f9; color: #475569; border-color: #cbd5e1; }   /* default look for custom roles */
+        .role-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border: 1px solid; display: inline-block; background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
         .role-health_head { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
         .role-admin { background: #f1f5f9; color: var(--text-main, #334155); border-color: var(--border-color, #cbd5e1); }
         .role-doctor { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }

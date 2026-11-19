@@ -1,31 +1,23 @@
-# Marick Health Center - Apache/LiteSpeed rules (Hostinger). Clean URLs + HTTPS + hardening.
-# /admin/login  ->  /admin/login.php   (same for every page: /patient_login, /faq, /admin/dashboard ...)
 Options -Indexes -MultiViews
 RewriteEngine On
 
-# ---- 1. Force HTTPS on the live site (Paper REQ73). Skipped on localhost so XAMPP keeps working. ----
 RewriteCond %{HTTPS} !=on
 RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
 RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# ---- 2. Never serve internals or dotfiles over the web ----
-# (includes/ and config/ are only ever required by PHP; nothing in the browser calls them directly)
 RewriteRule ^(database|includes|config|cron|bin|docs|storage|\.git|\.vscode)(/|$) - [R=404,L]
 RewriteRule (^|/)\.(?!well-known) - [R=404,L]
 RewriteRule \.(sql|bak|orig|old|swp|log|ini|sh|md|lock|env|ya?ml|zip|gz|tar|7z|example|flag)$ - [R=404,NC,L]
 RewriteRule ^composer\.(json|lock)$ - [R=404,L]
 
-# ---- 3. No PHP execution inside upload folders ----
 RewriteRule ^uploads/.*\.(php|phtml|phar|php[0-9])$ - [R=404,NC,L]
 
-# ---- 4. Clean URLs: only rewrite when the request is not a real file/folder and a matching .php file exists ----
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.php -f
 RewriteRule ^(.+?)/?$ $1.php [L]
 
-# ---- 5. Security headers ----
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"

@@ -1,22 +1,6 @@
 <?php
-// Definitions are wrapped in a constant-keyed if-block ON PURPOSE (see includes/auth_helpers.php).
 if (!defined('MH_LOADED_INCLUDES_MAILER')) {
 define('MH_LOADED_INCLUDES_MAILER', true);
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - MAIL CLIENT
- * =====================================================================
- * mh_send_email() sends through PHPMailer + SMTP (Hostinger: smtp.hostinger.com) whenever
- * config/mail.php has SMTP credentials AND PHPMailer is installed. Otherwise it falls back to
- * PHP's mail(), exactly like before, so localhost testing keeps working.
- *
- * Installing PHPMailer (pick ONE):
- *   A) No Composer (easiest on Hostinger): download PHPMailer from
- *      https://github.com/PHPMailer/PHPMailer/releases and upload ONLY its src/ folder to
- *      includes/PHPMailer/src/  (must contain PHPMailer.php, SMTP.php, Exception.php).
- *   B) Composer (SSH):  composer require phpmailer/phpmailer   in the project root
- *      -> vendor/autoload.php is picked up automatically.
- * ================================================================== */
 
 function mh_mailer_load_phpmailer()
 {
@@ -40,14 +24,6 @@ function mh_mailer_smtp_configured()
 }
 
 
-/**
- * Built-in SMTP client - used when SMTP credentials exist but the PHPMailer library is NOT installed, so password-reset
- * email works with nothing extra to download. Supports implicit TLS (port 465, "ssl") and STARTTLS (port 587, "tls"),
- * AUTH LOGIN, and sends a UTF-8 multipart (text + HTML) message.
- *
- * @param array|null $transcript  receives a readable, PASSWORD-FREE log of the SMTP conversation (for the Email Check page)
- * @return array [bool success, string|null error]
- */
 function mh_smtp_native_send($to, $subject, $bodyHtml, $bodyText, &$transcript = null)
 {
     $transcript = [];
@@ -70,7 +46,7 @@ function mh_smtp_native_send($to, $subject, $bodyHtml, $bodyText, &$transcript =
         while (($line = fgets($fp, 1024)) !== false) {
             $reply .= $line;
             $log('SERVER: ' . rtrim($line));
-            if (strlen($line) < 4 || $line[3] !== '-') { break; }   // "250-..." continues, "250 ..." ends the reply
+            if (strlen($line) < 4 || $line[3] !== '-') { break; }
         }
         return $reply;
     };
@@ -135,7 +111,6 @@ function mh_smtp_native_send($to, $subject, $bodyHtml, $bodyText, &$transcript =
     return $accepted ? [true, null] : [false, 'The server did not accept the message: ' . trim($reply)];
 }
 
-/** What is configured right now (no secrets) - used by admin/email_check.php. */
 function mh_mailer_status()
 {
     $phpmailer = mh_mailer_load_phpmailer();
@@ -157,7 +132,6 @@ function mh_mailer_status()
     ];
 }
 
-/** Sends a test message and returns the SMTP conversation (passwords removed). Used only by the admin Email Check page. */
 function mh_send_email_test($to)
 {
     $to = trim((string) $to);
@@ -167,7 +141,6 @@ function mh_send_email_test($to)
     $subject = 'Test email - ' . MAIL_FROM_NAME;
 
     if (mh_mailer_smtp_configured()) {
-        // The built-in client gives a full readable transcript, and it is the same SMTP login PHPMailer would use.
         list($ok, $err) = mh_smtp_native_send($to, $subject, $html, $text, $transcript);
         return ['success' => $ok, 'error' => $err, 'method' => 'SMTP (' . MAIL_SMTP_HOST . ':' . MAIL_SMTP_PORT . ')', 'transcript' => $transcript];
     }
@@ -176,23 +149,16 @@ function mh_send_email_test($to)
             'transcript' => ['No SMTP login is configured, so PHP mail() was used. "Accepted" only means PHP handed it over - hosting often drops these.']];
 }
 
-/**
- * Sends one email.
- *
- * @return array{success: bool, error: string|null}
- */
 function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
 {
     $to = trim((string) $to);
-    // One recipient, no CR/LF/commas (header injection), sane length. Checked BEFORE PHPMailer sees it,
-    // so a bad address can never turn into an exception message or a stray SMTP error.
     if ($to === '' || strlen($to) > 254 || preg_match('/[\r\n,;<>\s]/', $to) || !filter_var($to, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $to)) {
         return ['success' => false, 'error' => 'Not a valid email address (must end strictly with .com).'];
     }
     if (!defined('MAIL_FROM_ADDRESS')) {
         return ['success' => false, 'error' => 'config/mail.php was not loaded (MAIL_FROM_ADDRESS is undefined).'];
     }
-    $subject = trim(preg_replace('/[\r\n]+/', ' ', (string) $subject));   // a subject can never carry extra headers
+    $subject = trim(preg_replace('/[\r\n]+/', ' ', (string) $subject));
     if ($subject === '') {
         return ['success' => false, 'error' => 'Email subject is empty.'];
     }
@@ -200,7 +166,6 @@ function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
         $bodyText = trim(html_entity_decode(strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $bodyHtml))));
     }
 
-    /* ---- Preferred path: PHPMailer over SMTP ---- */
     if (mh_mailer_smtp_configured() && mh_mailer_load_phpmailer()) {
         try {
             $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
@@ -225,15 +190,12 @@ function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
             $mail->send();
             return ['success' => true, 'error' => null];
         } catch (\Throwable $e) {
-            // ErrorInfo can name the SMTP host/user, so it goes to the log only - never to visitors.
-            // The address is masked in the log: it is personal data and the log is not a mailbox.
             $maskedTo = substr($to, 0, 1) . '***' . substr($to, (int) strrpos($to, '@'));
             error_log('mh_send_email SMTP failure for ' . $maskedTo . ': ' . (isset($mail) ? $mail->ErrorInfo : $e->getMessage()));
             return ['success' => false, 'error' => 'SMTP send failed (see the server error log).'];
         }
     }
 
-    /* ---- SMTP credentials present but PHPMailer not installed: built-in SMTP client ---- */
     if (mh_mailer_smtp_configured()) {
         list($ok, $err) = mh_smtp_native_send($to, $subject, $bodyHtml, $bodyText, $transcript);
         if ($ok) { return ['success' => true, 'error' => null]; }
@@ -242,7 +204,6 @@ function mh_send_email($to, $subject, $bodyHtml, $bodyText = null)
         return ['success' => false, 'error' => 'SMTP send failed (see the server error log, or open admin/email_check.php).'];
     }
 
-    /* ---- Fallback: PHP mail() (localhost / SMTP not configured yet) ---- */
     $boundary = 'mh-' . bin2hex(random_bytes(12));
     $headers = [
         'From: ' . MAIL_FROM_NAME . ' <' . MAIL_FROM_ADDRESS . '>',

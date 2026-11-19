@@ -1,13 +1,4 @@
 <?php
-/**
- * Error safety net - no more blank white pages.
- *
- * Loaded by config/database.php, so it protects every page. When something fails that nobody anticipated (an undefined
- * function, a missing column, a crashed query ...) the visitor sees a clear "something went wrong" screen with a short
- * reference code, and the full technical detail goes to the server error log under that same code. Health Head / Admin
- * accounts also see the technical line on screen, to speed up fixing. Nothing sensitive is ever shown to anyone else.
- * AJAX / API requests get the same information as JSON instead of HTML.
- */
 if (!function_exists('mh_error_ref')) {
 
     function mh_error_ref()
@@ -40,7 +31,6 @@ if (!function_exists('mh_error_ref')) {
             $admin = $role !== '' && function_exists('mh_is_admin_tier') && mh_is_admin_tier($role);
             $detail = $admin ? $type . ': ' . $message . ' (' . basename($file) . ':' . $line . ')' : '';
 
-            // Also log to activity_logs (System Logs) if database connection is available
             try {
                 $conn = $GLOBALS['conn'] ?? null;
                 if ($conn instanceof mysqli && function_exists('logActivity')) {
@@ -70,7 +60,6 @@ if (!function_exists('mh_error_ref')) {
                . '<button type="button" onclick="history.length>1?history.back():location.href=\'dashboard.php\'" style="padding:9px 20px;border:0;border-radius:999px;background:#4ca1af;color:#fff;font-weight:700;cursor:pointer;">Go back</button>'
                . '</div></div>';
         } catch (Throwable $inner) {
-            // the safety net itself must never fail loudly
         }
     }
 

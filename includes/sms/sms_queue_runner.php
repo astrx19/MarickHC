@@ -1,47 +1,14 @@
 <?php
-// Definitions are wrapped in a constant-keyed if-block ON PURPOSE: PHP registers top-level functions at
-// compile time, so require_once cannot stop a redeclare when one file is reached by two paths that differ
-// only in letter case (/MARICK-HEALTH-SYSTEM-v2/ vs /marick-health-system-v2/ on macOS/Windows).
 if (!defined('MH_LOADED_INCLUDES_SMS_SMS_QUEUE_RUNNER')) {
 define('MH_LOADED_INCLUDES_SMS_SMS_QUEUE_RUNNER', true);
-/**
- * =====================================================================
- * SMS QUEUE RUNNER
- * =====================================================================
- * One function, called from two places:
- *   - cron/send_daily_reminders.php  (scheduled task / CLI / browser)
- *   - admin/sms_dashboard.php        ("Run Pending SMS Queue Now" button)
- *
- * Keeping the actual send-and-log logic in one place means both callers
- * always behave identically.
- */
 
 require_once __DIR__ . '/../sms_helper.php';
-require_once __DIR__ . '/sms_scheduler.php';   // mh_sms_is_holiday() for the clinic-holiday pause
+require_once __DIR__ . '/sms_scheduler.php';
 
-/**
- * Sends every `scheduled_sms` row that is due (scheduled_date <= today)
- * and still `pending`, via mh_send_sms(), then records the outcome in
- * both `scheduled_sms` (status/response_log/sent_at) and `sms_logs`
- * (a permanent, append-only history).
- *
- * @param mysqli $conn
- * @param string $triggeredBy 'cron' or 'manual' - stored in sms_logs.triggered_by
- * @param int    $limit       Safety cap per run (a single Semaphore call per row).
- *
- * @return array{
- *   checked: int,
- *   sent: int,
- *   failed: int,
- *   skipped_no_key: bool,
- *   details: array<int, array{id:int, patient_id:int, phone:string, status:string, note:string}>
- * }
- */
 function mh_run_sms_queue(mysqli $conn, $triggeredBy = 'cron', $limit = 100)
 {
     $summary = ['checked' => 0, 'sent' => 0, 'failed' => 0, 'skipped_no_key' => false, 'paused_holiday' => false, 'details' => []];
 
-    // Fail fast with one clear message rather than N identical failures.
     $keyProblem = function_exists('mh_sms_provider_problem') ? mh_sms_provider_problem() : 'includes/sms_helper.php not loaded.';
     if ($keyProblem !== null) {
         $summary['skipped_no_key'] = true;
@@ -121,12 +88,6 @@ function mh_run_sms_queue(mysqli $conn, $triggeredBy = 'cron', $limit = 100)
     return $summary;
 }
 
-/**
- * Sends ONE pending reminder right now, even if its scheduled_date is still in the future (staff pressed
- * "Send now" on the dashboard). Same send / update / log path as the queue run. Respects the clinic-holiday pause.
- *
- * @return array{ok:bool, message:string}
- */
 if (!function_exists('mh_send_sms_queue_row')) {
 function mh_send_sms_queue_row(mysqli $conn, $id, $triggeredBy = 'manual')
 {

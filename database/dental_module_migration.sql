@@ -1,5 +1,3 @@
--- DENTAL MODULE REDESIGN. Optional: the page creates these three tables itself the first time it loads.
--- Your existing dental_records table is NOT changed (patient profile, patient portal and dashboard still read it).
 CREATE TABLE IF NOT EXISTS dental_charts (
   id INT NOT NULL AUTO_INCREMENT,
   patient_id INT NOT NULL,

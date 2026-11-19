@@ -1,15 +1,5 @@
 <?php
-require_once __DIR__ . '/database.php';   // DB settings (branding) for the sender name
-/**
- * ---------------------------------------------------------------------
- * Outbound email configuration (password reset links, etc.).
- *
- * Credentials precedence (later wins):
- *   1. defaults below (no SMTP -> includes/mailer.php falls back to PHP mail())
- *   2. environment variables MH_SMTP_HOST / _PORT / _SECURE / _USER / _PASS, MAIL_FROM_ADDRESS
- *   3. config/mail.local.php  (see mail.local.php.example) - use this one on Hostinger
- * ---------------------------------------------------------------------
- */
+require_once __DIR__ . '/database.php';
 $__ml = ['smtp_host' => '', 'smtp_port' => 465, 'smtp_secure' => 'ssl', 'smtp_user' => '', 'smtp_pass' => '',
          'from_address' => '', 'from_name' => '', 'pepper' => ''];
 
@@ -41,10 +31,6 @@ if (!defined('MAIL_FROM_NAME')) {
 }
 unset($__ml, $__k, $__e, $__v);
 
-/**
- * When true, pages that send a reset link/code ALSO print it on screen ("Local Testing Mode").
- * On only for localhost / *.local requests - never on the live Hostinger domain.
- */
 if (!defined('MAIL_DEBUG_MODE')) {
     $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
     $looksLocal = (PHP_SAPI === 'cli')

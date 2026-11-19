@@ -1927,8 +1927,6 @@ html[data-theme="dark"] textarea[style*="background"] {
     color: var(--text-muted) !important;
 }
 
-/* ===== MARICK THEME VARIABLES - AUTO-GENERATED, DO NOT EDIT BELOW ===== */
-
 :root {
     --primary: #4ca1af;
     --primary-color: #4ca1af;
@@ -2038,5 +2036,3 @@ button[type="submit"].btn-submit {
     border-color: var(--primary);
     color: var(--primary);
 }
-
-/* ===== END MARICK THEME VARIABLES ===== */

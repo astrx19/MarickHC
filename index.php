@@ -2,7 +2,6 @@
 session_start();
 require_once __DIR__ . '/includes/icons.php';
 
-// Branding ($system_name, $hero_title, ...) and dropdowns come live from System Settings > Dropdown Masterlists.
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/settings_helper.php';
 require_once __DIR__ . '/includes/queue_helper.php';
@@ -191,8 +190,6 @@ $marick_streets = mh_streets($conn);
         const MH_ICON_INFO = <?php echo json_encode(mh_icon('info')); ?>;
         const MH_ICON_RECORD = <?php echo json_encode(mh_icon('file-text')); ?>;
 
-        // Status popups now use the unified modal (assets/js/custom_modal.js): green check for success,
-        // amber for problems, blue for info. The 3rd argument is still the legacy icon constant.
         function triggerCustomModal(title, message, icon) {
             var kind = (icon === MH_ICON_CHECK_CIRCLE) ? 'success' : (icon === MH_ICON_INFO ? 'info' : 'warning');
             return mh_alert(message, title, kind, { html: true }).then(function () {

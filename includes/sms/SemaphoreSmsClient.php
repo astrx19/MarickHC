@@ -1,65 +1,7 @@
 <?php
-// Definitions are wrapped in a constant-keyed if-block ON PURPOSE: PHP registers top-level functions at
-// compile time, so require_once cannot stop a redeclare when one file is reached by two paths that differ
-// only in letter case (/MARICK-HEALTH-SYSTEM-v2/ vs /marick-health-system-v2/ on macOS/Windows).
 if (!defined('MH_LOADED_INCLUDES_SMS_SEMAPHORESMSCLIENT')) {
 define('MH_LOADED_INCLUDES_SMS_SEMAPHORESMSCLIENT', true);
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - SEMAPHORE SMS CLIENT
- * =====================================================================
- * Thin, dependency-free wrapper around the Semaphore SMS API
- * (https://semaphore.co/docs) using PHP cURL.
- *
- * USAGE
- * -----
- *   require_once __DIR__ . '/../../config/semaphore.php';
- *   require_once __DIR__ . '/../../includes/sms/SemaphoreSmsClient.php';
- *
- *   $result = mh_send_sms_semaphore('09171234567', 'Hello from Marick Health Center!');
- *   if ($result['success']) { ... } else { echo $result['error']; }
- *
- * NOTE: application code should call mh_send_sms() from
- * includes/sms_helper.php instead of this function directly - that
- * wrapper routes to Semaphore or the Android SMS Gateway depending on
- * the active provider configured in System Settings. This file only
- * implements the Semaphore side of that routing.
- *
- * This file also owns:
- *   - mh_normalize_ph_mobile()   - shared phone-number sanitizer used by
- *                                  both the form-side scheduler and the
- *                                  cron sender, so both agree on format.
- *   - mh_sms_install()           - creates scheduled_sms / sms_logs if
- *                                  they don't exist yet (safe to call on
- *                                  every request, like mh_settings_install()).
- *   - mh_semaphore_get_balance() - account credit balance, for the SMS
- *                                  dashboard.
- * ================================================================== */
 
-/* =====================================================================
- * 1. SENDING
- * ================================================================== */
-
-/**
- * Sends one SMS via the Semaphore API.
- *
- * @param string $phoneNumber Philippine mobile number, any of the formats
- *                             mh_normalize_ph_mobile() accepts (this
- *                             function normalizes it itself).
- * @param string $message     The SMS body. Semaphore bills per 160-char
- *                             segment (or 60 for unicode); long messages
- *                             are still accepted and simply cost more.
- * @param string|null $senderName Overrides SEMAPHORE_SENDER_NAME for this
- *                             one message. Leave null to use the configured default.
- *
- * @return array{
- *   success: bool,
- *   http_code: int,
- *   message_id: string|null,
- *   raw: array|null,        // decoded JSON body from Semaphore
- *   error: string|null
- * }
- */
 function mh_send_sms_semaphore($phoneNumber, $message, $senderName = null)
 {
     if (!function_exists('curl_init')) {
@@ -90,7 +32,7 @@ function mh_send_sms_semaphore($phoneNumber, $message, $senderName = null)
 
     $payload = [
         'apikey'     => SEMAPHORE_API_KEY,
-        'number'     => $normalizedPhone, // Semaphore accepts 09XXXXXXXXX
+        'number'     => $normalizedPhone,
         'message'    => $message,
         'sendername' => $sender,
     ];
@@ -116,9 +58,6 @@ function mh_send_sms_semaphore($phoneNumber, $message, $senderName = null)
 
     $decoded = json_decode($body, true);
 
-    // Semaphore returns a JSON array on success (one element per recipient
-    // when comma-separated numbers are sent - always one here), or a JSON
-    // object with an "error"/"message" key on failure.
     if ($httpCode >= 200 && $httpCode < 300 && is_array($decoded) && isset($decoded[0]['message_id'])) {
         return mh_sms_result(true, $httpCode, (string) $decoded[0]['message_id'], $decoded, null);
     }
@@ -150,12 +89,6 @@ if (!function_exists('mh_sms_result')) {
     }
 }
 
-/**
- * Account credit balance (for the SMS dashboard). Semaphore's /account
- * endpoint returns { account_name, credit_balance, status, ... }.
- *
- * @return array{success:bool, balance?:string, raw?:array, error?:string}
- */
 function mh_semaphore_get_balance()
 {
     if (!function_exists('curl_init')) {
@@ -169,8 +102,6 @@ function mh_semaphore_get_balance()
         return ['success' => false, 'error' => $keyProblem];
     }
 
-    // Semaphore allows only 2 calls/minute to /account (HTTP 429 beyond that). Reuse a result < 35 s old
-    // (success OR failure) so a page refresh or a double click never burns a call.
     if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['mh_sem_balance']) && (time() - (int) $_SESSION['mh_sem_balance']['at']) < 35) {
         $cached = $_SESSION['mh_sem_balance']['result'];
         if (!$cached['success']) { $cached['error'] .= ' (Showing the last result - wait about a minute before checking again.)'; }
@@ -213,19 +144,6 @@ function mh_semaphore_get_balance()
     return $remember(['success' => false, 'error' => $errMsg]);
 }
 
-/* =====================================================================
- * 2. PHONE NUMBER NORMALIZATION
- * ================================================================== */
-
-/**
- * Normalizes a Philippine mobile number to the 09XXXXXXXXX format that
- * Semaphore's API expects. Accepts (and fixes) the common variants staff
- * actually type: "+639171234567", "639171234567", "09171234567",
- * "9171234567", with stray spaces/dashes/parentheses.
- *
- * @return string "09XXXXXXXXX" (11 digits) or '' if not a recognizable
- *                Philippine mobile number.
- */
 function mh_normalize_ph_mobile($raw)
 {
     $digits = preg_replace('/\D+/', '', (string) $raw);
@@ -233,16 +151,13 @@ function mh_normalize_ph_mobile($raw)
         return '';
     }
 
-    // 63 9XXXXXXXXX (12 digits, with or without a leading + already stripped)
     if (strlen($digits) === 12 && substr($digits, 0, 2) === '63' && substr($digits, 2, 1) === '9') {
         $digits = '0' . substr($digits, 2);
     }
-    // 9XXXXXXXXX (10 digits, missing the leading 0)
     elseif (strlen($digits) === 10 && substr($digits, 0, 1) === '9') {
         $digits = '0' . $digits;
     }
 
-    // Final shape: exactly 11 digits, starting with "09".
     if (strlen($digits) === 11 && substr($digits, 0, 2) === '09') {
         return $digits;
     }
@@ -250,11 +165,6 @@ function mh_normalize_ph_mobile($raw)
     return '';
 }
 
-/**
- * Same number in E.164 (639XXXXXXXXX, no "+"), which some carriers/tools
- * prefer. Semaphore itself accepts 09XXXXXXXXX, so this is only exposed
- * for logging / display purposes.
- */
 function mh_to_e164_ph($normalized09)
 {
     if (strlen($normalized09) === 11 && substr($normalized09, 0, 1) === '0') {
@@ -263,17 +173,6 @@ function mh_to_e164_ph($normalized09)
     return '';
 }
 
-/* =====================================================================
- * 3. TABLE BOOTSTRAP
- * ================================================================== */
-
-/**
- * Creates scheduled_sms and sms_logs if they don't already exist.
- * Idempotent - safe to call on every request, mirroring
- * mh_settings_install() in includes/settings_helper.php. The full
- * migration also lives in database/sms_schema.sql for a one-time
- * explicit run.
- */
 function mh_sms_install(mysqli $conn)
 {
     $conn->query(

@@ -7,7 +7,6 @@ require_once __DIR__ . '/includes/password_reset_helpers.php';
 
 $system_name = $system_name ?? mh_setting('system_name');
 
-// Remember which login page the visitor came from (staff console vs patient page).
 if (isset($_GET['for'])) { $_SESSION['pr_for'] = mh_pr_scope($_GET['for']); }
 $scope = mh_pr_scope($_SESSION['pr_for'] ?? '');
 if ($scope === '') {
@@ -73,7 +72,7 @@ $no_option = $step === 2 && !$state['email_ok'] && !$state['sms_ok'];
     </div>
     <div class="pr-steps"><i class="on"></i><i class="<?php echo $step >= 2 ? 'on' : ''; ?>"></i><i class="<?php echo $step >= 3 ? 'on' : ''; ?>"></i></div>
 
-    <?php if ($flash && !$no_option && $step !== 3): /* one alert at a time: step 3 / "no option" carry their own */ ?>
+    <?php if ($flash && !$no_option && $step !== 3): ?>
         <div class="pr-alert err"><?php echo mh_pr_icon('alert'); ?><span><?php echo mh_pr_h($flash); ?></span></div>
     <?php endif; ?>
 

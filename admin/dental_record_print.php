@@ -1,12 +1,4 @@
 <?php
-/**
- * admin/dental_record_print.php - printable replica of Marick Health Center's paper DENTAL RECORD.
- *
- *   dental_record_print.php?patient=ID         the patient's record (header, findings of the latest visit, full procedure history)
- *   dental_record_print.php?patient=0          a blank form (no patient)   [&autoprint=1 opens the print dialog]
- *
- * Same access as the Dental module (can_log_dental or can_view_dental_history). Black and white, A4.
- */
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 

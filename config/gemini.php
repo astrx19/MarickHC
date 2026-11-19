@@ -1,13 +1,5 @@
 <?php
-/**
- * Gemini OCR configuration - DATABASE BACKED.
- *
- * The API key and model are read from `system_settings` on every request
- * (System Settings > Scanner (OCR)). No key is stored in any file. If the key
- * is missing the scanners return a friendly "not configured" message and a
- * "Config Warning" is written to the System Logs (key name only).
- */
-require_once __DIR__ . '/database.php';   // idempotent: connects + loads DB settings
+require_once __DIR__ . '/database.php';
 
 if (!defined('GEMINI_API_KEY')) {
     define('GEMINI_API_KEY', mh_get_option('gemini_api_key', ''));
@@ -27,27 +19,17 @@ if (!defined('GEMINI_OCR_FALLBACK_MODELS')) {
     ]));
 }
 
-/* API surface. v1beta is required for responseSchema / structured output. */
 if (!defined('GEMINI_API_VERSION')) {
     define('GEMINI_API_VERSION', 'v1beta');
 }
 
-/* ---------------------------------------------------------------------
- * 3. RETRY / TIMEOUT TUNING (used by includes/ocr/GeminiOcrClient.php)
- * ------------------------------------------------------------------ */
-if (!defined('GEMINI_MAX_ATTEMPTS'))   { define('GEMINI_MAX_ATTEMPTS', 4);   } // per model
+if (!defined('GEMINI_MAX_ATTEMPTS'))   { define('GEMINI_MAX_ATTEMPTS', 4);   }
 if (!defined('GEMINI_BACKOFF_BASE_MS')){ define('GEMINI_BACKOFF_BASE_MS', 700); }
 if (!defined('GEMINI_BACKOFF_CAP_MS')) { define('GEMINI_BACKOFF_CAP_MS', 8000); }
 if (!defined('GEMINI_HTTP_TIMEOUT'))   { define('GEMINI_HTTP_TIMEOUT', 60);  }
 
-/* Set to true only while debugging; it adds a "debug" node to the JSON
-   error responses returned by admin/ocr/*.php. Never leave on in prod. */
 if (!defined('GEMINI_DEBUG')) { define('GEMINI_DEBUG', false); }
 
-/**
- * Returns a human-readable problem with the configured API key,
- * or NULL when the key looks structurally valid.
- */
 if (!function_exists('gemini_api_key_problem')) {
     function gemini_api_key_problem()
     {

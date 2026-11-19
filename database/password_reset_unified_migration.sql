@@ -1,18 +1,3 @@
--- =====================================================================
--- Unified password_resets table (email link tokens + SMS OTPs)
--- Run once in phpMyAdmin (Hostinger > Databases > phpMyAdmin > SQL tab).
---
--- The old table held plaintext 1-hour tokens only, so dropping it is safe:
--- any pending reset links simply stop working and users request a new one.
---
--- Requested columns are all here. Three extra columns are deliberate:
---   user_type + user_id : this project has TWO login tables (staff, patients)
---                         and some accounts share a mobile number / email, so
---                         identifier alone can't say WHICH account to reset.
---   attempts            : a 6-digit OTP has only 1,000,000 possibilities, so
---                         wrong guesses must be counted and capped.
---   ip_address          : lets the backend rate-limit SMS/email sends.
--- =====================================================================
 DROP TABLE IF EXISTS `password_resets`;
 
 CREATE TABLE `password_resets` (

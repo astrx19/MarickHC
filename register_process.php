@@ -1,45 +1,21 @@
 <?php
-/**
- * =====================================================================
- * PATIENT REGISTRATION + SECURE ACCOUNT CLAIM
- * =====================================================================
- * A walk-in patient already has a clinic record (no username yet). When someone registers
- * with matching details we do NOT overwrite that record on their say-so. Instead:
- *
- *   Step A  register_patient      Identity matches an UNCLAIMED record (username IS NULL/blank)
- *                                 -> generate a 6-digit OTP, keep it (hashed) in $_SESSION['claim_otp']
- *                                 with a 10-minute expiry, and SMS it to the mobile number ALREADY ON
- *                                 FILE for that record. The registrant never supplies that number.
- *   Step B  claim_verify_otp      Correct, unexpired OTP -> ONLY NOW write username + password
- *                                 (atomic UPDATE ... WHERE username IS NULL/blank), then wipe the session state.
- *
- * Also: claim_resend_otp (cooldown + caps) and claim_cancel. Every POST requires a valid CSRF token.
- * A record whose username is already set can never be claimed.
- */
 session_start();
 
 require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/settings_helper.php';   // mh_csrf_check(), mh_setting()
-require_once __DIR__ . '/includes/auth_helpers.php';      // mh_username_available()
-require_once __DIR__ . '/includes/sms_helper.php';        // mh_normalize_ph_mobile() - needed by the NEW-patient path too, not only the OTP path
+require_once __DIR__ . '/includes/settings_helper.php';
+require_once __DIR__ . '/includes/auth_helpers.php';
+require_once __DIR__ . '/includes/sms_helper.php';
 
-const CLAIM_OTP_TTL_SECONDS    = 600;   // OTP valid for 10 minutes
-const CLAIM_OTP_MAX_ATTEMPTS   = 5;     // wrong guesses before the code is burned
-const CLAIM_RESEND_COOLDOWN    = 60;    // seconds between SMS for one claim
-const CLAIM_MAX_SMS_PER_CLAIM  = 3;     // SMS per claim session
-const CLAIM_MAX_SMS_PER_RECORD = 3;     // SMS per patient record per hour (stops SMS-bombing a victim from new sessions)
-const CLAIM_MAX_SMS_PER_IP     = 10;    // SMS per IP per hour
-// true  = one mobile number can belong to only one ACTIVE patient record (strict).
-// false = families may share a number (common in the Philippines); only email/username/name+birthdate are blocked.
+const CLAIM_OTP_TTL_SECONDS    = 600;
+const CLAIM_OTP_MAX_ATTEMPTS   = 5;
+const CLAIM_RESEND_COOLDOWN    = 60;
+const CLAIM_MAX_SMS_PER_CLAIM  = 3;
+const CLAIM_MAX_SMS_PER_RECORD = 3;
+const CLAIM_MAX_SMS_PER_IP     = 10;
 const REG_PHONE_MUST_BE_UNIQUE = true;
 
-/* ---------------------------------------------------------------------
- * Helpers
- * ------------------------------------------------------------------ */
-
-// Same address string for registration and claims. Values are bound as parameters, never escaped here.
 function build_patient_address($data) {
-    if (mh_is_marick_resident($data['address_type'] ?? '')) {   // home jurisdiction comes from System Settings
+    if (mh_is_marick_resident($data['address_type'] ?? '')) {
         return mh_build_resident_address($data['house_number'] ?? '', $data['marick_street'] ?? '');
     }
     return trim($data['outsider_address'] ?? '');
@@ -49,12 +25,10 @@ function claim_go($location) { header('Location: ' . $location); exit(); }
 
 function claim_flash($message) { $_SESSION['claim_flash'] = $message; }
 
-/** Forget every piece of claim state (pending data AND the OTP). */
 function claim_clear_session() {
     unset($_SESSION['claim_otp'], $_SESSION['claim_pending']);
 }
 
-/** Record claim SMS sends so one record / one IP cannot be spammed. Table is created on first use. */
 function claim_throttle_table(mysqli $conn) {
     static $ready = false;
     if ($ready) { return; }
@@ -71,7 +45,6 @@ function claim_throttle_table(mysqli $conn) {
     $ready = true;
 }
 
-/** @return bool true when another OTP SMS may be sent for this record / IP. */
 function claim_sms_allowed(mysqli $conn, $patientId, $ip) {
     claim_throttle_table($conn);
     $stmt = $conn->prepare(
@@ -95,9 +68,8 @@ function claim_log_sms(mysqli $conn, $patientId, $ip) {
     $stmt->close();
 }
 
-/** True when an ACTIVE patient already has this mobile number (any stored format). Exits with error_db if the query itself fails. */
 function reg_phone_in_use(mysqli $conn, $normalized09) {
-    $tail = substr($normalized09, 1);                    // 9XXXXXXXXX
+    $tail = substr($normalized09, 1);
     $a = $normalized09; $b = '63' . $tail; $c = '+63' . $tail;
     $stmt = $conn->prepare("SELECT id FROM patients WHERE status = 1 AND contact_number IN (?, ?, ?) LIMIT 1");
     if (!$stmt) {
@@ -111,7 +83,6 @@ function reg_phone_in_use(mysqli $conn, $normalized09) {
     return (bool) $found;
 }
 
-/** Load the clinic record being claimed (fresh from the database, never from the session). */
 function claim_load_record(mysqli $conn, $patientId) {
     $stmt = $conn->prepare(
         "SELECT id, username, contact_number, status FROM patients WHERE id = ? LIMIT 1"
@@ -123,20 +94,15 @@ function claim_load_record(mysqli $conn, $patientId) {
     return $row ?: null;
 }
 
-/** A record can be claimed only while its username is NULL or blank. */
 function claim_is_unclaimed(array $record) {
     return trim((string) ($record['username'] ?? '')) === '';
 }
 
-/**
- * STEP A (also used by "resend"): create a fresh 6-digit OTP and SMS it to the number ON FILE.
- * The code is stored only as a hash. Returns an error key, or null on success.
- */
 function claim_send_otp(mysqli $conn, array $record, $isResend = false) {
     $ip     = $_SERVER['REMOTE_ADDR'] ?? '';
-    require_once __DIR__ . '/includes/sms_helper.php';       // loads the DB-backed SMS provider config
+    require_once __DIR__ . '/includes/sms_helper.php';
     $mobile = mh_normalize_ph_mobile($record['contact_number'] ?? '');
-    if ($mobile === '') { return 'claim_no_phone'; }          // nothing usable on file -> must visit the clinic
+    if ($mobile === '') { return 'claim_no_phone'; }
 
     if (!claim_sms_allowed($conn, (int) $record['id'], $ip)) { return 'claim_throttled'; }
 
@@ -148,14 +114,14 @@ function claim_send_otp(mysqli $conn, array $record, $isResend = false) {
     if (empty($sms['success'])) {
         error_log('Claim OTP SMS failed for patient #' . (int) $record['id'] . ': ' . ($sms['error'] ?? 'unknown'));
         unset($_SESSION['claim_otp']);
-        return 'claim_sms_failed';                            // fail CLOSED: no SMS, no claim
+        return 'claim_sms_failed';
     }
     claim_log_sms($conn, (int) $record['id'], $ip);
 
     $prev = $_SESSION['claim_otp'] ?? [];
     $_SESSION['claim_otp'] = [
         'patient_id' => (int) $record['id'],
-        'hash'       => password_hash($code, PASSWORD_DEFAULT),   // never keep the plain code
+        'hash'       => password_hash($code, PASSWORD_DEFAULT),
         'expires'    => time() + CLAIM_OTP_TTL_SECONDS,
         'attempts'   => 0,
         'sent_at'    => time(),
@@ -165,12 +131,6 @@ function claim_send_otp(mysqli $conn, array $record, $isResend = false) {
     return null;
 }
 
-/* ---------------------------------------------------------------------
- * Router
- * ------------------------------------------------------------------ */
-
-// Legacy "?confirm_claim=yes" link used to link a record with ZERO verification (account takeover).
-// It can no longer change anything; it just abandons any pending claim.
 if (isset($_GET['confirm_claim'])) {
     claim_clear_session();
     claim_go('index.php?reg_status=cancelled');
@@ -180,19 +140,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     claim_go('index.php');
 }
 
-// Every POST route below needs a valid CSRF token.
 if (!mh_csrf_check()) {
     http_response_code(403);
     claim_go('index.php?reg_status=error_csrf');
 }
 
-/* ===== Cancel ====================================================== */
 if (isset($_POST['claim_cancel'])) {
     claim_clear_session();
     claim_go('index.php?reg_status=cancelled');
 }
 
-/* ===== STEP B: verify the OTP, then (and only then) create the credentials ===== */
 if (isset($_POST['claim_verify_otp'])) {
     $pending = $_SESSION['claim_pending'] ?? null;
     $otp     = $_SESSION['claim_otp'] ?? null;
@@ -218,7 +175,6 @@ if (isset($_POST['claim_verify_otp'])) {
         claim_go('claim_account.php');
     }
 
-    // ---- OTP is correct. Re-check everything against the database, then write atomically. ----
     $patientId = (int) $pending['patient_id'];
     $record = claim_load_record($conn, $patientId);
     if (!$record || (int) $record['status'] !== 1 || !claim_is_unclaimed($record)) {
@@ -230,9 +186,6 @@ if (isset($_POST['claim_verify_otp'])) {
         claim_go('index.php?reg_status=error_username');
     }
 
-    // Only the credentials are written. Name, birthdate, contact number and clinical data stay as the clinic recorded them.
-    // The email is replaced only when the clinic has a blank/placeholder one (walk-in records).
-    // "AND username IS NULL/blank" makes it impossible for two concurrent claims to both win.
     $stmt = $conn->prepare(
         "UPDATE patients
             SET username = ?, password = ?,
@@ -252,13 +205,11 @@ if (isset($_POST['claim_verify_otp'])) {
 
     logActivity($conn, 0, 'patient', 'Account Claimed', 'Patient #' . $patientId . ' linked a portal account after SMS verification.');
 
-    // Credentials exist -> clear the OTP + pending data immediately and rotate the session id.
     claim_clear_session();
     session_regenerate_id(true);
     claim_go('index.php?reg_status=success');
 }
 
-/* ===== Resend the OTP (to the SAME number on file) ===== */
 if (isset($_POST['claim_resend_otp'])) {
     $pending = $_SESSION['claim_pending'] ?? null;
     $otp     = $_SESSION['claim_otp'] ?? null;
@@ -272,7 +223,7 @@ if (isset($_POST['claim_resend_otp'])) {
         claim_clear_session();
         claim_go('index.php?reg_status=claim_throttled');
     }
-    $record = claim_load_record($conn, (int) $pending['patient_id']);      // number comes from the database again
+    $record = claim_load_record($conn, (int) $pending['patient_id']);
     if (!$record || (int) $record['status'] !== 1 || !claim_is_unclaimed($record)) {
         claim_clear_session();
         claim_go('index.php?reg_status=error_claimed');
@@ -283,7 +234,6 @@ if (isset($_POST['claim_resend_otp'])) {
     claim_go('claim_account.php');
 }
 
-/* ===== Registration / STEP A ===== */
 if (isset($_POST['register_patient'])) {
     $fname    = trim($_POST['first_name'] ?? '');
     $lname    = trim($_POST['last_name'] ?? '');
@@ -298,17 +248,14 @@ if (isset($_POST['register_patient'])) {
     if ($fname === '' || $lname === '') {
         claim_go('index.php?reg_status=error_input');
     }
-    // Birthdate: a real calendar date, 4-digit year, 1900-01-01 .. today (the browser limit can be bypassed).
     $d = DateTime::createFromFormat('Y-m-d', $bdate);
     if (!$d || $d->format('Y-m-d') !== $bdate || $d > new DateTime('today') || $d < new DateTime('1900-01-01')) {
         claim_go('index.php?reg_status=error_birthdate');
     }
-    // PhilHealth number is optional, but when given it is exactly 12 digits (spaces/dashes are tolerated and dropped).
     $philhealth_clean = preg_replace('/[\s-]+/', '', trim($_POST['philhealth_no'] ?? ''));
     if ($philhealth_clean !== '' && !preg_match('/^[0-9]{12}$/', $philhealth_clean)) {
         claim_go('index.php?reg_status=error_philhealth');
     }
-    // Strict email validation: must end strictly with .com
     if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.com$/i', $email)) {
         claim_go('index.php?reg_status=error_email');
     }
@@ -319,7 +266,6 @@ if (isset($_POST['register_patient'])) {
         claim_go('index.php?reg_status=error_password');
     }
 
-    // ---- Does this look like an existing clinic record? -----------------------------
     $stmt = $conn->prepare(
         "SELECT id, email, username, status, first_name, last_name, birthdate FROM patients
           WHERE email = ? OR (first_name = ? AND last_name = ? AND birthdate = ?)"
@@ -337,21 +283,17 @@ if (isset($_POST['register_patient'])) {
     $stmt->close();
 
     if ($by_email || $by_identity) {
-        // Email says record A, name+birthdate says record B -> ambiguous, refuse rather than guess.
         if ($by_email && $by_identity && (int) $by_email['id'] !== (int) $by_identity['id']) {
             claim_go('index.php?reg_status=error_email');
         }
         $target = $by_email ?? $by_identity;
 
-        // 1) CLAIMABILITY: username must be NULL or blank. Already claimed -> reject, never overwrite.
         if (!claim_is_unclaimed($target)) { claim_go('index.php?reg_status=error_claimed'); }
-        if ((int) $target['status'] !== 1) { claim_go('index.php?reg_status=error_claimed'); }   // archived records: contact the clinic
+        if ((int) $target['status'] !== 1) { claim_go('index.php?reg_status=error_claimed'); }
 
-        // 2) Read the number ON FILE (never the one typed into the form) and send the OTP there.
         $record = claim_load_record($conn, (int) $target['id']);
         if (!$record) { claim_go('index.php?reg_status=error_claimed'); }
 
-        // Keep ONLY what is needed after verification. The plain password is hashed now and never stored.
         $_SESSION['claim_pending'] = [
             'patient_id'    => (int) $record['id'],
             'username'      => $username,
@@ -366,21 +308,18 @@ if (isset($_POST['register_patient'])) {
         claim_go('claim_account.php');
     }
 
-    // ---- Brand-new patient: plain registration ---------------------------------------
-    // Reaching this point means: no record matched this email, and no record matched name + birthdate.
-    $contact = mh_normalize_ph_mobile(trim($_POST['contact_number'] ?? ''));   // 09XXXXXXXXX or ''
+    $contact = mh_normalize_ph_mobile(trim($_POST['contact_number'] ?? ''));
     if ($contact === '') {
         claim_go('index.php?reg_status=error_phone');
     }
     $sex = trim($_POST['sex'] ?? '');
-    if (!in_array($sex, ['Male', 'Female'], true)) {          // column is NOT NULL; never insert a blank
+    if (!in_array($sex, ['Male', 'Female'], true)) {
         claim_go('index.php?reg_status=error_input');
     }
-    $philhealth = $philhealth_clean;   // validated above: '' or exactly 12 digits
+    $philhealth = $philhealth_clean;
     $family     = trim($_POST['family_no'] ?? '');
     $password   = password_hash($password_plain, PASSWORD_DEFAULT);
 
-    // Address: validated on the server too (the browser check can be bypassed or stale).
     $address_type = trim($_POST['address_type'] ?? '');
     if (!mh_masterlist_has($conn, 'address_types', $address_type)) { claim_go('index.php?reg_status=error_address'); }
     if (mh_is_marick_resident($address_type)) {
@@ -393,7 +332,6 @@ if (isset($_POST['register_patient'])) {
         if ($address_detail === '' || mb_strlen($address_detail) > 255) { claim_go('index.php?reg_status=error_address'); }
     }
 
-    // Duplicate mobile number (email, username and name+birthdate were already checked above).
     if (REG_PHONE_MUST_BE_UNIQUE && reg_phone_in_use($conn, $contact)) {
         claim_go('index.php?reg_status=error_phone_taken');
     }
@@ -404,7 +342,7 @@ if (isset($_POST['register_patient'])) {
              email, username, password, address_type, address, philhealth_no, family_no)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
-    if (!$stmt) {   // mysqli does not throw here (MYSQLI_REPORT_OFF): a missing column returns false and used to crash on bind_param()
+    if (!$stmt) {
         error_log('Patient registration: prepare failed: ' . $conn->error);
         claim_go('index.php?reg_status=error_db');
     }
@@ -424,12 +362,11 @@ if (isset($_POST['register_patient'])) {
         claim_go('index.php?reg_status=success');
     }
 
-    // 1062 = duplicate key: two people raced past the checks above and the UNIQUE index caught the loser.
     if ($dbErrno === 1062) {
         if (stripos($dbError, 'username') !== false) { claim_go('index.php?reg_status=error_username'); }
         claim_go('index.php?reg_status=error_email');
     }
-    error_log('Patient registration INSERT failed (' . $dbErrno . '): ' . $dbError);   // never echo DB errors to the browser
+    error_log('Patient registration INSERT failed (' . $dbErrno . '): ' . $dbError);
     claim_go('index.php?reg_status=error_db');
 }
 

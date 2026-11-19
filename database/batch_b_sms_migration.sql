@@ -1,6 +1,3 @@
--- BATCH B / G4-G5 - SMS correctness (Paper REQ17, REQ64, REQ66). Idempotent; the app needs no new columns.
-
--- 1. Remove duplicate PENDING reminders that earlier re-saves created (keep the oldest of each group).
 DELETE s1 FROM scheduled_sms s1
 JOIN scheduled_sms s2
   ON  s1.patient_id = s2.patient_id
@@ -10,6 +7,5 @@ JOIN scheduled_sms s2
   AND s1.status = 'pending' AND s2.status = 'pending'
   AND s1.id > s2.id;
 
--- 2. Speeds up the "already scheduled?" check made before every insert.
 ALTER TABLE scheduled_sms
   ADD INDEX IF NOT EXISTS idx_followup_lookup (patient_id, source_module, source_record_id, scheduled_date);

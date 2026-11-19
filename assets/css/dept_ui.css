@@ -295,7 +295,6 @@
 
 .du-sr { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; pointer-events: none; }
 
-/* ===== Dental visit form (admin/dental.php, #dvForm): uses the shared cf-* department form layout ===== */
 .dvs-findings { display: flex; gap: 14px; flex-wrap: wrap; }
 .dvs-more { margin: 10px 0 0; }
 .dvs-more > summary { cursor: pointer; color: var(--du-muted); font-size: .85rem; }
@@ -311,13 +310,11 @@
 .dvs-del { flex: none; width: 26px; height: 26px; border: 1px solid var(--du-line); border-radius: 6px; background: transparent; color: var(--du-muted); cursor: pointer; font-size: 1.1rem; line-height: 1; }
 .dvs-del:hover { color: #b91c1c; border-color: #b91c1c; }
 
-/* ===== Dental list page: same table/list look as the other departments ===== */
 .cf-cell-links { font-size: .8rem; }
 .cf-cell-links a { color: var(--du-accent); font-weight: 600; text-decoration: none; }
 .cf-cell-links a:hover { text-decoration: underline; }
 .du-pagehead h2.du-sectionhead { margin: 0; font-size: 1.25rem; }
 
-/* ===== Dental Record form: mirrors the center's paper DENTAL RECORD ===== */
 .dvs-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; margin-bottom: 4px; }
 .dvs-col { display: grid; gap: 10px; align-content: start; margin-bottom: 10px; }
 .dvs-col .cf-field { margin-bottom: 0; }

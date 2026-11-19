@@ -148,7 +148,6 @@ html[data-theme="dark"] .cat-immunization { color: #6ee7b7; }
 }
 .pp-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
-/* Upcoming follow-up alert viewer (patient dashboard) */
 .pp-followups { margin-bottom: 18px; }
 .pp-followup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-color, #e2e8f0); }
 .pp-followup-row:last-of-type { border-bottom: 0; }

@@ -14,7 +14,6 @@ if (!function_exists('mh_layout_patient_config')) {
             $fullname = 'Patient';
         }
         $initials   = mh_pp_initials($first, $last);
-        // Display photo (Figure 58): a file named after the patient id; initials when there is none.
         $mh_pid = (int) ($_SESSION['patient_id'] ?? 0);
         $mh_pic = __DIR__ . '/../../assets/images/patient_pics/' . $mh_pid . '.jpg';
         $mh_avatar_inner = ($mh_pid > 0 && is_file($mh_pic))

@@ -1,32 +1,6 @@
 <?php
-/**
- * PDO data layer (Step 2).
- *
- * Coexists with the existing mysqli $conn from config/database.php, so pages
- * can be migrated one module at a time. It reuses the SAME credentials
- * (env vars / config/database.local.php), so nothing new to configure.
- *
- *   $rows = mh_db_all('SELECT id, name FROM t WHERE status = ? AND d >= ?', [1, $from]);
- *   $row  = mh_db_one('SELECT * FROM t WHERE id = :id', ['id' => $id]);
- *   $n    = mh_db_value('SELECT COUNT(*) FROM t WHERE status = ?', [1]);
- *   $ok   = mh_db_exec('UPDATE t SET a = ? WHERE id = ?', [$a, $id]);
- *   [$in, $params] = mh_db_in([3, 5, 9]);   // "?,?,?"  for  WHERE id IN ($in)
- *
- * Every value is bound - never concatenate user input into $sql.
- * Compatible with PHP 7.2+. If PDO cannot connect, every helper falls back to the mysqli $conn
- * (positional ? placeholders only), so a PDO problem can never blank a page again.
- */
 
 if (!function_exists('mh_pdo')) {
-    /**
-     * Lazily creates the shared PDO connection. Returns null (and logs why) if it cannot connect.
-     *
-     * Why several attempts: mysqli and PDO resolve host "localhost" differently. mysqli uses
-     * mysqli.default_socket, PDO uses pdo_mysql.default_socket - on XAMPP for macOS the two often
-     * differ, so mysqli works while a plain PDO DSN fails with "No such file or directory".
-     * We therefore try, in order: the socket mysqli itself would use, the host as configured,
-     * and TCP 127.0.0.1. When all fail, helpers transparently fall back to the mysqli connection.
-     */
     function mh_pdo()
     {
         static $pdo = false;
@@ -42,7 +16,6 @@ if (!function_exists('mh_pdo')) {
             return $pdo;
         }
 
-        // config/database.php defines $host/$user/$password/$database (and $conn). Load it once.
         global $host, $user, $password, $database;
         if (!isset($host, $user, $database)) {
             require_once __DIR__ . '/../config/database.php';
@@ -61,12 +34,12 @@ if (!function_exists('mh_pdo')) {
         $opts = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,   // real server-side prepared statements
+            PDO::ATTR_EMULATE_PREPARES   => false,
             PDO::ATTR_STRINGIFY_FETCHES  => false,
             PDO::ATTR_TIMEOUT            => 5,
         ];
         if (!empty($GLOBALS['mh_db_utc_offset']) && defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
-            $opts[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET time_zone = '" . $GLOBALS['mh_db_utc_offset'] . "'";   // same clock as the mysqli connection
+            $opts[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET time_zone = '" . $GLOBALS['mh_db_utc_offset'] . "'";
         }
         $errors = [];
         foreach ($dsns as $label => $dsn) {
@@ -76,7 +49,7 @@ if (!function_exists('mh_pdo')) {
                 unset($GLOBALS['mh_db_driver_error']);
                 return $pdo;
             } catch (PDOException $e) {
-                $errors[] = $label . ': ' . $e->getMessage();   // logged only, never shown to visitors
+                $errors[] = $label . ': ' . $e->getMessage();
             }
         }
         $pdo = null;
@@ -87,7 +60,6 @@ if (!function_exists('mh_pdo')) {
 }
 
 if (!class_exists('MhDbResult')) {
-    /** Minimal PDOStatement look-alike used by the mysqli fallback (same methods the helpers call). */
     class MhDbResult
     {
         private $rows;
@@ -114,10 +86,6 @@ if (!class_exists('MhDbResult')) {
 }
 
 if (!function_exists('mh_db_run_mysqli')) {
-    /**
-     * Fallback executor on the project's existing mysqli connection. Supports positional "?" only
-     * (all bound as strings - MySQL coerces them), which is all the helpers' callers use.
-     */
     function mh_db_run_mysqli($sql, array $params = [])
     {
         global $conn;
@@ -148,7 +116,6 @@ if (!function_exists('mh_db_run_mysqli')) {
 }
 
 if (!function_exists('mh_db_run')) {
-    /** Prepare + execute. Returns a statement-like object, or null on any failure (logged, never printed). */
     function mh_db_run($sql, array $params = [])
     {
         $pdo = mh_pdo();
@@ -168,7 +135,6 @@ if (!function_exists('mh_db_run')) {
 }
 
 if (!function_exists('mh_db_driver')) {
-    /** Which driver is really in use (for the diagnostic page): e.g. "PDO (socket /Applications/...)" or "mysqli (PDO unavailable)". */
     function mh_db_driver()
     {
         mh_pdo();
@@ -189,7 +155,6 @@ if (!function_exists('mh_db_all')) {
 }
 
 if (!function_exists('mh_db_one')) {
-    /** First row or null. */
     function mh_db_one($sql, array $params = [])
     {
         $stmt = mh_db_run($sql, $params);
@@ -199,7 +164,6 @@ if (!function_exists('mh_db_one')) {
 }
 
 if (!function_exists('mh_db_value')) {
-    /** First column of the first row (COUNT(*), SUM(...)); $default when there is no row / on error. */
     function mh_db_value($sql, array $params = [], $default = 0)
     {
         $stmt = mh_db_run($sql, $params);
@@ -212,7 +176,6 @@ if (!function_exists('mh_db_value')) {
 }
 
 if (!function_exists('mh_db_exec')) {
-    /** INSERT/UPDATE/DELETE. Returns affected rows (int) or false on failure. */
     function mh_db_exec($sql, array $params = [])
     {
         $stmt = mh_db_run($sql, $params);
@@ -221,7 +184,6 @@ if (!function_exists('mh_db_exec')) {
 }
 
 if (!function_exists('mh_db_in')) {
-    /** Placeholders for an IN() list: returns ['?,?,?', [values...]]. An empty list yields 'NULL' (matches nothing). */
     function mh_db_in(array $values)
     {
         $values = array_values($values);
@@ -233,10 +195,6 @@ if (!function_exists('mh_db_in')) {
 }
 
 if (!function_exists('mh_db_table_has_column')) {
-    /**
-     * Schema probe, cached for the whole request (the dashboard used to run the same
-     * SHOW COLUMNS query once per widget on every page load).
-     */
     function mh_db_table_has_column($table, $column)
     {
         static $cache = [];
