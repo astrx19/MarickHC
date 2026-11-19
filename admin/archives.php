@@ -79,7 +79,6 @@ require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'System Archives']);
 ?>
     <style>
-        /* Page background comes from admin_theme.css (--bg-body) so the dark toggle applies here too. */
         .archive-container { 
             width: 95%; 
             max-width: 1800px; 
@@ -258,8 +257,6 @@ mh_layout_head(['title' => 'System Archives']);
             btn.addEventListener('click', async function (e) {
                 e.preventDefault();
                 const ok = await mh_confirm(message, 'Restore Record?', 'info');
-                // requestSubmit(btn) preserves the button's name="..." in the POST data,
-                // unlike form.submit() which would drop it.
                 if (ok) { form.requestSubmit(btn); }
             });
         }

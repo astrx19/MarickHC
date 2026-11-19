@@ -6,8 +6,6 @@ require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/settings_helper.php';
 
-// Health Head always; other roles only when "Department Management" is switched on for them
-// (System Settings -> Staff Roles & Permissions).
 require_permission('manage_departments');
 
 mh_department_ensure_table($conn);
@@ -30,7 +28,7 @@ function dept_done($ok, $msg) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_permission('manage_departments');   // re-check on the write itself
+    require_permission('manage_departments');   
     if (!hash_equals($_SESSION['dept_csrf'], (string) ($_POST['csrf'] ?? ''))) {
         dept_done(false, 'Your session form expired. Please try again.');
     }
@@ -41,7 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!array_key_exists($mod, $choices)) { $mod = ''; }
     $nameLen = mb_strlen($name);
 
-    /* ---------- LOCK / UNLOCK (Health Head / Admin only) ---------- */
     if (isset($_POST['toggle_dept_lock'])) {
         if (!mh_is_admin_tier()) { dept_done(false, 'Only the Health Head or an Admin can change this policy.'); }
         $lock = ($_POST['toggle_dept_lock'] === 'lock');
@@ -50,7 +47,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         dept_done(true, $lock ? 'Adding departments is locked again.' : 'Adding departments is now allowed. Lock it again when you are done.');
     }
 
-    /* ---------- ADD ---------- */
     if (isset($_POST['add_department'])) {
         if (mh_departments_locked()) { dept_done(false, 'Adding departments is disabled by center policy.'); }
         if ($name === '' || $nameLen > 100) { dept_done(false, 'Enter a department name (up to 100 characters).'); }
@@ -63,7 +59,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         dept_done(true, "Department \"$name\" added. It now appears in walk-in registration and Patient Queueing.");
     }
 
-    /* ---------- EDIT / RENAME / HIDE ---------- */
     if (isset($_POST['edit_department'])) {
         $opt_id = (int) ($_POST['option_id'] ?? 0);
         $active = isset($_POST['is_active']) ? 1 : 0;
@@ -81,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $st->bind_param('siis', $name, $active, $opt_id, $LIST);
         $ok = $st->execute(); $dup = ($conn->errno === 1062); $st->close();
 
-        if ($ok && $name !== $old_name) {   // keep existing queue history attached to the renamed department
+        if ($ok && $name !== $old_name) { 
             $st = $conn->prepare("UPDATE appointments SET department = ? WHERE department = ?");
             $st->bind_param('ss', $name, $old_name);
             $ok = $st->execute(); $st->close();
@@ -103,7 +98,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         dept_done(true, "Department \"$name\" saved.");
     }
 
-    /* ---------- DELETE (only when never used) ---------- */
     if (isset($_POST['delete_department'])) {
         $opt_id = (int) ($_POST['option_id'] ?? 0);
         $st = $conn->prepare("SELECT option_value FROM system_options WHERE id = ? AND list_key = ?");
@@ -129,7 +123,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $cfg  = mh_department_settings($conn, true);
 $rows = mh_options($conn, $LIST, false);
-// queue usage per department
 $usage = [];
 $res = $conn->query("SELECT department, COUNT(*) AS c FROM appointments GROUP BY department");
 while ($res && ($r = $res->fetch_assoc())) { $usage[$r['department']] = (int) $r['c']; }

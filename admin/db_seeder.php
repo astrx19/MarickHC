@@ -1,20 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/env_guard.php';
-mh_require_dev_environment();   // never runs on the live clinic database (see includes/env_guard.php)
-/**
- * ============================================================
- * MARICK HEALTH CENTER - DATABASE SEEDER
- * ============================================================
- * Populates every module with realistic, clinically-sound
- * Philippine mock data for testing UI, queues, and Disease
- * Statistics dashboard charts.
- *
- * ACCESS: Health Head only (or run via CLI).
- * CLI usage: /Applications/XAMPP/xamppfiles/bin/php admin/db_seeder.php
- *
- * SAFE TO RE-RUN: Skips patients/staff with duplicate emails.
- * ============================================================
- */
+mh_require_dev_environment();
 
 define('MH_SEEDER_RUNNING', true);
 
@@ -28,20 +14,18 @@ if (!$isCli) {
     require_once __DIR__ . '/../includes/queue_helper.php';
     require_once __DIR__ . '/../includes/dental_helper.php';
 
-    // Health Head only
     if (!function_exists('mh_is_health_head') || !mh_is_health_head($_SESSION['role'] ?? '')) {
         http_response_code(403);
         die('<h2>Access Denied. Health Head only.</h2>');
     }
 
-    // CSRF check on POST
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!mh_csrf_check()) {
             die('<h2>CSRF token mismatch. Go back and try again.</h2>');
         }
     }
 } else {
-    // CLI mode: load bare minimum
+
     chdir(dirname(__DIR__));
     require_once __DIR__ . '/../config/database.php';
     require_once __DIR__ . '/../includes/settings_helper.php';
@@ -52,8 +36,6 @@ if (!$isCli) {
         function logActivity($conn, $userId, $role, $action, $detail) { return true; }
     }
 }
-
-// ─── SEEDER FUNCTIONS ──────────────────────────────────────────────────────
 
 class MhSeeder
 {
@@ -70,8 +52,6 @@ class MhSeeder
         mh_dental_ensure_tables($conn);
         mh_settings_boot($conn);
     }
-
-    // ─── LOGGING ───────────────────────────────────────────────────────────
 
     private function ok(string $msg): void
     {
@@ -99,8 +79,6 @@ class MhSeeder
 
     public function getLogs(): array { return $this->log; }
 
-    // ─── HELPERS ───────────────────────────────────────────────────────────
-
     private function daysAgo(int $days): string
     {
         return date('Y-m-d', strtotime("-{$days} days"));
@@ -120,8 +98,6 @@ class MhSeeder
         return 1;
     }
 
-    // ─── 1. PATIENTS ───────────────────────────────────────────────────────
-
     public function seedPatients(): void
     {
         echo PHP_SAPI === 'cli' ? "\n[1/6] Patients...\n" : '';
@@ -129,21 +105,19 @@ class MhSeeder
         $this->staffId = $this->getOrFindStaffId();
 
         $patients = [
-            // Babies & Infants (under 1 yr old - months formatting)
+
             ['Carlo',   'Santos',  'Reyes',   '', '2026-06-15', 'Male',   '09171234526', 'marick.seed.026@test.local', 'Marick',          '10 Aida St.'],
             ['Chloe',   'Garcia',  'Torres',  '', '2026-03-10', 'Female', '09181234527', 'marick.seed.027@test.local', 'Marick',          'Purok 1, Sto. Domingo'],
             ['Mateo',   'Villanueva','Cruz',  '', '2026-10-05', 'Male',   '09191234528', 'marick.seed.028@test.local', 'Marick',          'Zone 1, Sto. Domingo'],
             ['Althea',  'Pascual', 'Dela Torre','', '2026-05-20', 'Female', '09201234529', 'marick.seed.029@test.local', 'Outside Marick', 'Blk 2 Lot 14, Cainta, Rizal'],
             ['Lucas',   'Mendoza', 'Flores',  '', '2026-08-12', 'Male',   '09211234530', 'marick.seed.030@test.local', 'Outside Marick', '45 San Roque, Antipolo, Rizal'],
 
-            // Pediatric children (1-14 yrs)
             ['Mariano', 'Santos', 'Rivera', '', '2023-04-10', 'Male',   '09171234501', 'marick.seed.001@test.local', 'Marick',          '15 Aida St.'],
             ['Kristina', 'Reyes', 'Cruz',  '', '2022-11-25', 'Female',  '09181234502', 'marick.seed.002@test.local', 'Marick',          '7 Cattleya St.'],
             ['Angelo',  'Garcia', 'Lim',   '', '2020-07-14', 'Male',   '09191234503', 'marick.seed.003@test.local', 'Marick',          '3 Cora St.'],
             ['Sofia',   'Torres', 'Dela Cruz', '', '2018-02-28', 'Female', '09201234504', 'marick.seed.004@test.local', 'Marick',       '21 Daffodil St.'],
             ['Liam',    'Villanueva', 'Mendoza', '', '2016-09-05', 'Male', '09211234505', 'marick.seed.005@test.local', 'Marick',      '8 Delia St.'],
 
-            // Young adults (15-35 yrs)
             ['Maria',   'Fernandez', 'Bautista', '', '2001-03-20', 'Female', '09221234506', 'marick.seed.006@test.local', 'Marick',    '5 Emma St.'],
             ['Jose',    'Ramos',   'Aquino',  '', '1999-07-11', 'Male',   '09231234507', 'marick.seed.007@test.local', 'Marick',       '14 Flora St.'],
             ['Andrea',  'Cruz',    'Pascual', '', '2003-12-30', 'Female', '09241234508', 'marick.seed.008@test.local', 'Marick',       '2 Gracia St.'],
@@ -152,19 +126,16 @@ class MhSeeder
             ['Juan',    'De Leon', 'Flores', '',  '2000-01-15', 'Male',   '09271234511', 'marick.seed.011@test.local', 'Marick',       '6 Joey St.'],
             ['Ana',     'Sy',      'Morales', '', '1998-04-22', 'Female', '09281234512', 'marick.seed.012@test.local', 'Marick',       '11 Leonard St.'],
 
-            // Middle-aged adults (36-59 yrs)
             ['Roberto', 'Gonzales', 'Perez',  '', '1985-06-30', 'Male',   '09291234513', 'marick.seed.013@test.local', 'Marick',      '4 Ritchie St.'],
             ['Teresita', 'Castillo', 'Navarro', '', '1979-11-10', 'Female', '09301234514', 'marick.seed.014@test.local', 'Marick',    '20 Vicenta St.'],
             ['Eduardo', 'Moreno',   'Lopez',  '', '1974-03-14', 'Male',   '09171234515', 'marick.seed.015@test.local', 'Marick',      '13 Aida St.'],
             ['Corazon', 'Dela Cruz', 'Espino', '', '1983-09-08', 'Female', '09181234516', 'marick.seed.016@test.local', 'Marick',     '1 Cattleya St.'],
             ['Renaldo', 'Lim',      'Reyes',   '', '1967-12-25', 'Male',   '09191234517', 'marick.seed.017@test.local', 'Marick',    '30 Cora St.'],
 
-            // Elderly (60+ yrs)
             ['Felicidad', 'Bautista', 'Santos', '', '1958-07-19', 'Female', '09201234518', 'marick.seed.018@test.local', 'Marick',   '19 Daffodil St.'],
             ['Renato',  'Aquino',  'Garcia',   '', '1948-05-01', 'Male',   '09211234519', 'marick.seed.019@test.local', 'Marick',    '12 Delia St.'],
             ['Natividad', 'Pascual', 'Torres',  '', '1953-10-14', 'Female', '09221234520', 'marick.seed.020@test.local', 'Marick',   '25 Emma St.'],
 
-            // Outside Marick residents (for demographics testing)
             ['Carlos',  'Soriano', 'Ramos',   '', '1990-08-29', 'Male',   '09231234521', 'marick.seed.021@test.local', 'Outside Marick', 'Blk 5 Lot 3, Phase 2, Cainta, Rizal'],
             ['Maricel', 'Flores',  'Cruz',    '', '1988-02-14', 'Female', '09241234522', 'marick.seed.022@test.local', 'Outside Marick', '123 Bagong Nayon, Antipolo, Rizal'],
             ['Jonathan','Santos',  'Villarreal', '', '2008-06-20', 'Male', '09251234523', 'marick.seed.023@test.local', 'Outside Marick', '78 Sta. Mesa, Pasig City'],
@@ -189,7 +160,6 @@ class MhSeeder
             [$fn, $ln, $mn, $sfx, $bd, $sex, $contact, $email, $atype, $addr] = $p;
             $username = strtolower($fn[0] . $ln) . rand(10, 99);
 
-            // Skip duplicates
             $chk = $this->db->prepare("SELECT id FROM patients WHERE email = ? LIMIT 1");
             $chk->bind_param('s', $email);
             $chk->execute();
@@ -197,7 +167,7 @@ class MhSeeder
             if ($chk->num_rows > 0) {
                 $chk->close();
                 $this->skip("Patient $fn $ln already exists, skipping.");
-                // Still load their ID for later steps
+
                 $existing = $this->db->prepare("SELECT id FROM patients WHERE email = ? LIMIT 1");
                 $existing->bind_param('s', $email);
                 $existing->execute();
@@ -228,8 +198,6 @@ class MhSeeder
         $this->ok("Patients seeded: $inserted new, " . (count($this->seededPatientIds) - $inserted) . " existing loaded.");
     }
 
-    // ─── 2. CONSULTATIONS ──────────────────────────────────────────────────
-
     public function seedConsultations(): void
     {
         echo PHP_SAPI === 'cli' ? "\n[2/6] General Consultations (90-day spread)...\n" : '';
@@ -239,41 +207,39 @@ class MhSeeder
             return;
         }
 
-        // Clinically valid diagnoses distributed for disease stats curves
         $diagnosisSets = [
-            // Upper Respiratory (high volume, common)
+
             ['Upper Respiratory Tract Infection', 'Cough, colds, and mild fever for 3 days', '500mg Amoxicillin TID x 7 days, Paracetamol 500mg PRN', 25],
             ['Acute Pharyngitis', 'Sore throat, low-grade fever, difficulty swallowing', 'Amoxicillin 500mg TID x 7 days, Betadine gargle', 20],
             ['Influenza-like Illness', 'High fever 38.9C, body aches, headache, colds', 'Paracetamol 500mg q4-6h PRN, rest and fluids', 20],
-            // Gastrointestinal
+
             ['Acute Gastroenteritis', 'Loose watery stools 5-6 episodes, mild abdominal cramps, vomiting', 'ORS, Loperamide 2mg PRN, Zinc supplementation', 18],
             ['Diarrhea with Vomiting', 'Watery diarrhea, nausea, vomiting, mild fever', 'ORS hydration, Metoclopramide 10mg PRN', 15],
-            // Hypertension
+
             ['Hypertension', 'Persistent headache, dizziness, BP elevated on 3 readings', 'Losartan 50mg OD, lifestyle modification, low-sodium diet', 15],
             ['Hypertension with Dizziness', 'Severe headache, nausea, BP 170/100', 'Amlodipine 5mg OD, Losartan 50mg OD, monitoring', 10],
-            // UTI
+
             ['Urinary Tract Infection', 'Painful urination, increased frequency, lower abdominal discomfort', 'Cotrimoxazole 960mg BID x 5 days, increase fluid intake', 12],
-            // Dengue
+
             ['Dengue Fever', 'High fever 3 days, petechiae, positive tourniquet test, severe headache', 'Paracetamol PRN, hydration, CBC monitoring daily', 8],
-            // Dental/Oral
+
             ['Oral Cavity Disease - Dental Caries', 'Toothache, tooth sensitivity to cold', 'Mefenamic Acid 500mg TID PRN, referral to dental', 10],
-            // Asthma
+
             ['Bronchial Asthma', 'Episodic wheezing, chest tightness, shortness of breath', 'Salbutamol inhaler 2 puffs PRN, Budesonide inhaler OD', 8],
-            // Skin
+
             ['Skin infection - Scabies', 'Generalized pruritus, papular rash worse at night, interdigital burrows', 'Permethrin 5% cream apply overnight x 2 applications', 7],
-            // TB
+
             ['Pulmonary Tuberculosis - presumptive', 'Productive cough >2 weeks, weight loss, night sweats', 'Referral for sputum AFB, CXR, weight monitoring', 5],
-            // Pneumonia
+
             ['Community-acquired Pneumonia', 'High fever, productive cough with yellowish sputum, chest pain, dyspnea', 'Co-amoxiclav 625mg BID x 7 days, Paracetamol PRN', 6],
-            // Chickenpox
+
             ['Varicella / Chickenpox', 'Vesicular rash in various stages, fever, pruritus', 'Acyclovir 800mg 5x daily x 7 days, Calamine lotion', 5],
-            // COVID
+
             ['COVID-19 Infection', 'Fever, cough, loss of taste/smell, fatigue', 'Isolation, Paracetamol PRN, monitoring O2 saturation', 5],
-            // Diabetes
+
             ['Diabetes Mellitus Type 2', 'Increased thirst, frequent urination, blurred vision, FBS elevated', 'Metformin 500mg BID, dietary counseling, glucose monitoring', 7],
         ];
 
-        // Build weighted pool: each diagnosis repeated by its weight
         $pool = [];
         foreach ($diagnosisSets as [$diag, $cc, $rx, $weight]) {
             for ($i = 0; $i < $weight; $i++) {
@@ -281,7 +247,6 @@ class MhSeeder
             }
         }
 
-        // Vitals ranges
         $vitals = [
             ['120/80', 65, 162, 36.5],
             ['130/85', 72, 158, 36.8],
@@ -306,7 +271,6 @@ class MhSeeder
             return;
         }
 
-        // Get all patient names for reference
         $nameMap = [];
         foreach ($this->seededPatientIds as $pid) {
             $r = $this->db->prepare("SELECT first_name, last_name FROM patients WHERE id = ? LIMIT 1");
@@ -320,13 +284,12 @@ class MhSeeder
         }
 
         $count = 0;
-        $totalVisits = 150; // spread across 90 days
+        $totalVisits = 150;
 
         for ($v = 0; $v < $totalVisits; $v++) {
             $pid = $this->seededPatientIds[array_rand($this->seededPatientIds)];
             $pname = $nameMap[$pid] ?? 'Unknown Patient';
 
-            // Weight heavily toward recent 30 days (more data for charts)
             $dayBucket = rand(0, 100);
             if ($dayBucket < 50) {
                 $days = rand(1, 30);
@@ -340,7 +303,6 @@ class MhSeeder
             [$diag, $cc, $rx] = $pool[array_rand($pool)];
             [$bp, $wt, $ht, $temp] = $vitals[array_rand($vitals)];
 
-            // Vary vitals slightly
             $wtStr   = (string) round($wt + rand(-5, 5) * 0.5, 1);
             $htStr   = (string) ($ht + rand(-5, 5));
             $tempStr = (string) round($temp + rand(-2, 8) * 0.1, 1);
@@ -361,8 +323,6 @@ class MhSeeder
         $stmt->close();
         $this->ok("General consultations seeded: $count records across 90 days.");
     }
-
-    // ─── 3. QUEUE / WALK-INS ───────────────────────────────────────────────
 
     public function seedQueue(): void
     {
@@ -402,7 +362,6 @@ class MhSeeder
                     default                => 'Walk-in visit',
                 };
 
-                // Check if already queued today
                 $chk = $this->db->prepare(
                     "SELECT id FROM appointments WHERE patient_id = ? AND department = ? AND appointment_date = ? LIMIT 1"
                 );
@@ -437,13 +396,10 @@ class MhSeeder
         $this->ok("Queue entries seeded: $count entries.");
     }
 
-    // ─── 4. MATERNAL CARE ──────────────────────────────────────────────────
-
     public function seedMaternalCare(): void
     {
         echo PHP_SAPI === 'cli' ? "\n[4a/6] Maternal Care Records...\n" : '';
 
-        // Use female patients only
         $femaleIds = [];
         foreach ($this->seededPatientIds as $pid) {
             $r = $this->db->prepare(
@@ -453,7 +409,7 @@ class MhSeeder
             $r->execute();
             $row = $r->get_result()->fetch_assoc();
             if ($row) {
-                // Only women of childbearing age (15–45)
+
                 $age = (int) floor((time() - strtotime($row['birthdate'])) / (365.25 * 86400));
                 if ($age >= 15 && $age <= 45) {
                     $femaleIds[] = ['id' => $pid, 'name' => $row['first_name'] . ' ' . $row['last_name']];
@@ -521,13 +477,10 @@ class MhSeeder
         $this->ok("Maternal records seeded: $count records.");
     }
 
-    // ─── 5. CHILD IMMUNIZATION ─────────────────────────────────────────────
-
     public function seedImmunization(): void
     {
         echo PHP_SAPI === 'cli' ? "\n[4b/6] Child Immunization Records...\n" : '';
 
-        // Use pediatric patients (under 5 years)
         $childPatients = [];
         foreach ($this->seededPatientIds as $pid) {
             $r = $this->db->prepare(
@@ -550,7 +503,6 @@ class MhSeeder
             return;
         }
 
-        // Check if child_immunization_records table exists
         $res = $this->db->query("SHOW TABLES LIKE 'child_immunization_records'");
         if (!$res || $res->num_rows === 0) {
             $this->skip("child_immunization_records table doesn't exist yet; skipping.");
@@ -614,7 +566,6 @@ class MhSeeder
         }
         $stmt->close();
 
-        // Also seed child consultation logs
         $this->seedChildConsultationLogs();
         $this->ok("Immunization records seeded: $count records.");
     }
@@ -662,8 +613,6 @@ class MhSeeder
         $this->ok("Child consultation logs: $count records added.");
     }
 
-    // ─── 6. DENTAL RECORDS ─────────────────────────────────────────────────
-
     public function seedDental(): void
     {
         echo PHP_SAPI === 'cli' ? "\n[4c/6] Dental Records...\n" : '';
@@ -674,7 +623,7 @@ class MhSeeder
         $patientsForDental = array_slice($this->seededPatientIds, 0, 12);
 
         foreach ($patientsForDental as $pid) {
-            // Check chart exists
+
             $chk = $this->db->prepare("SELECT id FROM dental_charts WHERE patient_id = ? LIMIT 1");
             $chk->bind_param('i', $pid);
             $chk->execute();
@@ -703,7 +652,6 @@ class MhSeeder
                 $this->skip("Dental chart for patient $pid already exists.");
             }
 
-            // Add treatments
             $treatments = [
                 ['EXT', '14,15',  'Tooth extraction - lower left molar, dental caries'],
                 ['R',   '11,12',  'Restoration (composite filling) - upper front teeth'],
@@ -727,8 +675,6 @@ class MhSeeder
         }
         $this->ok("Dental records seeded: $count treatment records.");
     }
-
-    // ─── 7. INVENTORY ──────────────────────────────────────────────────────
 
     public function seedInventory(): void
     {
@@ -768,7 +714,7 @@ class MhSeeder
 
         $count = 0;
         foreach ($items as [$name, $brand, $cat, $code, $batch, $qty, $unit, $upp, $plabel, $ppb, $blabel, $expiry]) {
-            // Check duplicate tracking code
+
             $chk = $this->db->prepare("SELECT id FROM inventory WHERE tracking_code = ? LIMIT 1");
             $chk->bind_param('s', $code);
             $chk->execute();
@@ -795,8 +741,6 @@ class MhSeeder
         $stmt->close();
         $this->ok("Inventory seeded: $count items.");
     }
-
-    // ─── 8. SYSTEM OPTIONS (Streets / Departments) ─────────────────────────
 
     public function seedSystemOptions(): void
     {
@@ -858,8 +802,6 @@ class MhSeeder
         $this->ok("System options seeded: $count new entries.");
     }
 
-    // ─── MAIN RUN ──────────────────────────────────────────────────────────
-
     public function run(): array
     {
         $this->seedPatients();
@@ -879,8 +821,6 @@ class MhSeeder
     }
 }
 
-// ─── CLI ENTRY POINT ───────────────────────────────────────────────────────
-
 if ($isCli) {
     echo "\n╔══════════════════════════════════════════════╗\n";
     echo "║   MARICK HEALTH CENTER — DB SEEDER (CLI)    ║\n";
@@ -891,8 +831,6 @@ if ($isCli) {
     echo "Done! {$totals['ok']} inserted, {$totals['skip']} skipped, {$totals['err']} errors\n\n";
     exit(0);
 }
-
-// ─── WEB ENTRY POINT ───────────────────────────────────────────────────────
 
 $ran     = false;
 $totals  = null;
@@ -1015,4 +953,3 @@ mh_layout_head(['title' => 'Database Seeder']);
         </div>
     <?php mh_layout_close(); ?>
 <?php mh_layout_end(); ?>
-

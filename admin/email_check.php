@@ -1,15 +1,11 @@
 <?php
-/**
- * Email Check (admin only): is the system able to send email, and if not, exactly why?
- * Open /admin/email_check.php as Health Head / Admin, type any address (e.g. your own), press "Send test email".
- * Shows the SMTP conversation with the password removed. Safe to leave installed; it never prints secrets.
- */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../includes/settings_helper.php';   // config/mail.php needs mh_get_option() for the sender name
+require_once __DIR__ . '/../includes/settings_helper.php';  
 require_once __DIR__ . '/../config/mail.php';
 require_once __DIR__ . '/../includes/mailer.php';
 

@@ -7,10 +7,51 @@ require_once __DIR__ . '/../config/database.php';
 
 require_permission('view_system_logs');
 
+$can_edit_logs = mh_is_health_head();
+$log_notice = '';
+if ($can_edit_logs && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!mh_csrf_check()) {
+        $log_notice = 'Your session security token expired. Reload the page and try again.';
+    } else {
+        $log_id = (int) ($_POST['log_id'] ?? 0);
+        $old = null;
+        if ($log_id > 0) {
+            $st = $conn->prepare("SELECT created_at, action, details FROM activity_logs WHERE id = ? LIMIT 1");
+            $st->bind_param('i', $log_id);
+            $st->execute();
+            $old = $st->get_result()->fetch_assoc();
+            $st->close();
+        }
+
+        if (!$old) {
+            $log_notice = 'That log entry no longer exists.';
+        } elseif (isset($_POST['edit_log_date'])) {
+            $new_raw = trim((string) ($_POST['new_created_at'] ?? ''));
+            $ts = strtotime($new_raw);
+            if ($ts === false) {
+                $log_notice = 'That date/time could not be understood.';
+            } else {
+                $new_dt = date('Y-m-d H:i:s', $ts);
+                $up = $conn->prepare("UPDATE activity_logs SET created_at = ? WHERE id = ?");
+                $up->bind_param('si', $new_dt, $log_id);
+                $up->execute();
+                $up->close();
+                $log_notice = "Log #$log_id timestamp updated.";
+            }
+        } elseif (isset($_POST['delete_log'])) {
+            $del = $conn->prepare("DELETE FROM activity_logs WHERE id = ?");
+            $del->bind_param('i', $log_id);
+            $del->execute();
+            $del->close();
+            $log_notice = "Log #$log_id deleted.";
+        }
+    }
+}
+
+
 $system_name = $system_name ?? mh_setting('system_name');
 $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
 
-/* ---------------- filters (all validated; all values are bound, never concatenated) ---------------- */
 $is_date = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) !== false; };
 $from   = $is_date($_GET['from'] ?? '') ? $_GET['from'] : '';
 $to     = $is_date($_GET['to'] ?? '') ? $_GET['to'] : '';
@@ -33,9 +74,7 @@ if ($q !== '') {
     array_push($params, $like, $like, $like); $types .= 'sss';
 }
 $where_sql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
-// Staff entries match staff.id. Patient entries (user_role = 'patient') match patients.id instead - or, for the
-// sign-up entry that is logged with user_id 0, the "Patient #N" written in its details - so a patient is never
-// shown as "System / Unknown" and never mistaken for a staff member who happens to share the same id number.
+
 $from_sql  = " FROM activity_logs l"
            . " LEFT JOIN staff s ON l.user_id = s.id AND l.user_role <> 'patient'"
            . " LEFT JOIN patients p ON l.user_role = 'patient' AND p.id = CASE"
@@ -147,6 +186,7 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
 
         <div class="dashboard-container">
 
+            <?php if ($log_notice !== ''): ?><div class="lg-notice no-print"><?php echo $h($log_notice); ?></div><?php endif; ?>
             <div class="unified-panel">
                 <div class="panel-controls" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <h3 style="margin:0; font-size: 1.2rem; color: var(--heading-color, #1e293b);">Audit Trail <small style="font-weight:600; color: var(--text-muted, #64748b);">(<?php echo number_format($total); ?>)</small></h3>
@@ -180,7 +220,7 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
 
                 <div style="overflow-x: auto;">
                     <table class="unified-table" id="logTable">
-                        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+                        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th><?php if ($can_edit_logs): ?><th class="no-print">Manage</th><?php endif; ?></tr></thead>
                         <tbody>
                             <?php if ($logs): foreach ($logs as $row):
                                 $role_class = "role-" . strtolower($row['role'] ?? 'bhw');
@@ -192,9 +232,32 @@ mh_layout_head(['title' => 'System Logs', 'print_title' => 'System Logs Report']
                                     <span class="role-badge <?php echo $h($role_class); ?>"><?php echo $h($row['role'] ?? 'N/A'); ?></span></td>
                                 <td><strong style="color: var(--heading-color, #1e293b);"><?php echo $h($row['action']); ?></strong></td>
                                 <td style="color: var(--text-main, #334155); line-height: 1.5;"><?php echo $h($row['details']); ?></td>
+                                <?php if ($can_edit_logs): ?>
+                                <td class="no-print" style="white-space:nowrap;">
+                                    <button type="button" class="btn-secondary btn-sm" onclick="document.getElementById('lgEditRow<?php echo (int) $row['id']; ?>').classList.toggle('lg-edit-open')">Edit</button>
+                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Permanently delete this log entry? This cannot be undone, and the deletion itself will be logged.');">
+                                        <?php echo mh_csrf_field(); ?>
+                                        <input type="hidden" name="log_id" value="<?php echo (int) $row['id']; ?>">
+                                        <button type="submit" name="delete_log" value="1" class="btn-danger btn-sm">Delete</button>
+                                    </form>
+                                </td>
+                                <?php endif; ?>
                             </tr>
+                            <?php if ($can_edit_logs): ?>
+                            <tr id="lgEditRow<?php echo (int) $row['id']; ?>" class="lg-edit-row">
+                                <td colspan="5" class="no-print">
+                                    <form method="POST" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:6px 0;">
+                                        <?php echo mh_csrf_field(); ?>
+                                        <input type="hidden" name="log_id" value="<?php echo (int) $row['id']; ?>">
+                                        <label style="font-size:.82rem; font-weight:600;">New date/time for this entry:</label>
+                                        <input type="datetime-local" name="new_created_at" value="<?php echo $h(date('Y-m-d\TH:i', strtotime($row['created_at']))); ?>" required>
+                                        <button type="submit" name="edit_log_date" value="1" class="btn-submit btn-sm">Save</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            <?php endif; ?>
                             <?php endforeach; else: ?>
-                                <tr><td colspan="4" style="text-align:center; padding: 40px; color: var(--text-muted, #64748b);"><?php echo $filtered ? 'No log entries match these filters.' : 'No system logs found.'; ?></td></tr>
+                                <tr><td colspan="5" style="text-align:center; padding: 40px; color: var(--text-muted, #64748b);"><?php echo $filtered ? 'No log entries match these filters.' : 'No system logs found.'; ?></td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>

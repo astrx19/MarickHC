@@ -6,11 +6,6 @@ require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
 
-// Feature toggles: View Stock (read) or Add/Edit Medicine (write) opens this page.
-// (Dispensing lives on dispense_medicine.php under 'dispense_medicine'.)
-// "Supply / Stock Masterlist" (can_manage_supply_masterlist) is the ONLY thing that opens this page.
-// A user who has Dispensing / Dispensing Log History but not the masterlist is sent straight to
-// dispense_medicine.php instead of seeing stock controls.
 if (!mh_has_capability('can_manage_supply_masterlist')) {
     if (mh_has_any_capability(['can_manage_dispensing', 'can_view_dispensing_history'])) {
         header('Location: dispense_medicine.php');
@@ -18,7 +13,6 @@ if (!mh_has_capability('can_manage_supply_masterlist')) {
     }
     mh_deny_access();
 }
-// Stock-changing controls (+ Add New Batch, Restock, Edit/Archive batch) need the 'add_medicine' toggle on top.
 $can_edit_stock = mh_has_permission('add_medicine');
 
 require_once __DIR__ . '/../includes/settings_helper.php';
@@ -26,18 +20,16 @@ mh_check_module_enabled('inventory');
 
 $system_name = $system_name ?? mh_setting('system_name');
 
-$inv_categories = mh_inventory_categories($conn);   // Inventory Categories masterlist (database)
+$inv_categories = mh_inventory_categories($conn);   
 require_once __DIR__ . '/../includes/disposal_helper.php';
 mh_disp_ensure_table($conn);
 
 $success_msg = ""; $error_msg = "";
 
-// Every stock-changing form needs 'add_medicine' (checked on submit, not just in the UI)
 if ((isset($_POST['add_item']) || isset($_POST['edit_item']) || isset($_POST['update_stock'])) && !$can_edit_stock) {
     mh_deny_access();
 }
 
-/** Shared field cleanup for add / edit item (nothing here touches SQL; values are bound below). */
 function mh_inv_read_item_fields(): array
 {
     $t = function ($k) { return trim((string) ($_POST[$k] ?? '')); };
@@ -128,7 +120,7 @@ if(isset($_POST['update_stock'])) {
         }
 
     } elseif($action === 'dispose') {
-        // Expired / damaged stock leaves the shelf through a recorded disposal (see Disposal History).
+     
         if (!mh_csrf_check()) {
             $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
         } else {
@@ -146,7 +138,6 @@ if(isset($_POST['update_stock'])) {
             }
         }
     } else {
-        // New stock comes in as a NEW BATCH ("+ Add New Batch") so every lot keeps its own expiry date (FEFO).
         $error_msg = "Restocking is done by adding a new batch with its own lot number and expiry date.";
     }
 }
@@ -171,7 +162,7 @@ $expired_count = 0;
 $near_expiry_count = 0;
 $today = date('Y-m-d');
 $today_ts = strtotime($today);
-$NEAR_EXPIRY_DAYS = 90;   // Paper REQ45: alert window is 90 days
+$NEAR_EXPIRY_DAYS = 90;   
 $LOW_STOCK_THRESHOLD = 20;
 
 $items_array = [];
@@ -247,7 +238,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         .stat-card.clickable .stat-body h3 { margin: 0 0 6px 0; }
         .stat-card.clickable .stat-body .number { font-size: 1.9rem; }
         .stat-card.clickable.active-quick { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(var(--primary-rgb, 76, 161, 175), 0.18); }
-        /* --- Filter toolbar --- */
         .filter-toolbar { flex-wrap: wrap; }
         .mode-toggle { display: inline-flex; border: 1px solid var(--border-color, #cbd5e1); border-radius: 20px; overflow: hidden; }
         .mode-toggle button { border: none; background: var(--bg-input); color: var(--text-muted); padding: 9px 16px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: 0.15s; }
@@ -259,7 +249,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         .filter-chip button .mh-icon { width: 12px; height: 12px; }
         .filter-reset-btn { border: 1px dashed var(--border-color, #cbd5e1); background: transparent; color: var(--text-muted); border-radius: var(--radius-pill); padding: 5px 12px; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
         .filter-reset-btn:hover { color: var(--heading-color); border-color: var(--text-muted); }
-        /* --- Grouped table --- */
         .group-row { cursor: pointer; }
         .group-row:hover { background-color: var(--bg-hover); }
         .group-row.expanded { background-color: var(--bg-hover); }
@@ -273,10 +262,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         .batch-count-tag { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; background: var(--bg-hover); border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-pill); padding: 1px 8px; margin-left: 6px; }
         .near-expiry-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 700; color: #c2410c; background: #ffedd5; border: 1px solid #fed7aa; border-radius: var(--radius-pill); padding: 2px 9px; margin-top: 4px; }
         html[data-theme="dark"] .near-expiry-pill { background: rgba(194, 65, 12, 0.2); color: #fdba74; border-color: rgba(194, 65, 12, 0.4); }
-        /* .fefo-tag, .tracking-chip and the .packaging-* calculator classes
-           are now canonical, shared components declared once in
-           assets/css/admin_theme.css (section 6f/6g) so
-           dispense_medicine.php can reuse the exact same look. */
         .batch-detail-row td { padding: 0 !important; border-bottom: 1px solid var(--border-color, #e2e8f0); background: var(--bg-body); }
         .batch-subtable-wrap { padding: 6px 16px 16px 54px; }
         .batch-subtable { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--border-color, #e2e8f0); border-radius: var(--radius-md); overflow: hidden; }
@@ -415,7 +400,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         </div>
     <?php mh_layout_close(); ?>
 
-    <?php if ($can_edit_stock): /* stock-editing modals exist only for roles/accounts holding add_medicine */ ?>
+    <?php if ($can_edit_stock): ?>
     <div class="modal-overlay" id="addItemModal">
         <div class="modal-content" style="max-width: 650px;">
             <span class="close-btn" onclick="closeModal('addItemModal')">&times;</span>
@@ -611,9 +596,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         </div>
     </div>
 
-    <!-- Edit Batch Modal: full detail edit (brand, category, tracking, lot,
-         expiry, base unit and packaging structure) for a single existing
-         batch row. Stock levels are NOT edited here - use Manage Stock. -->
+    
     <div class="modal-overlay" id="editBatchModal">
         <div class="modal-content" style="max-width: 650px; border-top: 5px solid var(--primary);">
             <span class="close-btn" onclick="closeModal('editBatchModal')">&times;</span>
@@ -694,9 +677,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         </div>
     </div>
 
-    <!-- Quick-archive confirmation form, submitted programmatically by
-         archiveBatchQuick() so an "Archive" shortcut can live directly on
-         each batch row without opening the full Manage Stock modal. -->
+    
     <form method="POST" id="quickArchiveForm" style="display:none;">
         <input type="hidden" name="item_id" id="quickArchiveItemId">
         <input type="hidden" name="item_name_hidden" id="quickArchiveItemName">
@@ -704,15 +685,15 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         <input type="hidden" name="update_stock" value="1">
     </form>
 
-    <?php endif; // can_edit_stock ?>
+    <?php endif;  ?>
 
     <script>
-        // Dispense shortcut is only offered to roles holding the 'dispense_medicine' toggle.
-        const MH_CAN_EDIT_STOCK = <?php echo $can_edit_stock ? 'true' : 'false'; ?>;   // 'add_medicine' toggle
+        
+        const MH_CAN_EDIT_STOCK = <?php echo $can_edit_stock ? 'true' : 'false'; ?>;   
         const MH_CAN_DISPENSE = <?php echo mh_has_permission('dispense_medicine') ? 'true' : 'false'; ?>;
-        /* =========================================================
+        
            DATA (rendered by PHP once on page load)
-           ========================================================= */
+           
         const TODAY_STR   = "<?php echo $today; ?>";
         const CATEGORIES  = <?php echo $js_categories; ?>;
         const RAW_ITEMS   = <?php echo $js_inventory; ?>;
@@ -730,9 +711,8 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
 
         const expandedGroups = new Set();
 
-        /* ---------------------------------------------------------
+       
            Helpers
-           --------------------------------------------------------- */
         function escapeHtml(str) {
             if (str === null || str === undefined) return '';
             return String(str)
@@ -759,9 +739,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         }
 
         function packagingBreakdown(item) {
-            // Uses THIS item's own recorded packaging structure - no more
-            // hardcoded "1 box = 100 pcs" guess. Items with no packaging
-            // structure recorded (units_per_pack not set) show nothing extra.
+            
             const qty = item.quantity;
             const unitsPerPack = item.units_per_pack;
             if (!unitsPerPack || unitsPerPack <= 0) return '';
@@ -785,9 +763,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             return parts.join(' + ');
         }
 
-        /* ---------------------------------------------------------
-           Per-batch derived status (mirrors PHP logic exactly)
-           --------------------------------------------------------- */
+        
         function annotateBatch(item) {
             const days = daysToExpiry(item.expiry_date);
             let status = 'in';
@@ -807,9 +783,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
 
             const isNear = !isExpired && item.quantity > 0 && days !== null && days >= 0 && days <= NEAR_EXPIRY_DAYS_DEFAULT;
 
-            // Near-expiry gets its own canonical status pill, but only when
-            // nothing more urgent (out of stock / expired / low stock) is
-            // already claiming the badge for this batch.
+            
             if (isNear && status === 'in') {
                 status = 'near'; label = 'Near Expiry'; statusClass = 'status-nearexpiry';
             }
@@ -821,15 +795,11 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
 
         const ANNOTATED_ITEMS = RAW_ITEMS.map(annotateBatch);
 
-        // Fast id -> batch lookup so row action buttons can hand the full
-        // batch object (packaging config included) to the modal openers
-        // without re-serializing it into a data-* attribute soup.
+        
         const BATCH_BY_ID = {};
         ANNOTATED_ITEMS.forEach(b => { BATCH_BY_ID[b.id] = b; });
 
-        /* ---------------------------------------------------------
-           Filtering (batch level) then grouping
-           --------------------------------------------------------- */
+        
         function batchMatchesFilters(b) {
             if (state.category && b.category !== state.category) return false;
 
@@ -957,9 +927,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             return result;
         }
 
-        /* ---------------------------------------------------------
-           Rendering
-           --------------------------------------------------------- */
+        
         function renderBatchRow(group, b) {
             const brandLabel = (b.brand_name || 'Generic').trim() || 'Generic';
             const modalName = group.generic_name + ' — ' + brandLabel;
@@ -1096,9 +1064,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             updateQuickCardState();
         }
 
-        /* ---------------------------------------------------------
-           Filter chips
-           --------------------------------------------------------- */
+        
         function renderChips() {
             const container = document.getElementById('filterChips');
             const chips = [];
@@ -1147,9 +1113,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             render();
         }
 
-        /* ---------------------------------------------------------
-           Quick-filter stat cards
-           --------------------------------------------------------- */
+        
         function updateQuickCardState() {
             document.querySelectorAll('[data-quick]').forEach(card => {
                 const q = card.dataset.quick;
@@ -1181,9 +1145,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             });
         });
 
-        /* ---------------------------------------------------------
-           Toggle group expand / collapse
-           --------------------------------------------------------- */
+        
         function toggleGroup(key, evt) {
             if (evt) evt.stopPropagation();
             if (expandedGroups.has(key)) expandedGroups.delete(key);
@@ -1209,9 +1171,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
 
         render();
 
-        /* =========================================================
-           Add / Update modal helpers (existing behaviour, extended)
-           ========================================================= */
+        
         function toggleBatchInput() {
             var type = document.querySelector('input[name="batch_type"]:checked').value;
             var input = document.getElementById('batchNumberInput');
@@ -1259,7 +1219,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             show('editExpiryGroup', action === 'edit_expiry');
             show('archiveWarningGroup', action === 'archive');
 
-            // only the visible section's fields are required
             var req = function (id, on) { var el = document.getElementById(id); if (on) { el.setAttribute('required', ''); } else { el.removeAttribute('required'); } };
             req('adjustAmountInput', action === 'dispose'); req('disposeReason', action === 'dispose'); req('disposeMethod', action === 'dispose');
             req('disposeDate', action === 'dispose'); req('newExpiryInput', action === 'edit_expiry');
@@ -1275,7 +1234,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             if (action === 'dispose') { updateDisposeLabels(); }
         }
 
-        // Words that fit the type of stock: liquid = volume, capsule = tablets/capsules, item = pieces.
         function updateDisposeLabels() {
             var form = document.getElementById('disposeForm').value;
             var unit = document.getElementById('modalUnit').innerText || 'units';
@@ -1300,7 +1258,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         }
 
         function calcUpdTotal() {
-            // Packaging of the batch open in the dialog is stashed on window by openUpdateModal().
             var packsPerBox = window._updPacksPerBox || 0;
             var unitsPerPack = window._updUnitsPerPack || 0;
             var boxQty = parseInt(document.getElementById('upd_box_qty').value) || 0;
@@ -1353,9 +1310,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 document.getElementById('categorySelect').value = prefill.category;
                 generateTrackingCode();
             }
-            // Carry over the last-known packaging structure for this generic
-            // (if any batch of it has one) so staff don't have to redefine
-            // "1 box = 10 blister packs = 100 tablets" every single delivery.
+            
             if (prefill.units_per_pack) document.getElementById('add_units_per_pack').value = prefill.units_per_pack;
             if (prefill.packs_per_box) document.getElementById('add_packs_per_box').value = prefill.packs_per_box;
             if (prefill.pack_label) document.getElementById('add_pack_label').value = prefill.pack_label;
@@ -1374,7 +1329,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             document.getElementById('modalUnit').innerText = batch.unit;
             document.getElementById('modalBatchNo').innerText = batch.tracking_code || 'N/A';
 
-            // Expired batches open straight on "Dispose"; for everything else the common job is the expiry date.
             var isExpired = batch.expiry_date && batch.expiry_date < new Date().toISOString().slice(0, 10);
             document.getElementById('stockAction').value = preset || (isExpired && batch.quantity > 0 ? 'dispose' : 'edit_expiry');
             window._disposeBatch = batch;

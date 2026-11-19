@@ -1,8 +1,5 @@
 <?php
-/**
- * Database backup DOWNLOAD endpoint (Paper REQ78). Health Head only. The UI is System Settings > Database Backup.
- * Restore by importing the .sql in phpMyAdmin (see docs/BACKUP_RECOVERY.md).
- */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
@@ -25,6 +22,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['download_backup'])) {
     exit;
 }
 
-// Anything other than the download POST goes to the Database Backup tab in System Settings.
 header('Location: system_settings.php?tab=backup');
 exit;

@@ -1,56 +1,33 @@
 <?php
-/**
- * =====================================================================
- * MASTER SYSTEM SETTINGSS
- * =====================================================================
- * One screen to configure, with no code editing:
- *   1. Branding    - clinic name, header text, hero copy, logo, background
- *   2. Appearance  - full colour theme, written out as CSS variables
- *   3. Masterlists - every dropdown in the system (streets, delivery
- *                    types, breastfeeding types, vaccine categories, ...)
- *   4. OCR         - Gemini model + a live connection test
- *
- * The database is the source of truth. On every save the page also
- * (nothing is written to config/ any more - every page reads the database live)
- * and the older pages that used to include static files
- * keep working without modification.
- *
- * All writes use prepared statements (see includes/settings_helper.php).
- */
+
 
 error_reporting(E_ALL);
-ini_set('display_errors', 0);          // never leak stack traces to staff
+ini_set('display_errors', 0);          
 
 require_once __DIR__ . '/../includes/admin_auth.php';
-require_once __DIR__ . '/../config/database.php';   // <-- was missing before: $conn and
-                                                    //     logActivity() were undefined here
+require_once __DIR__ . '/../config/database.php';   
 require_once __DIR__ . '/../includes/settings_helper.php';
 require_once __DIR__ . '/../includes/departments_tab.php';
 require_once __DIR__ . '/../includes/disease_tab.php';
 
-// Global system / API configuration is Health Head only. Plain Admins
-// manage day-to-day operations and delegation from Staff Management.
 require_health_head();
 
 $user_id   = (int) ($_SESSION['user_id'] ?? 0);
 $user_role = $_SESSION['role'] ?? 'health_head';
 
-// Creates the tables + seeds defaults on first visit, then caches settings.
 mh_settings_boot($conn, true);
-mh_roles_install($conn);   // creates system_roles / role_permissions + seeds them on first visit (idempotent)
+mh_roles_install($conn);   
 
 $active_tab = $_GET['tab'] ?? 'branding';
 $allowed_tabs = ['branding', 'appearance', 'masterlists', 'departments', 'disease', 'ocr', 'sms', 'modules', 'roles'];
-if (mh_is_health_head()) { $allowed_tabs[] = 'backup'; }   // Paper REQ78: Database Backup lives here, Health Head only
+if (mh_is_health_head()) { $allowed_tabs[] = 'backup'; }   
 if (!in_array($active_tab, $allowed_tabs, true)) { $active_tab = 'branding'; }
 
 $list_key  = $_GET['list'] ?? 'streets';
 $all_lists = mh_managed_lists();
 if (!array_key_exists($list_key, $all_lists)) { $list_key = 'streets'; }
 
-/* =====================================================================
- * POST HANDLING  (Post/Redirect/Get so a refresh never re-submits)
- * ================================================================== */
+
 
 function mh_redirect($tab, $type, $message, $list = null)
 {
@@ -70,10 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect($active_tab, 'error', 'Your session token expired. Please try that again.');
     }
 
-    /* ---------------- 1. BRANDING & CONTENT ---------------------- */
     if (isset($_POST['save_branding'])) {
 
-        // Operating Days: checkboxes array -> comma-separated string
         $postedDays = $_POST['operating_days'] ?? [];
         if (!is_array($postedDays)) {
             $postedDays = [];
@@ -85,7 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $operatingDaysStr = implode(',', $cleanDays);
 
-        // Operating Times: HH:MM format
         $openTime  = trim($_POST['opening_time'] ?? '08:00');
         $closeTime = trim($_POST['closing_time'] ?? '17:00');
         if (!preg_match('/^\d{2}:\d{2}$/', $openTime))  { $openTime = '08:00'; }
@@ -100,11 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'global_announcement'   => trim($_POST['global_announcement'] ?? ''),
             'enable_online_booking' => isset($_POST['enable_online_booking']) ? '1' : '0',
             'show_db_seeder_sidebar' => isset($_POST['show_db_seeder_sidebar']) ? '1' : '0',
-            // Address jurisdiction (replaces the old hardcoded "Marick" checks everywhere)
             'home_address_type'     => mb_substr(trim($_POST['home_address_type'] ?? ''), 0, 60),
             'outside_address_type'  => mb_substr(trim($_POST['outside_address_type'] ?? ''), 0, 60),
             'home_address_suffix'   => mb_substr(trim($_POST['home_address_suffix'] ?? ''), 0, 150),
-            // Clinic Operating Schedule
             'operating_days'        => $operatingDaysStr,
             'opening_time'          => $openTime,
             'closing_time'          => $closeTime,
@@ -122,7 +94,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $notes = [];
 
-        // -- image uploads -------------------------------------------
         $logo = mh_handle_image_upload('new_logo', 'assets/images/logo.png');
         if (!$logo['ok']) {
             mh_redirect('branding', 'error', 'Logo: ' . $logo['message']);
@@ -146,7 +117,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('branding', 'success', $msg);
     }
 
-    /* ---------------- 2. THEME COLOURS --------------------------- */
     if (isset($_POST['save_theme'])) {
 
         $defaults = mh_theme_defaults();
@@ -180,19 +150,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('appearance', 'success', 'Theme restored to the original Marick colours.');
     }
 
-    /* ---------------- 2b. DEPARTMENTS (function per department; sidebar follows) */
     if (isset($_POST['add_department']) || isset($_POST['edit_department']) || isset($_POST['delete_department'])) {
         mh_depts_handle_post($conn, $user_id, $user_role);
     }
 
-    /* ---------------- 2c. DISEASE TRACKING & AI SURVEILLANCE */
     if (isset($_POST['add_condition']) || isset($_POST['edit_condition']) || isset($_POST['delete_condition'])
         || isset($_POST['save_disease_surveillance_settings']) || isset($_POST['save_disease_stopwords'])
         || isset($_POST['add_synonym_rule']) || isset($_POST['edit_synonym_rule']) || isset($_POST['delete_synonym_rule'])) {
         mh_disease_tab_post($conn, $user_id, $user_role);
     }
 
-    /* ---------------- 3. MASTERLISTS ----------------------------- */
     $posted_list = $_POST['list_key'] ?? '';
     if ($posted_list !== '' && array_key_exists($posted_list, $all_lists)) {
 
@@ -246,7 +213,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    /* ---------------- 4. OCR ENGINE + API KEYS ---------------------- */
     if (isset($_POST['save_ocr'])) {
         $ocrEngine = trim($_POST['ocr_engine'] ?? 'groq_ocr');
         if (!in_array($ocrEngine, ['vision', 'gemini', 'groq_ocr', 'aws_textract', 'openai'], true)) { $ocrEngine = 'vision'; }
@@ -333,7 +299,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('ocr', 'success', 'Scanner (OCR) & AI settings saved. Active engine: ' . $engineLabel . '.');
     }
 
-    /* ---------------- 5. SMS PROVIDER + SEMAPHORE + ANDROID GATEWAY -- */
     if (isset($_POST['save_sms'])) {
         $provider = trim($_POST['sms_provider'] ?? 'semaphore');
         if (!in_array($provider, ['semaphore', 'android_gateway'], true)) {
@@ -341,13 +306,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $apiKey = trim($_POST['semaphore_api_key'] ?? '');
-        if ($apiKey === '') { $apiKey = (string) mh_setting('semaphore_api_key', ''); }   // blank = keep the saved secret (never echoed back into the page)
+        if ($apiKey === '') { $apiKey = (string) mh_setting('semaphore_api_key', ''); }   
         $sender = trim($_POST['semaphore_sender_name'] ?? '');
         $smsResetEnabled = isset($_POST['sms_password_reset_enabled']) ? '1' : '0';
 
         $gatewayUrl = trim($_POST['android_gateway_url'] ?? '');
         $gatewayKey = trim($_POST['android_gateway_key'] ?? '');
-        if ($gatewayKey === '') { $gatewayKey = (string) mh_setting('android_gateway_key', ''); }   // blank = keep the saved secret (never echoed back into the page)
+        if ($gatewayKey === '') { $gatewayKey = (string) mh_setting('android_gateway_key', ''); }   
 
         if ($sender === '') {
             mh_redirect('sms', 'error', 'Sender Name cannot be blank.');
@@ -390,18 +355,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('sms', 'success', 'SMS settings saved. Active provider: ' . $providerLabel . '.');
     }
 
-    /* ---------------- 6. SEND TEST SMS ----------------------------- */
+    
     if (isset($_POST['send_test_sms'])) {
         $testNumber = trim($_POST['test_phone_number'] ?? '');
         require_once __DIR__ . '/../includes/sms_helper.php';
 
-        $normalized = mh_normalize_ph_mobile($testNumber);   // 09XXXXXXXXX, used for logs
+        $normalized = mh_normalize_ph_mobile($testNumber);   
         if ($normalized === '') {
             mh_redirect('sms', 'error', 'That does not look like a valid Philippine mobile number (e.g. 09171234567).');
         }
 
-        // Provider: the database setting (what the admin picked) wins; the
-        // generated config constant is only the fallback.
+        
         $dbProvider = function_exists('mh_setting') ? trim((string) mh_setting('sms_provider', '')) : '';
         $provider   = in_array($dbProvider, ['semaphore', 'android_gateway'], true) ? $dbProvider : mh_active_sms_provider();
         $isGateway  = ($provider === 'android_gateway');
@@ -424,7 +388,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $httpCode   = (int) ($result['http_code'] ?? 0);
         $smsId      = $result['message_id'] ?? null;
 
-        // Logging must never swallow the banner, so it is fenced off.
         try {
             require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
             mh_sms_install($conn);
@@ -455,7 +418,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('sms', 'error', 'Test SMS failed' . ($httpCode ? ' (HTTP ' . $httpCode . ')' : '') . ': ' . $statusText);
     }
 
-    /* ---------------- 6b. STAFF ROLES (custom, database-backed) ---- */
     if (isset($_POST['add_role'])) {
         list($ok, $msg) = mh_add_custom_role($conn, $_POST['role_label'] ?? '');
         if ($ok) {
@@ -487,7 +449,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mh_redirect('roles', $ok ? 'success' : 'error', $msg);
     }
 
-    /* ---------------- 7. MODULE ACCESS CONTROL (on/off switches only; WHO gets in = Staff Roles & Permissions) */
     if (isset($_POST['save_modules'])) {
 
         $registry   = mh_module_registry();
@@ -498,14 +459,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $enabled = isset($_POST['module_enabled'][$key]) ? '1' : '0';
 
             $pairs['module_enabled_' . $key] = $enabled;
-            $pairs['module_label_' . $key]   = mb_substr(trim((string) ($_POST['module_label'][$key] ?? '')), 0, 60);   // '' = built-in name
+            $pairs['module_label_' . $key]   = mb_substr(trim((string) ($_POST['module_label'][$key] ?? '')), 0, 60);   
 
             if ($enabled === '0') {
                 $changes[] = $mod['label'] . ' (off)';
             }
         }
 
-        foreach (array_keys(mh_nav_label_defaults()) as $nk) {   // other sidebar names (blank = built-in name)
+        foreach (array_keys(mh_nav_label_defaults()) as $nk) {   
             $pairs['nav_label_' . $nk] = mb_substr(trim((string) ($_POST['nav_label'][$nk] ?? '')), 0, 60);
         }
 
@@ -516,26 +477,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         logActivity($conn, $user_id, $user_role, 'System Settings',
             'Updated Module Access settings.' . ($changes ? ' Disabled: ' . implode(', ', $changes) . '.' : ''));
 
-        // Enforcement and the Patient Queueing department visibility read the database directly.
+       
         mh_redirect('modules', 'success', 'Module access settings saved.');
     }
 
     mh_redirect($active_tab, 'error', 'Unrecognised action.');
 }
 
-/* =====================================================================
- * FLASH MESSAGE + PAGE DATA
- * ================================================================== */
+
 $flash = $_SESSION['mh_flash'] ?? null;
 unset($_SESSION['mh_flash']);
 
 $settings    = mh_all_settings($conn, true);
 $theme       = mh_theme_defaults();
 $groups      = mh_theme_field_groups();
-$options     = mh_options($conn, $list_key, false);   // include hidden ones in the admin view
+$options     = mh_options($conn, $list_key, false);   
 $system_name = mh_setting('system_name');
 
-// Quick health check for the active OCR engine, shown on the OCR tab.
+
 $vision_key_problem  = null;
 $gemini_key_problem  = null;
 $groq_key_problem    = null;
@@ -583,14 +542,13 @@ if ($active_tab === 'ocr') {
     }
 }
 
-// Quick health check for the active SMS provider, shown on the SMS tab.
 $semaphore_key_problem = null;
 $android_gateway_problem_msg = null;
 $semaphore_balance     = null;
 if ($active_tab === 'sms') {
     require_once __DIR__ . '/../includes/sms_helper.php';
     require_once __DIR__ . '/../includes/sms/sms_scheduler.php';
-    mh_sms_install($conn); // creates scheduled_sms / sms_logs on first visit, harmless after
+    mh_sms_install($conn); 
     $semaphore_key_problem       = semaphore_api_key_problem();
     $android_gateway_problem_msg = android_gateway_problem();
     if (mh_active_sms_provider() === 'semaphore' && $semaphore_key_problem === null && isset($_GET['probe'])) {
@@ -603,17 +561,11 @@ require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'System Settings']);
 ?>
     <?php
-    // Inline the live theme so this page always shows the current colours,
-    // even before the browser re-fetches the cached stylesheet.
+   
     echo mh_theme_style_tag();
     ?>
     <style>
-        /* ---------------------------------------------------------------
-           Page tokens. Everything below reads these, never a raw colour,
-           so light and dark mode (and the Theme Customizer's panel colour)
-           all flow through one place. Dark overrides sit in the
-           html[data-theme="dark"] block at the bottom of this <style>.
-           --------------------------------------------------------------- */
+        
         :root {
             --ss-card:        var(--bg-card, var(--panel-bg, #ffffff));
             --ss-card-head:   var(--bg-hover, #f8fafc);
@@ -674,12 +626,10 @@ mh_layout_head(['title' => 'System Settings']);
         .field textarea { resize: vertical; min-height: 80px; }
         .field input:focus, .field textarea:focus, .field select:focus { outline: 2px solid var(--primary, #4ca1af); outline-offset: 0; border-color: var(--primary, #4ca1af); }
         .hint { font-size: 0.78rem; color: var(--ss-muted); margin: 4px 0 0; line-height: 1.5; }
-        /* Logo / Background upload dropzones */
         .preview-box { background: var(--ss-card-head); border: 2px dashed var(--ss-border-strong); padding: 18px; text-align: center; border-radius: 10px; margin-bottom: 16px; color: var(--ss-text); }
         .preview-box img { max-width: 100%; max-height: 130px; object-fit: contain; display: block; margin: 0 auto 12px; }
         .preview-box input[type="file"] { width: 100%; padding: 8px; border: 1px solid var(--ss-border-strong); border-radius: 6px; background: var(--ss-input-bg); color: var(--ss-text); box-sizing: border-box; font-size: 0.85rem; }
         .preview-box input[type="file"]::file-selector-button { margin-right: 10px; padding: 6px 12px; border: 1px solid var(--ss-border-strong); border-radius: 6px; background: var(--ss-card-head); color: var(--ss-text); font-weight: 600; cursor: pointer; }
-        /* Feature toggles */
         .switch { position: relative; display: inline-block; width: 50px; height: 26px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; top:0; left:0; right:0; bottom:0; cursor: pointer; background-color: var(--ss-switch-off); transition: .3s; border-radius: 34px; }
@@ -713,10 +663,8 @@ mh_layout_head(['title' => 'System Settings']);
         .alert-success { background: var(--ss-ok-bg);   border: 1px solid var(--ss-ok-bd);   color: var(--ss-ok-tx); }
         .alert-error   { background: var(--ss-err-bg);  border: 1px solid var(--ss-err-bd);  color: var(--ss-err-tx); }
         .alert-warn    { background: var(--ss-warn-bg); border: 1px solid var(--ss-warn-bd); color: var(--ss-warn-tx); }
-        /* Global Announcement Banner field (was inline red-on-pink) */
         .field label.announce-label { color: var(--ss-err-tx); }
         .field textarea.announce-input { border-color: var(--ss-err-bd); background: var(--ss-err-bg); }
-        /* API-key "Show" button + Gemini model list (were inline #f8fafc / white) */
         .reveal-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 1px solid var(--ss-border-strong); background: var(--ss-card-head); color: var(--ss-text); border-radius: 6px; padding: 4px 10px; font-size: 0.78rem; cursor: pointer; }
         .model-list { max-height: 220px; overflow: auto; border: 1px solid var(--ss-border); border-radius: 8px; padding: 12px; background: var(--ss-card-head); color: var(--ss-text); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; line-height: 1.7; }
         .page-title { margin: 0 0 5px; color: var(--ss-heading); font-family: Georgia, serif; font-size: 1.8rem; }
@@ -724,13 +672,10 @@ mh_layout_head(['title' => 'System Settings']);
         .soft-hr { border: 0; border-top: 1px dashed var(--ss-border-strong); margin: 20px 0; }
         .sub-title { margin: 0 0 12px; font-size: 0.92rem; color: var(--ss-heading); }
         .prose { font-size: 0.9rem; line-height: 1.65; color: var(--ss-text); }
-        /* Live preview of the colours being edited: its inner colours come
-           from the pickers on purpose, only the frame follows the theme. */
         .theme-preview { border: 1px solid var(--ss-border); border-radius: 10px; overflow: hidden; }
         .tp-side { padding: 14px; font-size: 0.85rem; font-weight: 700; }
         .tp-body { padding: 18px; }
         code.inline { background: var(--ss-card-head); color: var(--ss-text); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
-        /* Dark-mode-only polish that tokens alone can't express */
         html[data-theme="dark"] .card { box-shadow: var(--shadow-sm); }
         html[data-theme="dark"] .preview-box img { background: rgba(255,255,255,.04); border-radius: 8px; }
     </style>
@@ -771,7 +716,7 @@ mh_layout_head(['title' => 'System Settings']);
             <?php if (mh_is_health_head()): ?><a href="?tab=backup" class="<?php echo $active_tab === 'backup' ? 'active' : ''; ?>">Database Backup</a><?php endif; ?>
         </nav>
 
-<?php /* ================= TAB 1: BRANDING ================= */ ?>
+<?php  ?>
 <?php if ($active_tab === 'branding'): ?>
 
     <form method="POST" enctype="multipart/form-data">
@@ -978,7 +923,7 @@ mh_layout_head(['title' => 'System Settings']);
         </div>
     </form>
 
-<?php /* ================= TAB 2: APPEARANCE ================= */ ?>
+<?php  ?>
 <?php elseif ($active_tab === 'appearance'): ?>
 
     <form method="POST" id="themeForm">
@@ -1053,8 +998,6 @@ mh_layout_head(['title' => 'System Settings']);
         e.preventDefault();
         const btn = e.currentTarget;
         const ok = await mh_confirm('Restore the original Marick colours?', 'Reset Theme?', 'warning');
-        // requestSubmit(btn) preserves the button's name="reset_theme" in the POST data,
-        // unlike form.submit() which would drop it.
         if (ok) { document.getElementById('themeForm').requestSubmit(btn); }
     });
 
@@ -1092,7 +1035,7 @@ mh_layout_head(['title' => 'System Settings']);
     })();
     </script>
 
-<?php /* ================= TAB 3: MASTERLISTS ================= */ ?>
+<?php  ?>
 <?php elseif ($active_tab === 'masterlists'): ?>
 
     <div class="list-nav">
@@ -1207,7 +1150,7 @@ mh_layout_head(['title' => 'System Settings']);
 
     </div>
 
-<?php /* ================= TAB 4: OCR ================= */ ?>
+<?php ?>
 <?php elseif ($active_tab === 'departments'): ?>
 
     <?php mh_depts_render($conn); ?>
@@ -1538,7 +1481,7 @@ mh_layout_head(['title' => 'System Settings']);
 
     </div>
 
-<?php /* ================= TAB 5: SMS REMINDERS ================= */ ?>
+<?php  ?>
 <?php elseif ($active_tab === 'sms'): ?>
 
     <?php $active_provider = mh_active_sms_provider(); ?>
@@ -1720,11 +1663,11 @@ mh_layout_head(['title' => 'System Settings']);
 
     </div>
 
-<?php /* ================= STAFF ROLES & PERMISSIONS ================= */ ?>
+<?php ?>
 <?php elseif ($active_tab === 'roles'): ?>
     <?php
-        $all_roles = mh_role_definitions(true);          // system_roles (active + hidden)
-        $registry  = mh_permission_registry();           // feature toggles grouped by category
+        $all_roles = mh_role_definitions(true);          
+        $registry  = mh_permission_registry();           
         $role_use  = [];
         if ($ru = $conn->query("SELECT role, COUNT(*) AS n FROM staff GROUP BY role")) {
             while ($r = $ru->fetch_assoc()) { $role_use[$r['role']] = (int) $r['n']; }

@@ -1,10 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/env_guard.php';
-mh_require_dev_environment();   // never runs on the live clinic database (see includes/env_guard.php)
-/**
- * Admin-only diagnostic: which database driver is in use and do the Step 2 queries work?
- * Open /admin/db_check.php while logged in as Health Head / Admin. Safe to delete afterwards.
- */
+mh_require_dev_environment();
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
@@ -24,7 +20,7 @@ $checks = [
     "maternal_records.next_visit_date exists" => mh_db_table_has_column('maternal_records', 'next_visit_date') ? 'yes' : 'NO',
     "child_immunization_records.next_visit_date exists" => mh_db_table_has_column('child_immunization_records', 'next_visit_date') ? 'yes' : 'NO',
 ];
-$d = mh_db_driver();   // read AFTER the checks so a failing query shows up in last_sql_error
+$d = mh_db_driver();
 function h($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); }
 ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Database check</title>

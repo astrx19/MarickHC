@@ -807,6 +807,52 @@ function vision_parse_immunization_text($text)
     return $fields;
 }
 
+if (!function_exists('vision_parse_dental_treatment_rows')) {
+    /**
+     * Reads the center's paper Dental Record: every line that starts with a date is one row of the
+     * DENTAL PROCEDURE HISTORY table (DATE | PROCEDURE | TOOTH NO. | REMARKS). Returns rows shaped for the
+     * "Scan paper record" review step: date, routine[], other[], teeth, referrals, remarks.
+     * Rows are only suggestions: the dentist checks them and the dates before anything is saved.
+     */
+    function vision_parse_dental_treatment_rows($text)
+    {
+        $rows = [];
+        $valid = function_exists('mh_dental_all_teeth') ? array_map('strval', mh_dental_all_teeth()) : [];
+        $map = [
+            'routine' => ['OE' => '/check-?up|oral\s+exam|examination|routine/i', 'OP' => '/prophylaxis|cleaning/i', 'FV' => '/fluoride|varnish/i',
+                          'OHC' => '/counsel+ing/i', 'RA' => '/risk\s+assess/i'],
+            'other'   => ['Exo' => '/extract|extraction|bunot/i', 'S' => '/sealant/i', 'ART' => '/\bART\b|filling|pasta/i', 'RSP' => '/root\s+surface/i'],
+        ];
+        $dateRe = '#^(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{4}-\d{2}-\d{2}|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4})\s*[|:\-]?\s*(.*)$#u';
+        foreach (preg_split('/\R/u', (string) $text) as $line) {
+            $line = trim($line);
+            if ($line === '' || !preg_match($dateRe, $line, $m)) { continue; }
+            $date = vision_ocr_normalize_date($m[1]);
+            if ($date === '') { continue; }
+            $rest = $m[2];
+
+            $teeth = [];
+            if ($valid && preg_match_all('/\b(\d{2})\b/', $rest, $tm)) {
+                foreach ($tm[1] as $t) { if (in_array($t, $valid, true)) { $teeth[$t] = $t; } }
+                $rest = preg_replace('/\b(\d{2})\b/', ' ', $rest);
+            }
+            $routine = []; $other = [];
+            foreach ($map['routine'] as $code => $re) { if (preg_match($re, $rest)) { $routine[] = $code; $rest = preg_replace($re, ' ', $rest); } }
+            foreach ($map['other'] as $code => $re)   { if (preg_match($re, $rest)) { $other[]   = $code; $rest = preg_replace($re, ' ', $rest); } }
+
+            $remarks = trim(preg_replace('/\s+/', ' ', trim($rest, " \t|:;,-")));
+            if (!$routine && !$other && !$teeth && $remarks === '') { continue; }
+            $rows[] = [
+                'date' => $date, 'routine' => $routine, 'other' => $other, 'teeth' => implode(',', array_values($teeth)),
+                'referrals' => '', 'remarks' => mb_substr($remarks, 0, 500),
+            ];
+            if (count($rows) >= 30) { break; }
+        }
+        return $rows;
+    }
+}
+
+
 /**
  * Parses raw text from a Dental Record document.
  */
@@ -824,7 +870,7 @@ function vision_parse_dental_text($text, array $catalog = [])
     $fields = [];
     $odo = [];
     $caries = [];
-    $treatments = [];
+    $treatments = vision_parse_dental_treatment_rows($text);
 
     // Patient Name
     if (preg_match('#(?:Patient(?:\s*Name)?|Name|Pangalan)\s*[:=]\s*([^\n\r]+)#i', $text, $m)) {
@@ -846,6 +892,11 @@ function vision_parse_dental_text($text, array $catalog = [])
     }
     if (preg_match('#\bSex\s*[:=]?\s*(Male|Female|M|F)\b#i', $text, $m)) {
         $fields['patient.sex'] = (stripos($m[1], 'f') === 0) ? 'Female' : 'Male';
+    }
+
+    // Member No. (PhilHealth) on the paper header
+    if (preg_match('#(?:Member\s*No\.?|PhilHealth(?:\s*No\.?)?)\s*[:=]?\s*([0-9][0-9\-\s]{5,20})#i', $text, $m)) {
+        $fields['extra.philhealth_no'] = trim($m[1]);
     }
 
     // Odontogram (Tooth numbers and status/condition)

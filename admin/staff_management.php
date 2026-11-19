@@ -1,6 +1,6 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', 0);   // never print SQL/PHP errors to the browser; they go to the error log
+ini_set('display_errors', 0);   
 ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
@@ -8,45 +8,32 @@ require_once __DIR__ . '/../includes/icons.php';
 require_once(__DIR__ . "/../config/database.php");
 require_once __DIR__ . '/../includes/auth_helpers.php';
 require_once __DIR__ . '/../includes/settings_helper.php';
-require_once __DIR__ . '/../includes/sms_helper.php';   // defines mh_normalize_ph_mobile() used when adding/editing staff
+require_once __DIR__ . '/../includes/sms_helper.php';   
 
-// Feature toggle 'manage_staff' (System Settings -> Staff Roles & Permissions). Health Head always passes.
 require_permission('manage_staff');
 
 $viewer_id       = (int) ($_SESSION['user_id'] ?? 0);
 $viewer_is_super = mh_is_health_head();
 
-// ---------------------------------------------------------------------
-// Role tiers.
-//   Health Head : may create/edit/reset ANY account, including Admins.
-//   Admin       : may manage clinical staff only. Admin / Health Head
-//                 accounts are read-only to them (enforced HERE, on the
-//                 server - the hidden buttons are only a convenience).
-// ---------------------------------------------------------------------
-// The role list comes from the `system_roles` table via mh_get_roles() (includes/roles.php).
-// A role created under System Settings -> Staff Roles & Permissions appears in both Account Role
-// dropdowns automatically - there are no hardcoded <option> tags in this file.
-// The value saved to `staff`.`role` is the key, e.g. 'inventory'.
-$role_labels = mh_get_roles(true);   // every role, so existing accounts always show a proper label
-$active_role_labels = mh_get_roles();   // roles that may be given to NEW accounts (custom roles can be hidden)
+
+
+$role_labels = mh_get_roles(true);   
+$active_role_labels = mh_get_roles();   
 $assignable_roles = $viewer_is_super
     ? $active_role_labels
     : array_diff_key($active_role_labels, ['health_head' => 1, 'admin' => 1]);
 
 $capability_registry = mh_capability_registry();
-$has_status_col = mh_staff_ensure_status($conn);   // staff.status: 1 active / 0 archived
+$has_status_col = mh_staff_ensure_status($conn);   
 mh_department_ensure_table($conn);
-$custom_depts = mh_dept_all($conn);   // every active department (System Settings -> Departments)
-mh_staff_caps_upgrade($conn);   // one-time: per-account flags become NULL (inherit) / 1 (grant) / 0 (deny)
+$custom_depts = mh_dept_all($conn);  
+mh_staff_caps_upgrade($conn);   
 $caps_tristate = mh_caps_tristate_ready();
 
-// What each role gives by default: used to prefill the checkboxes and to decide what is an override.
 $role_default_caps = [];
 foreach (array_keys(mh_role_definitions(true)) as $rk0) { $role_default_caps[$rk0] = mh_role_default_caps($rk0); }
 
-// Which granular flag columns actually exist on `staff` yet? If
-// database/granular_permissions_migration.sql has not been applied, the
-// page still works (role-based) and shows a warning instead of fataling.
+
 $existing_cap_cols = [];
 if ($colRes = $conn->query("SHOW COLUMNS FROM `staff`")) {
     while ($c = $colRes->fetch_assoc()) { $existing_cap_cols[$c['Field']] = true; }
@@ -54,14 +41,7 @@ if ($colRes = $conn->query("SHOW COLUMNS FROM `staff`")) {
 $cap_cols_ready   = array_values(array_filter(array_keys($capability_registry), function ($c) use ($existing_cap_cols) { return isset($existing_cap_cols[$c]); }));
 $cap_cols_missing = count($cap_cols_ready) < count($capability_registry);
 
-/**
- * Reads the posted Delegated Functions into [column => null|0|1] relative to the role's defaults:
- *   ticked and the role already gives it  -> NULL (inherit)
- *   ticked but the role does not          -> 1    (extra grant)
- *   unticked but the role gives it        -> 0    (explicit DENY - this is what removes access)
- *   unticked and the role does not        -> NULL
- * Admin tier, or a form that carries no checkboxes (the Add form), stores NULL = inherit the role.
- */
+
 function mh_posted_capabilities(array $registry, $role, array $roleDefaults, $tristate)
 {
     $out = [];
@@ -71,13 +51,12 @@ function mh_posted_capabilities(array $registry, $role, array $roleDefaults, $tr
         if (!$present) { $out[$col] = $tristate ? null : 0; continue; }
         $ticked  = in_array($col, $posted, true);
         $default = !empty($roleDefaults[$role][$col]);
-        if (!$tristate) { $out[$col] = $ticked ? 1 : 0; continue; }          // legacy: grants only
+        if (!$tristate) { $out[$col] = $ticked ? 1 : 0; continue; }          
         $out[$col] = ($ticked === $default) ? null : ($ticked ? 1 : 0);
     }
     return $out;
 }
 
-/** "+can_x" (extra grant) / "-can_y" (explicit deny) labels for the activity log. */
 function mh_caps_override_summary(array $caps)
 {
     $out = [];
@@ -88,7 +67,6 @@ function mh_caps_override_summary(array $caps)
 $success_msg = "";
 $error_msg = "";
 
-/** Random one-time password (shown once to the admin, forces a change at first login). */
 if (!function_exists('mh_generate_temp_password')) {
     function mh_generate_temp_password($len = 12)
     {
@@ -96,12 +74,11 @@ if (!function_exists('mh_generate_temp_password')) {
         $all = implode('', $sets); $pw = [];
         foreach ($sets as $set) { $pw[] = $set[random_int(0, strlen($set) - 1)]; }
         while (count($pw) < $len) { $pw[] = $all[random_int(0, strlen($all) - 1)]; }
-        for ($i = count($pw) - 1; $i > 0; $i--) { $j = random_int(0, $i); [$pw[$i], $pw[$j]] = [$pw[$j], $pw[$i]]; }   // Fisher-Yates (CSPRNG)
+        for ($i = count($pw) - 1; $i > 0; $i--) { $j = random_int(0, $i); [$pw[$i], $pw[$j]] = [$pw[$j], $pw[$i]]; }  
         return implode('', $pw);
     }
 }
 
-/** Audit + 403 for a blocked privilege change (delegation limits / self-escalation). */
 function mh_staff_privilege_denied($message, $logDetail)
 {
     global $conn, $error_msg;
@@ -110,9 +87,6 @@ function mh_staff_privilege_denied($message, $logDetail)
     logActivity($conn, (int) ($_SESSION['user_id'] ?? 0), (string) ($_SESSION['role'] ?? ''), 'Privilege Change Blocked', $logDetail);
 }
 
-// ---------------------------------------------------------------------
-// CSRF: every POST on this page (add / edit / reset) must carry a valid token.
-// ---------------------------------------------------------------------
 $mh_post_ok = true;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !mh_csrf_check()) {
     $mh_post_ok = false;
@@ -120,9 +94,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !mh_csrf_check()) {
     $error_msg = "Your session security token is missing or expired. Please reload the page and try again.";
 }
 
-/* =====================================================================
- * ADD STAFF
- * ================================================================== */
 if ($mh_post_ok && isset($_POST['add_staff'])) {
     $fname   = trim($_POST['first_name'] ?? '');
     $lname   = trim($_POST['last_name'] ?? '');
@@ -134,10 +105,9 @@ if ($mh_post_ok && isset($_POST['add_staff'])) {
     $email   = trim($_POST['email'] ?? '');
     $role    = (string) ($_POST['role'] ?? '');
 
-    // Requested per-account overrides, computed BEFORE anything is written.
     $caps = array_intersect_key(mh_posted_capabilities($capability_registry, $role, $role_default_caps, $caps_tristate), array_flip($cap_cols_ready));
-    list($role_ok, $role_why) = mh_delegation_check_role($role);          // may the actor hand out THIS role?
-    list($caps_ok, $caps_why) = mh_delegation_check_caps($caps, []);       // ...and each extra function?
+    list($role_ok, $role_why) = mh_delegation_check_role($role);          
+    list($caps_ok, $caps_why) = mh_delegation_check_caps($caps, []);      
 
     if ($contact === '') {
         $error_msg = "Please enter an 11-digit Philippine mobile number starting with 09 (e.g. 09XXXXXXXXX).";
@@ -153,7 +123,6 @@ if ($mh_post_ok && isset($_POST['add_staff'])) {
         $raw_temp_password = mh_generate_temp_password();
         $hashed_password = password_hash($raw_temp_password, PASSWORD_DEFAULT);
 
-        // Login is username-based: first initial + last name, de-duplicated.
         $username = mh_generate_unique_username($conn, substr($fname, 0, 1) . $lname);
 
         $chk = $conn->prepare("SELECT id FROM staff WHERE email = ? LIMIT 1");
@@ -187,13 +156,7 @@ if ($mh_post_ok && isset($_POST['add_staff'])) {
     }
 }
 
-/* =====================================================================
- * EDIT STAFF
- *   - Editing YOURSELF: basic profile fields only. Any attempt to change your own role,
- *     status or delegated-function overrides is refused (403) and logged.
- *   - Editing SOMEONE ELSE: role / override changes must stay within the actor's own
- *     permissions and may only target accounts the actor outranks (mh_delegation_*).
- * ================================================================== */
+
 if ($mh_post_ok && isset($_POST['edit_staff'])) {
     $staff_id = (int) ($_POST['staff_id'] ?? 0);
     $fname    = trim($_POST['first_name'] ?? '');
@@ -208,7 +171,6 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
     $username = trim($_POST['username'] ?? '');
     $is_self  = ($staff_id === $viewer_id && $viewer_id > 0);
 
-    // Target row incl. its CURRENT per-account overrides (prepared; column names come from the code registry).
     $sel_cols = $cap_cols_ready ? ', ' . implode(', ', array_map(function ($c) { return "`$c`"; }, $cap_cols_ready)) : '';
     $t = $conn->prepare("SELECT role{$sel_cols} FROM staff WHERE id = ? LIMIT 1");
     $t->bind_param('i', $staff_id);
@@ -228,12 +190,11 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
     } elseif (mh_is_admin_tier($target['role']) && !$viewer_is_super && !$is_self) {
         $error_msg = "Only a Health Head can modify Admin or Health Head accounts.";
     } else {
-        $role = $target['role'];          // default: the role does not change
-        $write_privileges = false;        // role + overrides are written ONLY after every check below passes
+        $role = $target['role'];          
+        $write_privileges = false;        
         $caps = [];
 
         if ($is_self) {
-            // ---- Block self-editing of privileges ----------------------------------
             $tamper = [];
             if ($posted_role !== '' && $posted_role !== $target['role']) { $tamper[] = 'role'; }
             if (isset($_POST['status']) || isset($_POST['role_id'])) { $tamper[] = 'status/role id'; }
@@ -241,8 +202,8 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
                 $ticked_now = (isset($_POST['caps']) && is_array($_POST['caps'])) ? $_POST['caps'] : [];
                 foreach ($capability_registry as $col => $_) {
                     $effective = array_key_exists($col, $current_caps) && $current_caps[$col] !== null
-                        ? ((int) $current_caps[$col] === 1)                       // explicit override
-                        : !empty($role_default_caps[$target['role']][$col]);       // inherited from the role
+                        ? ((int) $current_caps[$col] === 1)                       
+                        : !empty($role_default_caps[$target['role']][$col]);       
                     if (in_array($col, $ticked_now, true) !== $effective) { $tamper[] = 'delegated functions'; break; }
                 }
             }
@@ -253,7 +214,6 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
                 );
             }
         } else {
-            // ---- Editing another account: work out whether privileges change --------
             $role = ($posted_role !== '') ? $posted_role : $target['role'];
             $role_changed = ($role !== $target['role']);
             if ($role_changed && !array_key_exists($role, $assignable_roles)) {
@@ -304,7 +264,6 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
             } elseif (!mh_username_available($conn, $username, 'staff', $staff_id)) {
                 $error_msg = "That username is already taken by another account.";
             } else {
-                // Basic profile fields always; role + overrides ONLY when $write_privileges (never for self).
                 $set   = ['first_name=?', 'last_name=?', 'middle_name=?', 'suffix=?', 'birthdate=?', 'contact_number=?', 'email=?', 'username=?'];
                 $types = 'ssssssss';
                 $vals  = [$fname, $lname, $mname, $suffix, $bdate, $contact, $email, $username];
@@ -317,7 +276,6 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
                 $stmt->bind_param($types, ...$vals);
                 if ($stmt->execute()) {
                     $success_msg = "Staff account updated successfully!" . ($is_self ? " (Profile details only - your own role and functions cannot be changed here.)" : "");
-                    // Custom-department access: per-account exceptions to the role's setting
                     if (!$is_self && mh_actor_outranks_target($target['role'])) {
                         $final_role = $write_privileges ? $role : $target['role'];
                         if (mh_is_admin_tier($final_role)) {
@@ -327,9 +285,9 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
                             $ticked = (isset($_POST['dept_access']) && is_array($_POST['dept_access'])) ? array_map('strval', $_POST['dept_access']) : [];
                             foreach (mh_dept_all($conn) as $cd) {
                                 $nm = $cd['name'];
-                                if (!mh_dept_user_can($nm)) { continue; }          // you cannot hand out a department you cannot use
+                                if (!mh_dept_user_can($nm)) { continue; }         
                                 $want = in_array($nm, $ticked, true);
-                                if ($want === mh_dept_role_allowed($nm, $final_role)) {   // same as the role -> no exception needed
+                                if ($want === mh_dept_role_allowed($nm, $final_role)) {   
                                     $d = $conn->prepare("DELETE FROM staff_department_access WHERE staff_id = ? AND dept_name = ?");
                                     $d->bind_param('is', $staff_id, $nm);
                                 } else {
@@ -357,11 +315,7 @@ if ($mh_post_ok && isset($_POST['edit_staff'])) {
     }
 }
 
-/* =====================================================================
- * RESET PASSWORD
- *   Resetting someone's password hands over their login, so it is treated as a privilege
- *   change: you may only reset accounts you outrank (or your own).
- * ================================================================== */
+
 if ($mh_post_ok && isset($_POST['reset_password'])) {
     $reset_id = (int) ($_POST['reset_staff_id'] ?? 0);
 
@@ -397,9 +351,7 @@ if ($mh_post_ok && isset($_POST['reset_password'])) {
     }
 }
 
-/* =====================================================================
- * ARCHIVE STAFF (soft delete: cannot sign in, history is kept, restorable from System Archives)
- * ================================================================== */
+
 if ($mh_post_ok && isset($_POST['archive_staff'])) {
     $arch_id = (int) ($_POST['archive_staff_id'] ?? 0);
 
@@ -445,11 +397,7 @@ if ($mh_post_ok && isset($_POST['archive_staff'])) {
     }
 }
 
-/**
- * Delegated Functions picker: one compact row per module, each function a
- * small toggle chip. The long hint text lives in the chip's tooltip (title)
- * so the list stays short. JS hooks kept: input[data-cap], .cap-box, .is-locked.
- */
+
 function mh_render_capability_checkboxes(array $registry, $idPrefix)
 {
     $groups = [];
@@ -476,7 +424,7 @@ require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'Staff Management']);
 ?>
     <style>
-        .staff-grid { display: block; width: 100%; }   /* directory now spans the full width; the add form lives in #addStaffModal */
+        .staff-grid { display: block; width: 100%; }   
         .role-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border: 1px solid; display: inline-block; background: #f1f5f9; color: #475569; border-color: #cbd5e1; }   /* default look for custom roles */
         .role-health_head { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
         .role-admin { background: #f1f5f9; color: var(--text-main, #334155); border-color: var(--border-color, #cbd5e1); }
@@ -485,7 +433,6 @@ mh_layout_head(['title' => 'Staff Management']);
         .role-dental { background: #fef3c7; color: #b45309; border-color: #fde68a; }
         .role-bhw { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
         .role-inventory { background: #ffedd5; color: #c2410c; border-color: #fed7aa; }
-        /* ---------- Delegated Functions picker (compact) ---------- */
         .cap-box { grid-column: 1 / -1; border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; padding: 14px; background: var(--bg-hover, #f8fafc); }
         .cap-box h4 { margin: 0 0 2px; font-size: 0.95rem; font-weight: 800; color: var(--heading-color, #1e293b); }
         .cap-box p.cap-note { margin: 0 0 10px; font-size: 0.76rem; line-height: 1.4; color: var(--text-muted, #64748b); }
@@ -501,12 +448,10 @@ mh_layout_head(['title' => 'Staff Management']);
         .cap-item input[data-cap] { position: absolute; opacity: 0; width: 1px !important; height: 1px !important; padding: 0 !important; margin: 0 !important; border: 0 !important; pointer-events: none; }
         .cap-tick { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--text-muted, #94a3b8); position: relative; transition: all .15s ease; }
         .cap-tick::after { content: ""; position: absolute; left: 3.5px; top: 1px; width: 4px; height: 7px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform .15s ease; }
-        /* selected */
         .cap-item:has(input:checked) { background: var(--primary, #4ca1af); border-color: var(--primary, #4ca1af); color: #fff; }
         .cap-item input:checked ~ .cap-tick { background: rgba(255,255,255,.25); border-color: #fff; }
         .cap-item input:checked ~ .cap-tick::after { transform: rotate(45deg) scale(1); }
         .cap-item input:focus-visible ~ .cap-tick { outline: 2px solid var(--primary, #4ca1af); outline-offset: 2px; }
-        /* locked (Admin / Health Head hold every function) */
         .cap-box.is-locked .cap-item { opacity: 0.6; cursor: not-allowed; }
         .cap-chip { display: inline-block; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; border-radius: 12px; padding: 1px 8px; font-size: 0.68rem; font-weight: 600; margin: 1px 2px 1px 0; white-space: nowrap; }
         .cap-chip.all { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
@@ -551,7 +496,6 @@ mh_layout_head(['title' => 'Staff Management']);
                                         $row_is_admin_tier = mh_is_admin_tier($row['role']);
                                         $row_locked = $row_is_admin_tier && !$viewer_is_super;
                                         $row_caps = [];
-                                        // EFFECTIVE access: the per-account flag when set (1 grant / 0 deny), else the role's default
                                         $row_eff = [];
                                         foreach ($capability_registry as $cc => $cd) {
                                             $flag = $row[$cc] ?? null;
@@ -808,15 +752,12 @@ mh_layout_head(['title' => 'Staff Management']);
             e.preventDefault();
             const btn = e.currentTarget;
             const ok = await mh_confirm("Are you sure you want to reset this user's password?", 'Reset Password', 'danger');
-            // requestSubmit(btn) preserves name="reset_password" in the POST data,
-            // unlike form.submit() which would drop it.
+            
             if (ok) { document.getElementById('resetPasswordForm').requestSubmit(btn); }
         });
 
-        // role_key => {capability: bool} - what each role gives with no per-account override
         const ROLE_DEFAULT_CAPS = <?php echo json_encode($role_default_caps, JSON_FORCE_OBJECT); ?>;
 
-        // role_key => [custom departments that role may use]
         const ROLE_DEPT_DEFAULTS = <?php
             $rdd = [];
             foreach ($role_labels as $rk => $_rl) {
@@ -851,7 +792,7 @@ mh_layout_head(['title' => 'Staff Management']);
             document.getElementById('edit_staff_id').value = d.id;
             document.getElementById('reset_staff_id_input').value = d.id;
             document.getElementById('archive_staff_id_input').value = d.id;
-            document.getElementById('archiveStaffForm').style.display = d.self ? 'none' : '';   // never your own account
+            document.getElementById('archiveStaffForm').style.display = d.self ? 'none' : '';   
 
             document.getElementById('edit_fname').value = d.first_name;
             document.getElementById('edit_lname').value = d.last_name;
@@ -863,9 +804,9 @@ mh_layout_head(['title' => 'Staff Management']);
 
             const roleSel = document.getElementById('edit_role');
             roleSel.value = d.role;
-            roleSel.disabled = d.self;                       // can't change own tier
+            roleSel.disabled = d.self;                       
             document.getElementById('edit_role_note').style.display = d.self ? 'block' : 'none';
-            if (d.self) {                                    // disabled selects aren't submitted
+            if (d.self) {                                    
                 let h = document.getElementById('edit_role_hidden');
                 if (!h) { h = document.createElement('input'); h.type = 'hidden'; h.name = 'role'; h.id = 'edit_role_hidden'; roleSel.form.appendChild(h); }
                 h.value = d.role;
@@ -881,8 +822,7 @@ mh_layout_head(['title' => 'Staff Management']);
                 deptBoxes().forEach(cb => { cb.checked = (d.depts || []).includes(cb.value); });
                 syncDeptLock();
             }
-            // Editing yourself: profile fields only. Lock the function picker and do not submit it at all
-            // (the server also refuses any attempt to change your own role / functions).
+           
             const capsFlag = document.querySelector('#editStaffModal input[name="caps_present"]');
             if (capsFlag) capsFlag.disabled = d.self;
             document.querySelectorAll('#edit_cap_box input[data-cap]').forEach(cb => { if (d.self) cb.disabled = true; });
@@ -900,8 +840,7 @@ mh_layout_head(['title' => 'Staff Management']);
             document.getElementById('editStaffModal').classList.add('active');
         }
 
-        // Admin / Health Head implicitly hold every function, so the
-        // checkboxes are locked (and shown ticked) for those roles.
+        
         function syncCapBox(roleSelectId, boxId, noteId) {
             const role = document.getElementById(roleSelectId).value;
             const box = document.getElementById(boxId);
@@ -911,7 +850,7 @@ mh_layout_head(['title' => 'Staff Management']);
             box.querySelectorAll('input[data-cap]').forEach(cb => {
                 cb.disabled = tier;
                 if (tier) cb.checked = true;
-                else if (wasLocked) cb.checked = false;   // leaving the admin tier: start clean
+                else if (wasLocked) cb.checked = false;   
             });
             if (noteId) {
                 const n = document.getElementById(noteId);
@@ -921,11 +860,10 @@ mh_layout_head(['title' => 'Staff Management']);
         }
         document.getElementById('edit_role').addEventListener('change', () => {
             syncCapBox('edit_role', 'edit_cap_box', 'edit_cap_note');
-            applyRoleDefaultCaps(document.getElementById('edit_role').value);   // new role -> that role's defaults
+            applyRoleDefaultCaps(document.getElementById('edit_role').value);   
             applyRoleDefaultDepts(document.getElementById('edit_role').value);
         });
 
-        // Add Staff: choosing a role reveals that role's functions, pre-ticked, so the creator sees exactly what it grants.
         (function () {
             const sel = document.getElementById('add_role');
             const box = document.getElementById('add_cap_box');
@@ -934,7 +872,7 @@ mh_layout_head(['title' => 'Staff Management']);
                 box.hidden = !sel.value;
                 if (!sel.value) { return; }
                 applyRoleDefaultCaps(sel.value, 'add_cap_box');
-                syncCapBox('add_role', 'add_cap_box', 'add_cap_note');   // admin tier: everything ticked + locked
+                syncCapBox('add_role', 'add_cap_box', 'add_cap_note');   
                 box.classList.remove('is-locked', 'is-locked-off');
                 if (sel.value === 'admin' || sel.value === 'health_head') { box.classList.add('is-locked'); }
             });
@@ -942,7 +880,7 @@ mh_layout_head(['title' => 'Staff Management']);
 
         function openAddStaffModal() {
             const rs = document.getElementById('add_role'), cb = document.getElementById('add_cap_box');
-            if (rs && cb) { rs.selectedIndex = 0; cb.hidden = true; }   // start clean every time
+            if (rs && cb) { rs.selectedIndex = 0; cb.hidden = true; }  
             document.getElementById('addStaffModal').classList.add('active');
             var f = document.querySelector('#addStaffModal input[name="last_name"]');
             if (f) { f.focus(); }

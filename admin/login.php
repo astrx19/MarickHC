@@ -1,23 +1,11 @@
 <?php
-/**
- * =====================================================================
- * BARANGAY MARICK HEALTH CENTER - STAFF CONSOLE LOGIN
- * =====================================================================
- * Dedicated, isolated entry point for staff/doctors/nurses/admins.
- * Deliberately NOT protected by includes/admin_auth.php (that would
- * bounce a logged-out visitor straight back here in a loop) - instead
- * it does its own "already logged in?" check below and uses
- * includes/auth.php directly for the session start + no-cache headers
- * every auth-adjacent page needs.
- * =====================================================================
- */
+
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../includes/login_throttle.php';
 
-// Already signed in? Skip straight to the dashboard instead of showing
-// the login form again.
+
 if (mh_staff_logged_in()) {
     header("Location: dashboard.php");
     exit();
@@ -46,8 +34,7 @@ if (isset($_POST['login'])) {
         if ($account_archived && password_verify($password, $user['password'])) {
             $error_msg = "This account has been archived. Please contact the Health Head.";
         } elseif (!$account_archived && password_verify($password, $user['password'])) {
-            // New session id at every privilege change, so a session id
-            // captured before login can't be reused afterwards.
+            
             mh_lt_clear($conn, 'staff', $username);
             session_regenerate_id(true);
 
@@ -55,15 +42,11 @@ if (isset($_POST['login'])) {
                 $_SESSION['temp_user_id'] = $user['id'];
                 $require_password_change = true;
             } else {
-                // Canonical staff session keys.
                 $_SESSION['staff_id'] = $user['id'];
                 $_SESSION['user_role'] = $user['role'];
-                // Legacy aliases - kept in sync so the existing admin/*.php
-                // pages that still read `user_id` / `role` directly keep
-                // working unchanged. See includes/auth.php for details.
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['role'] = $user['role'];
-                mh_ss_issue('staff', $user['id']);   // invalidates this account's other sessions
+                mh_ss_issue('staff', $user['id']);   
 
                 logActivity($conn, $user['id'], $user['role'], "System Login", "User logged into the portal.");
                 header("Location: dashboard.php");
@@ -73,7 +56,7 @@ if (isset($_POST['login'])) {
     } else { $error_msg = "Incorrect username or password."; mh_lt_record_failure($conn, 'staff', $username); }
 
     $stmt->close();
-    }   // end throttle check
+    }   
 }
 
 if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
@@ -98,7 +81,6 @@ if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
 
             session_regenerate_id(true);
 
-            // Canonical + legacy keys, same as the normal login path above.
             $_SESSION['staff_id'] = $temp_id;
             $_SESSION['user_role'] = $user_data['role'];
             $_SESSION['user_id'] = $temp_id;
@@ -122,7 +104,7 @@ if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <?php /* New session / unauthenticated visitor => Light Mode. Clears any dark choice saved by a previous sign-in so the portal always opens white; dark only returns when the user toggles it again. */ ?>
+    <?php ?>
     <script>try{localStorage.removeItem('theme');}catch(e){}</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -148,8 +130,6 @@ if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
         </div>
 
         <?php
-        // ONE banner at a time. Priority: error > success > first-login welcome.
-        // (Before, a wrong first-login password showed the red error AND the blue "Welcome" banner stacked.)
         $welcome = !empty($require_password_change);
         if ($error_msg !== '')      { $banner = ['alert-error',   'x-circle',     $error_msg]; }
         elseif ($success_msg !== ''){ $banner = ['alert-success', 'check-circle', $success_msg]; }
@@ -197,7 +177,6 @@ if (isset($_POST['change_password']) && isset($_SESSION['temp_user_id'])) {
     </div>
 
     <script>
-        // Show / hide password. One delegated handler covers every .pw-toggle button on the page.
         document.addEventListener('click', function (e) {
             var btn = e.target.closest('.pw-toggle');
             if (!btn) { return; }

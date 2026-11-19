@@ -7,7 +7,6 @@ require_once __DIR__ . '/../config/database.php';
 
 require_permission('view_area_masterlist');
 
-// Home jurisdiction comes from System Settings (Home Address Type), never from a literal.
 $home_type = mh_home_address_type();
 
 $st = $conn->prepare("SELECT COUNT(*) AS count FROM patients WHERE status = 1 AND address_type = ?");
@@ -16,7 +15,6 @@ $st->execute();
 $marick_total = (int) ($st->get_result()->fetch_assoc()['count'] ?? 0);
 $st->close();
 
-// Everyone else (including patients with no Location Type) counts as an outsider.
 $st = $conn->prepare("SELECT COUNT(*) AS count FROM patients WHERE status = 1 AND (address_type IS NULL OR address_type <> ?)");
 $st->bind_param('s', $home_type);
 $st->execute();
@@ -65,7 +63,6 @@ mh_layout_head(['title' => 'Area Masterlist', 'print_title' => 'Area Masterlist 
                     </thead>
                     <tbody>
                         <?php
-                        // Residents per STREET (not per full address): parse the street out of each resident address.
                         $st = $conn->prepare("SELECT address FROM patients WHERE status = 1 AND address_type = ?");
                         $st->bind_param('s', $home_type);
                         $st->execute();

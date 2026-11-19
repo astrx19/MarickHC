@@ -47,6 +47,8 @@
     var openBtn = $('#dvOpen');
     if (openBtn) { openBtn.addEventListener('click', openModal); }
     $('#dvClose').addEventListener('click', closeModal);
+    var cancelBtn = $('#dvCancel');
+    if (cancelBtn) { cancelBtn.addEventListener('click', closeModal); }
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && modal.classList.contains('active') && !document.querySelector('.mh-modal-backdrop') && !document.querySelector('.mh-ps-list:not([hidden])')) { closeModal(); }
     });
@@ -90,6 +92,7 @@
         $('#dvTeethInput').value = keys.join(',');
         $('#dvTeethChips').innerHTML = keys.map(function (t) { return '<span class="mh-badge mh-badge-info">' + esc(t) + '</span>'; }).join(' ');
         renderToothRows(keys);
+        syncLive();
     }
     $('#dvTeeth').addEventListener('click', function (e) {
         var b = e.target.closest ? e.target.closest('.dv-tooth') : null;
@@ -121,6 +124,8 @@
                 if (!res.ok) { return; }
                 var s = res.j;
                 profileOk = !!s.profile_completed;
+                fillSheet(s.sheet);
+                loadHistory(id);
                 if (s.alerts && s.alerts.length) {
                     $('#dvAlerts').innerHTML = '<strong>Medical alerts:</strong> ' + s.alerts.map(function (a) { return '<span class="mh-badge mh-badge-danger">' + esc(a) + '</span>'; }).join(' ');
                     $('#dvAlerts').hidden = false;
@@ -135,10 +140,11 @@
             .catch(function () {  });
     }
     document.addEventListener('mh:patient-picked', function (e) { if (e.detail && e.detail.id) { loadSummary(parseInt(e.detail.id, 10)); } });
-    document.addEventListener('mh:patient-unlinked', function () { activePatient = 0; $('#dvAlerts').hidden = true; $('#dvGate').hidden = true; setBody(true); });
+    document.addEventListener('mh:patient-unlinked', function () { activePatient = 0; if (typeof window.mhSetPatientName === 'function') { window.mhSetPatientName('', '', ''); } $('#dvAlerts').hidden = true; $('#dvGate').hidden = true; setBody(true); fillSheet(null); clearHistory(); });
 
     function showPicked(p) {
         $('#pnPickedId').value = p.id;
+        if (typeof window.mhSetPatientName === 'function') { window.mhSetPatientName(p.first_name, p.middle_name, p.last_name); }
         var badge = $('.mh-ps-badge', form);
         badge.hidden = false;
         badge.innerHTML = '<span>Patient <strong>#' + esc(p.id) + '</strong> &ndash; ' + esc(p.last_name) + ', ' + esc(p.first_name) + '</span><button type="button" class="mh-ps-clear" aria-label="Unlink patient">&times;</button>';
@@ -155,8 +161,8 @@
         renderTeeth(); syncTeeth();
         $('#dvReferral').value = r.referrals || '';
         $('#dvNotes').value = r.remarks || '';
-        if (window.mh_toast) { window.mh_toast('Row copied into the form. Check it, add the reason for the visit, then save.', 'info'); }
-        $('#dvComplaint').focus();
+        if (window.mh_toast) { window.mh_toast('Row copied into the form. Check it, then save.', 'info'); }
+        $('#dvNotes').focus();
     }
     function renderScan() {
         var host = $('#dvScanReview');
@@ -218,9 +224,97 @@
             window.DN_ocrHandler = onScanned;
             window.DN_ocrClosed = function () { openModal(); };
             opener.click();
+            var picked = $('#dvOcrFile'), target = document.getElementById('dnFiles');
+            if (picked && picked.files && picked.files.length && target && window.DataTransfer) {
+                try {
+                    var dt = new DataTransfer();
+                    Array.prototype.forEach.call(picked.files, function (f) { dt.items.add(f); });
+                    target.files = dt.files;
+                    target.dispatchEvent(new Event('change', { bubbles: true }));
+                    picked.value = '';
+                    setTimeout(function () { var go = document.getElementById('dnOcrStart'); if (go && !go.disabled) { go.click(); } }, 60);
+                } catch (err) {  }
+            }
         });
     }
     var gateScan = $('#dvGateScan');
+
+    /* ---- the center's paper Dental Record: header, patient block, procedure history ---- */
+    var SHEET_IDS = { family_no: 'dvsFamily', others: 'dvsOthers', member_no: 'dvsMember', name: 'dvsName', birthday: 'dvsBirthday', address: 'dvsAddress', age: 'dvsAge', sex: 'dvsSex', contact: 'dvsContact' };
+    function fillSheet(sh) {
+        Object.keys(SHEET_IDS).forEach(function (k) {
+            var el = document.getElementById(SHEET_IDS[k]);
+            if (el) { el.value = sh && sh[k] != null ? sh[k] : ''; }
+        });
+        var pb = $('#dvPrint');
+        if (pb) { pb.disabled = !sh; }
+    }
+    function histCell(v) { return v ? esc(v) : '&nbsp;'; }
+    function clearHistory() {
+        $('#dvHistBody').innerHTML = '<tr class="dvs-empty"><td colspan="4">Pick a patient to show the procedure history.</td></tr>';
+    }
+    function loadHistory(id) {
+        var host = $('#dvHistBody');
+        host.innerHTML = '<tr class="dvs-empty"><td colspan="4">Loading the procedure history...</td></tr>';
+        fetch('dental.php?ajax=history&patient=' + encodeURIComponent(id), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+                if (activePatient !== id) { return; }
+                var rows = res.ok && res.j && res.j.rows ? res.j.rows : [];
+                if (!rows.length) { host.innerHTML = '<tr class="dvs-empty"><td colspan="4">No procedures recorded yet.</td></tr>'; return; }
+                host.innerHTML = rows.map(function (r) {
+                    return '<tr><td>' + histCell(r.date_label) + '</td><td>' + histCell(r.procedure) + '</td><td>' + histCell(r.tooth) + '</td><td>' + histCell(r.remarks) + '</td></tr>';
+                }).join('');
+            })
+            .catch(function () { if (activePatient === id) { host.innerHTML = '<tr class="dvs-empty"><td colspan="4">The history could not be loaded.</td></tr>'; } });
+    }
+    function sheetName(code) { return (CFG.sheetNames || {})[code] || (CFG.routineNames || {})[code] || (CFG.otherNames || {})[code] || code; }
+    function syncLive() {
+        var live = $('#dvHistLive');
+        if (!live) { return; }
+        var proc = [];
+        $$('input[name="routine[]"]:checked, input[name="other[]"]:checked', form).forEach(function (cb) { proc.push(sheetName(cb.value)); });
+        var teeth = Object.keys(teethSet).sort(function (a, b) { return a - b; }).join(', ');
+        var rem = $('#dvNotes').value.trim();
+        if (!proc.length && !teeth && !rem) { live.innerHTML = ''; return; }
+        var d = $('#dvDate').value, dl = d;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) { var dt = new Date(d + 'T00:00:00'); dl = dt.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }); }
+        live.innerHTML = '<tr class="dvs-live"><td>' + histCell(dl) + '</td><td>' + histCell(proc.join(', ')) + '</td><td>' + histCell(teeth) + '</td><td>' + histCell(rem) + '</td></tr>';
+    }
+    function procOptions(current) {
+        var h = '<option value="">Select procedure</option>';
+        var names = CFG.sheetNames || {};
+        Object.keys(names).forEach(function (k) { h += '<option value="' + esc(k) + '"' + (current === k ? ' selected' : '') + '>' + esc(names[k]) + '</option>'; });
+        return h;
+    }
+    function addProcRow(v) {
+        v = v || {};
+        var tr = document.createElement('tr');
+        tr.className = 'dvs-newrow';
+        tr.innerHTML = '<td><input type="date" name="prow_date[]" max="' + new Date().toISOString().slice(0, 10) + '" value="' + esc(v.date || $('#dvDate').value || '') + '" aria-label="Procedure date"></td>'
+            + '<td><select name="prow_proc[]" aria-label="Procedure">' + procOptions(v.proc || '') + '</select></td>'
+            + '<td><input type="text" name="prow_tooth[]" maxlength="60" value="' + esc(v.tooth || '') + '" placeholder="e.g. 16, 17" aria-label="Tooth number"></td>'
+            + '<td><div class="dvs-rowend"><input type="text" name="prow_remarks[]" maxlength="1000" value="' + esc(v.remarks || '') + '" aria-label="Remarks">'
+            + '<button type="button" class="dvs-del" aria-label="Remove this row">&times;</button></div></td>';
+        $('#dvHistRows').appendChild(tr);
+        return tr;
+    }
+    var addRowBtn = $('#dvAddRow');
+    if (addRowBtn) { addRowBtn.addEventListener('click', function () { var tr = addProcRow(); var f = tr.querySelector('select'); if (f) { f.focus(); } }); }
+    $('#dvHistRows').addEventListener('click', function (e) {
+        var b = e.target.closest ? e.target.closest('.dvs-del') : null;
+        if (b) { var tr = b.closest('tr'); if (tr) { tr.parentNode.removeChild(tr); } }
+    });
+    form.addEventListener('input', syncLive);
+    form.addEventListener('change', syncLive);
+    var printBtn = $('#dvPrint');
+    if (printBtn) {
+        printBtn.addEventListener('click', function () {
+            var id = $('#pnPickedId').value;
+            if (!id) { window.mh_alert && window.mh_alert('Pick the patient first.', 'Patient needed', 'warning'); return; }
+            window.open('dental_record_print.php?patient=' + encodeURIComponent(id), '_blank');
+        });
+    }
 
     form.addEventListener('submit', function (e) {
         window.mhClearErrors && window.mhClearErrors(form);
@@ -230,15 +324,21 @@
         else if (!profileOk) { e.preventDefault(); $('#dvGate').hidden = false; return; }
         var d = $('#dvDate').value;
         if (!d || (window.mhBirthdateProblem && window.mhBirthdateProblem(d))) { need($('#dvDate'), 'Visit date', 'enter a valid date (not in the future).'); }
-        if (!$('#dvComplaint').value.trim()) { need($('#dvComplaint'), 'Reason for visit', 'is required.'); }
         var bp = $('#dvBp').value.trim();
         if (bp && !/^\d{2,3}\/\d{2,3}$/.test(bp)) { need($('#dvBp'), 'Blood pressure', 'use the form 120/80.'); }
         var t = $('#dvTemp').value.trim();
         if (t && !(/^\d{2}(\.\d{1,2})?$/.test(t) && +t >= 30 && +t <= 45)) { need($('#dvTemp'), 'Temperature', 'a number between 30 and 45, like 36.8.'); }
         var any = $$('input[name="routine[]"]:checked, input[name="other[]"]:checked', form).length || $('#dvDiagnosis').value.trim() || $('#dvNotes').value.trim() || $('#dvReferral').value.trim();
-        if (!any) { need($('#dvDiagnosis'), 'Services / Diagnosis', 'tick a service, or write a diagnosis, notes or a referral.'); }
+        if (!any) { need($('#dvNotes'), 'Dental findings', 'tick Routine Check-up or Extraction (or another service), or write remarks, a diagnosis or a referral.'); }
         var nx = $('#dvNext').value;
         if (nx && nx < d) { need($('#dvNext'), 'Next visit date', 'cannot be before the visit date.'); }
+        $$('#dvHistRows tr').forEach(function (tr, i) {
+            var rd = tr.querySelector('[name="prow_date[]"]'), rp = tr.querySelector('[name="prow_proc[]"]');
+            var rt = tr.querySelector('[name="prow_tooth[]"]'), rr = tr.querySelector('[name="prow_remarks[]"]');
+            if (!(rp.value || rt.value.trim() || rr.value.trim())) { return; }
+            if (!rd.value || (window.mhBirthdateProblem && window.mhBirthdateProblem(rd.value))) { need(rd, 'Procedure history row ' + (i + 1) + ' date', 'enter a valid date (not in the future).'); }
+            if (!rp.value && !rr.value.trim()) { need(rp, 'Procedure history row ' + (i + 1), 'pick a procedure or write remarks.'); }
+        });
         if (errs.length) { e.preventDefault(); window.mhReport && window.mhReport(errs, 'Please check this dental record'); }
     });
 
@@ -256,6 +356,10 @@
             var m = old['tooth_' + k] || {};
             Object.keys(m).forEach(function (t) { toothSel[t] = toothSel[t] || {}; toothSel[t][k] = m[t]; });
         });
+        var pr = old.prow || {}, pn = Math.max((pr.date || []).length, (pr.proc || []).length, (pr.tooth || []).length, (pr.remarks || []).length);
+        for (var pi = 0; pi < pn; pi++) {
+            addProcRow({ date: (pr.date || [])[pi], proc: (pr.proc || [])[pi], tooth: (pr.tooth || [])[pi], remarks: (pr.remarks || [])[pi] });
+        }
         renderTeeth(); syncTeeth();
     }
     if (CFG.prefill) { showPicked(CFG.prefill); }

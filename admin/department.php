@@ -1,13 +1,10 @@
 <?php
-/**
- * Generic page for a custom department (one whose function is "Custom department page").
- * Departments linked to a module (Consultations, Dental, ...) redirect to that module's own page.
- */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
-require_once __DIR__ . '/../includes/queue_helper.php';   // mh_queue_label()
+require_once __DIR__ . '/../includes/queue_helper.php';  
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/settings_helper.php';
 
@@ -20,12 +17,11 @@ $row = $st->get_result()->fetch_assoc(); $st->close();
 if (!$row) { header('Location: dashboard.php'); exit(); }
 $dept = $row['option_value'];
 
-// Who may use a custom department is set under System Settings -> Departments (per role)
-// and Staff Management (per person). Health Head always may.
+
 $can_view = $can_write = mh_dept_user_can($dept);
 if (!$can_view) { mh_deny_access(); }
 
-$page = mh_department_page($dept);                 // linked to a module -> use that module's page
+$page = mh_department_page($dept);                
 if (mh_department_module($dept) !== null && $page) { header('Location: ' . $page); exit(); }
 
 $conn->query("CREATE TABLE IF NOT EXISTS department_visits (
@@ -54,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['record_visit'])) {
         $patient_id = (int) ($_POST['patient_id'] ?? 0);
         $notes      = mb_substr(trim((string) ($_POST['notes'] ?? '')), 0, 2000);
 
-        if ($apt_id > 0) {   // completing someone from today's queue: the queue entry decides the patient
+        if ($apt_id > 0) {  
             $st = $conn->prepare("SELECT patient_id FROM appointments WHERE id = ? AND department = ?");
             $st->bind_param('is', $apt_id, $dept); $st->execute();
             $a = $st->get_result()->fetch_assoc(); $st->close();

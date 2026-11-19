@@ -7,9 +7,6 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/dashboard_helper.php';
 require_once __DIR__ . '/../includes/icons.php';
 
-// Any signed-in staff account (built-in or custom role) may open this page; admin_auth.php already
-// verified the login and re-synced the role. What each role SEES is controlled by Module Access.
-
 $system_name = $system_name ?? mh_setting('system_name');
 
 $today = date('Y-m-d');
@@ -78,9 +75,6 @@ if($cal_appointments) {
     }
 }
 
-/* =====================================================================
- * CUSTOMIZABLE WIDGET DASHBOARD
- * ================================================================== */
 mh_dashboard_install($conn);
 
 $widget_catalog = mh_dashboard_catalog();
@@ -92,20 +86,12 @@ $widget_ctx     = [
     'role'     => $user_role,
 ];
 
-// Widgets not in the user's saved layout at all yet (should not normally
-// happen after mh_dashboard_get_layout()'s merge, but kept as a safety
-// net) never reach the page, so the "+ Add Widget" list can only ever
-// offer widgets that are already in $widget_layout with visible=false.
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
 mh_layout_head(['title' => 'Dashboard']);
 ?>
     <style>
-        /* body background now comes from admin_theme.css's var(--bg-body) -
-           a hardcoded #f1f5f9 here used to win the cascade (same selector,
-           declared later than the stylesheet) and pin the dashboard to a
-           light background even with dark mode toggled on. */
         .dashboard-container { max-width: 1400px; margin: 40px auto; padding: 0 30px; }
         .welcome-banner {
             position: relative; overflow: hidden; isolation: isolate;
@@ -114,7 +100,6 @@ mh_layout_head(['title' => 'Dashboard']);
             box-shadow: var(--shadow-lg); border: 1px solid var(--glass-border);
             display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
         }
-        /* Decorative glow blobs - purely cosmetic, sit behind the text via z-index/isolation above */
         .welcome-banner::before, .welcome-banner::after {
             content: ""; position: absolute; z-index: -1; border-radius: 50%; filter: blur(10px);
         }
@@ -125,10 +110,6 @@ mh_layout_head(['title' => 'Dashboard']);
             display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 800;
             letter-spacing: 0.1em; text-transform: uppercase; color: #7dd3fc; margin-bottom: 8px;
         }
-        /* Explicit overrides: the global "h1,h2,h3{color:var(--heading-color)}" rule in
-           admin_theme.css directly targets these elements, and a directly-matched color
-           always beats an inherited one regardless of specificity - so without this the
-           heading rendered dark navy on the dark navy banner background (invisible). */
         .welcome-banner h1 { margin: 0 0 8px 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.01em; color: #ffffff; }
         .welcome-banner p { margin: 0; color: #e2e8f0; font-size: 1.02rem; position: relative; }
         .welcome-banner p strong { color: #ffffff; }
@@ -138,19 +119,13 @@ mh_layout_head(['title' => 'Dashboard']);
             display: flex; align-items: center; justify-content: center; color: #fff;
         }
         .welcome-banner .welcome-icon .mh-icon { width: 28px; height: 28px; }
-        /* ---------------------------------------------------------------
-         * Dashboard toolbar (Customize / Add Widget / Save / Reset)
-         * ------------------------------------------------------------- */
         .dash-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .dash-toolbar button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; border: 1px solid var(--border-color, #cbd5e1); background: var(--bg-card); color: var(--text-main); font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: background 0.18s, border-color 0.18s, opacity 0.22s, transform 0.22s; }
         .dash-toolbar button .mh-icon { width: 15px; height: 15px; }
         .dash-toolbar button:hover { background: var(--bg-hover); border-color: var(--text-muted); }
         .dash-toolbar button.btn-primary-toolbar { background: var(--primary, #4ca1af); color: white; border-color: var(--primary, #4ca1af); }
         .dash-toolbar button.btn-primary-toolbar:hover { background: var(--primary-hover, #3b828e); }
-        /* Toolbar state swap */
         .dash-toolbar .edit-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-
-        /* Required: ".dash-toolbar button { display:inline-flex }" beats the browser's [hidden] rule */
         .dash-toolbar [hidden] { display: none !important; }
 
         @keyframes tb-slide-in {
@@ -218,7 +193,6 @@ mh_layout_head(['title' => 'Dashboard']);
         .widget-list li a:hover { color: #3b82f6; }
         .widget-list-meta { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
         .widget-empty { text-align: center; padding: 18px 5px; color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
-        /* Today's Active Queue: Walk-in / Scheduled badges + footer link (translucent fills so they read in light and dark mode) */
         .queue-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
         .queue-tag-walkin { background: rgba(14, 165, 233, 0.15); color: #0284c7; box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.35); }
         .queue-tag-sched  { background: rgba(99, 102, 241, 0.15); color: #4f46e5; box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35); }
@@ -240,13 +214,6 @@ mh_layout_head(['title' => 'Dashboard']);
         .activity-details p { margin: 0 0 4px 0; color: var(--text-main); font-size: 0.88rem; line-height: 1.4; }
         .activity-meta { font-size: 0.72rem; color: var(--text-muted); }
         .activity-role { font-weight: bold; color: #0ea5e9; text-transform: uppercase; }
-        /* ---------------------------------------------------------------
-         * Dashboard two-column layout: main widgets (queues/stats) on the
-         * left, the clinic calendar pinned in a dedicated right-hand
-         * column so staff can glance at today's agenda while working the
-         * queues on the left, instead of scrolling to a full-width strip
-         * at the very bottom of the page.
-         * ------------------------------------------------------------- */
         .dashboard-columns { display: grid; grid-template-columns: 1fr 320px; gap: 30px; align-items: start; }
         .dashboard-side { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 90px; }
         @media (max-width: 1024px) {
@@ -304,9 +271,6 @@ mh_layout_head(['title' => 'Dashboard']);
         .holiday-cell { background: rgba(239, 68, 68, 0.14) !important; border-color: #fca5a5 !important; }
         .holiday-label { background: #ef4444; color: white; padding: 4px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 5px; text-transform: uppercase; text-align: center;}
         .holiday-label .mh-icon { width: 11px; height: 11px; }
-        /* ---------------------------------------------------------------
-         * Add Widget modal (lists currently hidden widgets)
-         * ------------------------------------------------------------- */
         #addWidgetModal .universal-modal-content { height: auto; max-height: 80vh; max-width: 560px; }
         #addWidgetModal .modal-body { padding: 10px 25px 25px 25px; overflow-y: auto; }
         .add-widget-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border-subtle, #f1f5f9); }
@@ -493,9 +457,6 @@ mh_layout_head(['title' => 'Dashboard']);
     </div>
 
     <script>
-        /* =================================================================
-         * CALENDAR (unchanged behavior from the original dashboard)
-         * ============================================================== */
         const calendarData = <?php echo json_encode($calendar_data); ?>;
         const holidaysData = <?php echo json_encode($holidays_data); ?>; 
         const MH_ICON_FLAG = <?php echo json_encode(mh_icon('flag')); ?>;
@@ -610,9 +571,6 @@ mh_layout_head(['title' => 'Dashboard']);
             }
         }
 
-        /* =================================================================
-         * CUSTOMIZABLE DASHBOARD
-         * ============================================================== */
         const widgetGrid = document.getElementById('widgetGrid');
         let mhDraggingEl = null;
 
@@ -627,15 +585,12 @@ mh_layout_head(['title' => 'Dashboard']);
 
             customizeBtn.hidden = editing;
             editActions.hidden  = !editing;
-
-            // Keep keyboard focus from being lost when the focused button disappears
             (editing ? document.getElementById('addWidgetBtn') : customizeBtn).focus();
         }
 
         customizeBtn.addEventListener('click', () => mhSetCustomize(true));
         document.getElementById('doneBtn').addEventListener('click', () => mhSetCustomize(false));
 
-        // --- Drag & drop reordering (native HTML5 D&D, no dependencies) ---
         widgetGrid.addEventListener('dragstart', function(e) {
             const widget = e.target.closest('.dash-widget');
             if (!widget) return;
@@ -667,8 +622,6 @@ mh_layout_head(['title' => 'Dashboard']);
                 const box = el.getBoundingClientRect();
                 const centerX = box.left + box.width / 2;
                 const centerY = box.top + box.height / 2;
-                // Treat this as "above" the cursor if it's in an earlier row,
-                // or the same row but to the left - works for a wrapping grid.
                 const sameRow = Math.abs(centerY - y) < box.height / 2;
                 const offset = sameRow ? (x - centerX) : (y - centerY) * 1000;
                 if (offset < 0 && offset > closest.offset) {
@@ -677,8 +630,6 @@ mh_layout_head(['title' => 'Dashboard']);
             });
             return closest.element;
         }
-
-        // --- Remove / Resize / Add widgets ---
         function mhRemoveWidget(btn) {
             const widget = btn.closest('.dash-widget');
             if (widget) widget.classList.add('hidden-widget');
@@ -739,11 +690,9 @@ mh_layout_head(['title' => 'Dashboard']);
             const widget = widgetGrid.querySelector(`.dash-widget[data-widget-id="${widgetId}"]`);
             if (!widget) return;
             widget.classList.remove('hidden-widget');
-            widgetGrid.appendChild(widget); // newly added widgets land at the end
-            mhOpenAddWidgetModal(); // refresh the list in place
+            widgetGrid.appendChild(widget); 
+            mhOpenAddWidgetModal(); 
         }
-
-        // --- Save / Reset ---
         function mhCollectLayout() {
             return [...widgetGrid.querySelectorAll('.dash-widget')].map(el => ({
                 id: el.dataset.widgetId,

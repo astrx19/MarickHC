@@ -9,7 +9,6 @@ require_once __DIR__ . '/../includes/disease_stats.php';
 
 require_permission('view_disease_statistics');
 
-// Fig. 62: Excel download of exactly what is on screen (PDF = Print > Save as PDF).
 if (($_GET['export'] ?? '') === 'csv') {
     require_once __DIR__ . '/../includes/report_export.php';
     mh_report_csv_export('disease_statistics_' . date('Y_m_d') . '.csv', 'Disease Statistics');
@@ -17,7 +16,7 @@ if (($_GET['export'] ?? '') === 'csv') {
 
 $user_id   = (int) ($_SESSION['user_id'] ?? 0);
 $role      = (string) ($_SESSION['role'] ?? '');
-$is_head    = mh_is_health_head($role);          // only the Health Head edits what is tracked (System Settings)
+$is_head    = mh_is_health_head($role);        
 
 mh_disease_ensure_tables($conn);
 $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
@@ -25,7 +24,6 @@ $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); 
 $msg_ok = '';
 $msg_err = '';
 
-/* ---------------- Quick Track POST ---------------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['quick_track_condition'])) {
     if (!mh_csrf_check()) {
         $msg_err = 'Security token expired. Please try again.';
@@ -57,10 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['quick_track_condition
     }
 }
 
-/* ---------------- data ---------------- */
+
 $stats  = mh_disease_compute($conn);
 
-// Period overview (Step 8): default last 30 days; any range up to one year.
 $is_d = function ($v) { return is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) !== false; };
 $ov_to   = $is_d($_GET['to'] ?? '')   ? $_GET['to']   : date('Y-m-d');
 $ov_from = $is_d($_GET['from'] ?? '') ? $_GET['from'] : date('Y-m-d', strtotime($ov_to . ' -29 days'));
@@ -69,7 +66,6 @@ if ($ov_to > date('Y-m-d')) { $ov_to = date('Y-m-d'); }
 if ($ov_from < date('Y-m-d', strtotime($ov_to . ' -365 days'))) { $ov_from = date('Y-m-d', strtotime($ov_to . ' -365 days')); }
 $ov = mh_disease_overview($conn, $ov_from, $ov_to);
 $tracked_total = count($stats['conditions']);
-// Only illnesses that actually have logged cases (last 12 weeks) are listed.
 $conds  = array_values(array_filter($stats['conditions'], function ($c) { return $c['total'] > 0; }));
 $hidden_count = $tracked_total - count($conds);
 $detail = null;
@@ -95,7 +91,6 @@ $outbreakBadge = $stats['spikes'] > 0
         ? ['Rising Trend', '#fef3c7', '#92400e', 'Cases Rising']
         : ['Normal Baseline', '#dcfce7', '#166534', 'Stable Baseline']);
 
-// AI Executive Outbreak Summary
 $ai_summary = mh_disease_ai_summary($conn, $stats, $ov);
 ?>
 <?php
@@ -235,7 +230,6 @@ mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Stati
                 <div class="ds-msg ds-err"><?php echo $h($msg_err); ?></div>
             <?php endif; ?>
 
-            <!-- AI Health Insights & Outbreak Summary Card -->
             <div class="ds-ai-card">
                 <div class="ds-ai-header">
                     <div class="ds-ai-title">
@@ -340,7 +334,6 @@ mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Stati
                 };
                 ?>
 
-                <!-- Collapsible Demographic & Department Breakdown Drawer -->
                 <details class="ds-drawer">
                     <summary>
                         <span>Demographic &amp; Department Breakdowns (Sex, Age, Area, Department)</span>
@@ -494,7 +487,6 @@ mh_layout_head(['title' => 'Disease Statistics', 'print_title' => 'Disease Stati
         </div>
     <?php mh_layout_close(); ?>
 
-    <!-- Quick Track Condition Modal (Health Head only) -->
     <?php if ($is_head): ?>
     <div class="modal-overlay" id="quickTrackModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,23,42,0.6); align-items:center; justify-content:center; padding:20px;">
         <div style="max-width:500px; width:100%; background:var(--card-bg, #fff); border-radius:14px; box-shadow:0 20px 40px rgba(0,0,0,0.25); border:1px solid var(--border-color,#e2e8f0); overflow:hidden;">

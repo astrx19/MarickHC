@@ -1,18 +1,4 @@
 <?php
-/**
- * =====================================================================
- * MARICK HEALTH CENTER - DASHBOARD LAYOUT API
- * =====================================================================
- * AJAX endpoint used by admin/dashboard.php's "Save Layout" and
- * "Reset Default" buttons.
- *
- * POST JSON body:
- *   { "action": "save",  "widgets": [ {"id":"walkin_queue","visible":true,"size":"small"}, ... ] }
- *   { "action": "reset" }
- *
- * Response JSON: { "success": true|false, "message": "..." }
- */
-
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 

@@ -625,11 +625,8 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
     
     <script>
         <?php if($can_dispense): ?>
-        /* =========================================================
-           DATA - the medicine list comes from PHP once; the LOTS of a medicine are fetched live
-           (dispense_medicine.php?batches=1) every time a medicine is chosen, so stock is never stale.
-           ========================================================= */
-        const MEDICINE_GROUPS = <?php echo $js_medicine_groups; ?>;   // also holds each group's lots as an offline fallback
+       
+        const MEDICINE_GROUPS = <?php echo $js_medicine_groups; ?>;  
         const PRESELECT_GROUP_KEY = <?php echo $js_preselect_group_key; ?>;
         const PRESELECT_BATCH_ID = <?php echo (int) $preselect_batch_id; ?>;
         const EXPIRED_GLOBAL = <?php echo (int) $expired_batches; ?>;
@@ -639,15 +636,13 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
         let currentGroup = null;
         let currentBatch = null;
-        let loadSeq = 0;                       // ignores late answers when the user switches medicine quickly
+        let loadSeq = 0;
         let lastKey = null;
-        let pendingLoad = Promise.resolve();   // resolves when the lot list for the chosen medicine is on screen
+        let pendingLoad = Promise.resolve();   
 
-        /* PURE-HELPERS-START (no DOM access: unit-tested in Node) */
         function escHtml(s) {
             return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
         }
-        // First-Expired-First-Out: earliest expiry first, lots with no expiry last, ties -> received first (lowest id).
         function fifoSort(batches) {
             return batches.slice().sort((a, b) => {
                 if (a.expiry_date === b.expiry_date) return a.id - b.id;
@@ -673,7 +668,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                  + ' with stock on hand ' + (n === 1 ? 'is' : 'are') + ' hidden here and cannot be dispensed. Review '
                  + (n === 1 ? 'it' : 'them') + ' in the <a href="inventory.php">Supply Masterlist</a>.';
         }
-        /* PURE-HELPERS-END */
 
         function showExpiredNote(n, medicineName) {
             const box = document.getElementById('expiredNote');
@@ -683,9 +677,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             box.style.display = 'flex';
         }
 
-        /* ---------------------------------------------------------
-           Batch / Lot dropdown (always visible; disabled until a medicine is chosen)
-           --------------------------------------------------------- */
         function resetBatchUI(placeholder) {
             const sel = document.getElementById('batchSelect');
             sel.innerHTML = '';
@@ -711,7 +702,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                 const opt = document.createElement('option');
                 opt.value = b.id;
                 opt.textContent = batchLabel(b);
-                if (idx === 0) opt.selected = true;     // FIFO: the lot that expires first is pre-selected
+                if (idx === 0) opt.selected = true;     
                 sel.appendChild(opt);
             });
             sel.disabled = false;
@@ -725,9 +716,9 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             return fetch(url, { credentials: 'same-origin', cache: 'no-store' })
                 .then(r => (r.ok && r.headers.get('X-Dispense-Batches') === '1') ? r.json() : Promise.reject(new Error('bad response')))
                 .then(data => ({ batches: data.batches, expired: data.expired_count, live: true }))
-                .catch(() => ({ batches: group.batches, expired: null, live: false }))   // offline / session problem: fall back to the page-load copy
+                .catch(() => ({ batches: group.batches, expired: null, live: false }))   
                 .then(res => {
-                    if (seq !== loadSeq) return;                  // user already picked another medicine
+                    if (seq !== loadSeq) return;                 
                     group.batches = fifoSort(res.batches);
                     populateBatchSelect(group);
                     showExpiredNote(res.expired === null ? 0 : res.expired, group.item_name + ' (' + group.brand_name + ')');
@@ -761,14 +752,12 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             document.getElementById('selectedBatchId').value = id || '';
             if (!currentBatch) return;
 
-            // Available Stock Indicator
             const pill = document.getElementById('batchStockReadout');
             const soon = currentBatch.days_to_expiry !== null && currentBatch.days_to_expiry !== undefined && currentBatch.days_to_expiry <= 90;
             pill.className = 'stock-pill' + (soon ? ' warn' : '');
             pill.innerHTML = 'Available: <strong>' + currentBatch.quantity.toLocaleString() + '</strong> ' + escHtml(currentBatch.unit)
                 + (currentBatch.expiry_date ? ' &middot; exp. ' + escHtml(currentBatch.expiry_date) + ' (' + daysText(currentBatch.days_to_expiry) + ')' : '');
 
-            // Reminder when a later-expiring lot is chosen while the recommended lot still has stock.
             const fefoBanner = document.getElementById('fefoWarningBanner');
             const recommended = currentGroup.batches.find(b => b.is_fefo);
             if (recommended && !currentBatch.is_fefo && recommended.quantity > 0) {
@@ -784,12 +773,10 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             validateQty();
         }
 
-        $('#medicineSelect').on('change', onMedicineChange);   // jQuery binding: select2 fires jQuery events, NOT native ones
+        $('#medicineSelect').on('change', onMedicineChange);   
         $('#batchSelect').on('change', onBatchChange);
 
-        /* ---------------------------------------------------------
-           Interactive unit dispensing calculator - Boxes / Packs / loose units
-           --------------------------------------------------------- */
+
         function setupPackagingCalculator(batch) {
             const calcWrap = document.getElementById('packagingCalcWrap');
             const boxField = document.getElementById('disp_box_qty').closest('.form-group');
@@ -830,15 +817,12 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             document.getElementById('disp_total_readout').innerHTML = 'Total: <strong>' + (parseInt(document.getElementById('disp_total_qty').value, 10) || 0).toLocaleString() + '</strong> base units';
         }
 
-        /* Typing straight into Total Quantity clears the calculator so the two never disagree. */
         function onManualQtyInput() {
             document.getElementById('disp_box_qty').value = '';
             document.getElementById('disp_pack_qty').value = '';
             document.getElementById('disp_loose_qty').value = '';
         }
 
-        /* Live check against the SELECTED lot. cap=true (typing) clamps the number to the lot's stock and says so;
-           cap=false (submit) just reports. Returns true when the quantity fits. */
         function validateQty(cap) {
             const el = document.getElementById('disp_total_qty');
             const hint = document.getElementById('qtyHint');
@@ -862,7 +846,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             return true;
         }
 
-        /* After a failed submit the page reloads: put the patient and the medicine list back. */
         function restoreForm(o) {
             (o.lines || []).forEach(function (ln) {
                 const g = MEDICINE_GROUPS.find(x => x.batches.some(b => b.id === ln.inventory_id));
@@ -878,7 +861,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
         window.onload = function() {
             mhSelect2('#patientSelect', { placeholder: 'Search by name or ID...' });
             <?php if ($queue_patient_id > 0): ?>
-            $('#patientSelect').val('<?php echo (int) $queue_patient_id; ?>').trigger('change');   // patient from the queue
+            $('#patientSelect').val('<?php echo (int) $queue_patient_id; ?>').trigger('change');   
             <?php endif; ?>
 
             mhSelect2('#medicineSelect', { placeholder: 'Search generic or brand name...' });
@@ -886,7 +869,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             <?php if ($error_msg !== '' && !empty($old['lines'])): ?>
             restoreForm(<?php echo json_encode($old, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>);
             <?php elseif ($preselect_group_key !== null): ?>
-            // Deep-linked from the Supply Masterlist's "Dispense" action: preselect the medicine and (if given) that lot.
             $('#medicineSelect').val(<?php echo json_encode($preselect_group_key); ?>).trigger('change');
             pendingLoad.then(function () {
                 <?php if ($preselect_batch_id > 0): ?>
@@ -911,11 +893,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
         };
 
 
-        /* =========================================================
-           MEDICINE LIST (several medicines per visit). The line editor above picks one medicine/lot/quantity;
-           "Add to list" moves it here. On submit every row is posted as inventory_id[] / quantity[] and the
-           server dispenses ALL of them in one all-or-nothing transaction.
-           ========================================================= */
         let cart = [];
 
         function renderCart() {
@@ -939,10 +916,9 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
         function clearLineEditor() {
             ['disp_box_qty', 'disp_pack_qty', 'disp_loose_qty'].forEach(function (id) { const e = document.getElementById(id); if (e) e.value = ''; });
-            $('#medicineSelect').val('').trigger('change');   // resets lot list, stock pill, FEFO banner, quantity
+            $('#medicineSelect').val('').trigger('change');   
         }
 
-        /* Moves the line editor into the list. Returns true when a line was added. */
         function cartAdd() {
             const qty = parseInt(document.getElementById('disp_total_qty').value, 10);
             if (!currentGroup || !currentBatch || !qty || qty < 1) {
@@ -972,7 +948,6 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
 
         function confirmDispense() {
             const patientSelect = document.getElementById('patientSelect');
-            // A medicine still sitting in the line editor is added automatically.
             const lineStarted = !!(currentBatch && document.getElementById('disp_total_qty').value);
             if (lineStarted && !cartAdd()) { return; }
             if (!cart.length) {
@@ -1002,9 +977,8 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             });
         }
 
-        <?php endif; // can_dispense ?>
+        <?php endif; ?>
 
-        /* Dispensing Log: server-side search + automatic refresh (so a dispense by another staff member shows up). */
         <?php if ($can_view_log): ?>
         let logTimer = null, logBusy = false;
         function loadLog() {
@@ -1014,7 +988,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             fetch('dispense_medicine.php?log_rows=1&q=' + encodeURIComponent(q), { credentials: 'same-origin', cache: 'no-store' })
                 .then(r => (r.ok && r.headers.get('X-Dispense-Log') === '1') ? r.text() : null)
                 .then(html => {
-                    if (html === null) return;                       // session expired / error: leave the table as is
+                    if (html === null) return;                  
                     document.getElementById('logBody').innerHTML = html;
                     document.getElementById('logMeta').textContent = (q ? 'Latest 100 matches for "' + q + '"' : 'Latest 100 records') + ' \u00b7 updated ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
                 })

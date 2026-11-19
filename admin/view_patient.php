@@ -5,9 +5,9 @@ ini_set('display_errors', 0);
 require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../includes/settings_helper.php';   // provides mh_check_module_enabled()
+require_once __DIR__ . '/../includes/settings_helper.php';   
 require_once __DIR__ . '/../includes/patient_profile_helper.php';
-mh_check_module_enabled('patient_masterlist');   // module master switch
+mh_check_module_enabled('patient_masterlist');   
 require_permission('view_patient_masterlist');
 
 if(!isset($_GET['id']) || empty($_GET['id'])) {
@@ -30,7 +30,6 @@ $bdate = new DateTime($patient['birthdate']);
 $age_calc = mh_calculate_patient_age($patient['birthdate']);
 $age = $age_calc['years'];
 
-/* ---------- additional contact numbers: add / remove (PRG: redirect after saving) ---------- */
 $flash_ok = ''; $flash_err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['add_contact']) || isset($_POST['delete_contact']))) {
     if (!$can_edit_patient) { mh_deny_access(); }
@@ -64,7 +63,7 @@ if (!empty($_SESSION['vp_flash'])) {
 $contacts   = mh_patient_contacts($conn, $patient_id);
 $history    = mh_patient_history($conn, $patient_id);
 $dispensed  = mh_patient_dispense_history($conn, $patient_id);
-$HISTORY_VISIBLE = 8;   // newest records shown first; the rest sit behind "Show older records"
+$HISTORY_VISIBLE = 8;   
 ?>
 <?php
 require_once __DIR__ . '/../includes/layout/layout.php';
@@ -81,13 +80,11 @@ mh_layout_head(['title' => 'Patient Profile']);
         .detail-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .detail-label { display: block; color: var(--text-muted, #64748b); font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.5px; }
         .detail-value { color: var(--heading-color, #0f172a); font-size: 1.05rem; font-weight: 500; }
-        /* contacts */
         .contact-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding: 10px 0; border-bottom: 1px dashed var(--border-color, #e2e8f0); }
         .contact-row:last-of-type { border-bottom: none; }
         .contact-row .who { font-weight: 600; color: var(--heading-color, #0f172a); }
         .contact-row .rel { font-size: .78rem; color: var(--text-muted, #64748b); }
         .contact-add { display:grid; gap:10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color, #e2e8f0); }
-        /* timeline */
         .timeline { position: relative; padding-left: 30px; margin-top: 15px; }
         .timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--border-color, #e2e8f0); }
         .timeline-item { position: relative; margin-bottom: 22px; }
@@ -301,7 +298,6 @@ mh_layout_head(['title' => 'Patient Profile']);
 
     <?php echo mh_flash_scripts($flash_ok, $flash_err); ?>
     <script>
-        // "See more" on a record, and "Show older records" for long histories.
         document.addEventListener('click', function (e) {
             var t = e.target.closest ? e.target.closest('.tl-toggle') : null;
             if (t) {

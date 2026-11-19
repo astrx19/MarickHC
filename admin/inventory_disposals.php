@@ -1,16 +1,11 @@
 <?php
-/**
- * Disposal History (Step 7): every expired / damaged / recalled batch that was disposed of, who did it, how, and when.
- * Records are written by the "Dispose Stock" action on the Supply Masterlist (admin/inventory.php) and cannot be edited here.
- */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../config/database.php';
-
-// Same door as the Supply Masterlist.
 if (!mh_has_capability('can_manage_supply_masterlist')) {
     if (mh_has_any_capability(['can_manage_dispensing', 'can_view_dispensing_history'])) {
         header('Location: dispense_medicine.php');
@@ -34,7 +29,6 @@ $f = [
 ];
 $rows = mh_disp_history($conn, $f);
 
-// Totals for what is on screen (one pass, no extra queries).
 $by_form = ['liquid' => 0, 'capsule' => 0, 'piece' => 0]; $by_reason = [];
 foreach ($rows as $r) {
     $by_form[$r['item_form']] = ($by_form[$r['item_form']] ?? 0) + (int) $r['quantity_disposed'];

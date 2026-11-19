@@ -294,3 +294,25 @@
 }
 
 .du-sr { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; pointer-events: none; }
+
+/* ===== Dental visit form (admin/dental.php, #dvForm): uses the shared cf-* department form layout ===== */
+.dvs-findings { display: flex; gap: 14px; flex-wrap: wrap; }
+.dvs-more { margin: 10px 0 0; }
+.dvs-more > summary { cursor: pointer; color: var(--du-muted); font-size: .85rem; }
+.dvs-tablewrap { max-height: 340px; overflow: auto; margin: 4px 0 8px; }
+.dvs-hist { table-layout: fixed; }
+.dvs-hist th:nth-child(1) { width: 20%; } .dvs-hist th:nth-child(2) { width: 28%; } .dvs-hist th:nth-child(3) { width: 17%; }
+.dvs-hist td { padding: 7px 8px; overflow-wrap: anywhere; font-size: .9rem; }
+.dvs-hist tr.dvs-live td { background: var(--du-soft); font-weight: 600; }
+.dvs-hist tr.dvs-empty td { text-align: center; color: var(--du-muted); padding: 16px 8px; }
+.cf-modal .dvs-newrow input, .cf-modal .dvs-newrow select { width: 100%; min-width: 0; border: 0; border-radius: 0; background: transparent; min-height: 38px; padding: 6px 8px; box-shadow: none; }
+.dvs-newrow td { padding: 0; }
+.dvs-rowend { display: flex; gap: 6px; align-items: center; padding-right: 6px; }
+.dvs-del { flex: none; width: 26px; height: 26px; border: 1px solid var(--du-line); border-radius: 6px; background: transparent; color: var(--du-muted); cursor: pointer; font-size: 1.1rem; line-height: 1; }
+.dvs-del:hover { color: #b91c1c; border-color: #b91c1c; }
+
+/* ===== Dental list page: same table/list look as the other departments ===== */
+.cf-cell-links { font-size: .8rem; }
+.cf-cell-links a { color: var(--du-accent); font-weight: 600; text-decoration: none; }
+.cf-cell-links a:hover { text-decoration: underline; }
+.du-pagehead h2.du-sectionhead { margin: 0; font-size: 1.25rem; }

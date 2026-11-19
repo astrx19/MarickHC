@@ -1,23 +1,8 @@
 <?php
-/**
- * admin/monthly_reports.php  -  Monthly Clinic Report (role-based)
- *
- * Who sees what (decided by $_SESSION['role'], never by a URL parameter):
- *   health_head / admin / super_admin  -> master overview of every department
- *   doctor                             -> General Consultation report
- *   dental (dentist)                   -> Dental Clinic report
- *   midwife                            -> Maternal Care + Child Immunization
- *   inventory / encoder                -> Medicine Inventory report
- *   any other role                     -> access denied
- *
- * Only the queries for the signed-in user's scope are executed. Every value that
- * reaches SQL is bound (month/year are validated integers), every value printed
- * is escaped, and the date filters use  >= first-day AND < first-day-of-next-month.
- */
+
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
-// Lets the required  include 'includes/print_header.php';  block below resolve from admin/.
 set_include_path(dirname(__DIR__) . PATH_SEPARATOR . get_include_path());
 
 require_once __DIR__ . '/../includes/admin_auth.php';
@@ -25,9 +10,9 @@ require_once __DIR__ . '/../config/database.php';
 
 if (function_exists('mh_refresh_staff_authority')) { mh_refresh_staff_authority(); }
 
-/* ------------------------------------------------------------------
+
    1. ROLE -> REPORT SCOPE
-   ------------------------------------------------------------------ */
+    
 $role = strtolower(trim((string) ($_SESSION['role'] ?? $_SESSION['user_role'] ?? '')));
 
 $scope_map = [
@@ -39,7 +24,6 @@ $scope_map = [
 ];
 $scope = $scope_map[$role] ?? null;
 if ($scope === null) { mh_deny_access(); exit; }
-// The Medicine Inventory report needs stock access: the registration-only 'encoder' role has none (kept separate from 'inventory').
 if ($scope === 'inventory' && !mh_has_permission('view_stock')) { mh_deny_access(); exit; }
 
 $scope_labels = [
@@ -54,9 +38,7 @@ $scope_label = $scope_labels[$scope];
 $system_name = $system_name ?? mh_setting('system_name');
 $h = function ($v) { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); };
 
-/* ------------------------------------------------------------------
    2. MONTH / YEAR FILTER (validated)
-   ------------------------------------------------------------------ */
 $this_year = (int) date('Y');
 $month = (int) ($_GET['month'] ?? date('n'));
 $year  = (int) ($_GET['year'] ?? $this_year);
@@ -65,10 +47,10 @@ if ($year < $this_year - 5 || $year > $this_year) { $year = $this_year; }
 
 $start        = sprintf('%04d-%02d-01', $year, $month);
 $end          = date('Y-m-d', strtotime($start . ' +1 month'));
-$P            = [$start, $end];                       // bound as 'ss' in every range query
+$P            = [$start, $end];                       
 $period_label = date('F Y', strtotime($start));
 
-// Fig. 62: Excel download of exactly what is on screen (PDF = Print > Save as PDF).
+
 if (($_GET['export'] ?? '') === 'csv') {
     require_once __DIR__ . '/../includes/report_export.php';
     mh_report_csv_export('monthly_report_' . date('Y_m', strtotime($start)) . '.csv', 'Monthly Clinic Report: ' . $period_label);
@@ -76,9 +58,8 @@ if (($_GET['export'] ?? '') === 'csv') {
 
 $module_title = "Monthly Clinic Report";
 
-/* ------------------------------------------------------------------
+
    3. SMALL DB HELPERS
-   ------------------------------------------------------------------ */
 $run = function ($sql, $types = '', array $params = []) use ($conn) {
     $st = @$conn->prepare($sql);
     if (!$st) { error_log('monthly_reports query failed: ' . $conn->error); return []; }
@@ -95,7 +76,6 @@ $scalar = function ($sql, $types = '', array $params = []) use ($run) {
     $row = array_values($r[0]);
     return (int) ($row[0] ?? 0);
 };
-// Does a table / column exist? (older databases may lack some optional columns)
 $meta_ok = function ($table, $col = null) use ($conn) {
     static $cache = [];
     $key = $table . '.' . ($col === null ? '' : $col);
@@ -110,16 +90,13 @@ $meta_ok = function ($table, $col = null) use ($conn) {
     }
     return $cache[$key];
 };
-// Identity of a patient row: patient_id, or the typed name for walk-ins (patient_id NULL).
 $pk = function ($alias, $table) use ($meta_ok) {
     return $meta_ok($table, 'patient_name')
         ? "COALESCE(CAST($alias.patient_id AS CHAR), CONCAT('n:', $alias.patient_name))"
         : "CAST($alias.patient_id AS CHAR)";
 };
 
-/* ------------------------------------------------------------------
    4. REPORT QUERY BUILDING BLOCKS (nothing runs until a branch calls it)
-   ------------------------------------------------------------------ */
 $visit_stats = function ($table, $alias, $date_col) use ($run, $pk, $P) {
     $k = $pk($alias, $table);
     $r = $run("SELECT COUNT(*) AS visits, COUNT(DISTINCT $k) AS patients FROM `$table` $alias
@@ -127,7 +104,6 @@ $visit_stats = function ($table, $alias, $date_col) use ($run, $pk, $P) {
     return ['visits' => (int) ($r[0]['visits'] ?? 0), 'patients' => (int) ($r[0]['patients'] ?? 0)];
 };
 
-// Free-text diagnosis / complaint sources. Each string needs the two range parameters.
 $dx_consult = "SELECT COALESCE(NULLIF(TRIM(c.diagnosis), ''), NULLIF(TRIM(c.chief_complaints), '')) AS txt
                FROM consultations c WHERE c.visit_date >= ? AND c.visit_date < ?";
 $dx_dental = function () use ($meta_ok) {
@@ -153,7 +129,6 @@ $top_texts = function (array $parts, $limit = 10) use ($run, $P) {
                  GROUP BY LOWER(TRIM(txt)) ORDER BY n DESC, label ASC LIMIT " . (int) $limit, $types, $params);
 };
 
-// Child immunization: vaccine date columns on the child record (+ the general immunization log).
 $vaccines = [
     'BCG' => 'bcg_date', 'Hepatitis B (within 24 hrs)' => 'hep_b_24hrs_date',
     'Penta/OPV 1' => 'penta_1_opv_1_date', 'Penta/OPV 2' => 'penta_2_opv_2_date', 'Penta/OPV 3' => 'penta_opv_3_date',
@@ -180,7 +155,6 @@ $child_doses = function () use ($run, $meta_ok, $vaccines, $P) {
     arsort($out);
     return $out;
 };
-// SQL returning one patient key (k) per child seen this month (vaccine, general vaccine log or child consult).
 $child_keys = function () use ($meta_ok, $pk, $vaccines, $P) {
     $conds = []; $types = ''; $params = [];
     foreach ($vaccines as $col) {
@@ -199,7 +173,6 @@ $child_keys = function () use ($meta_ok, $pk, $vaccines, $P) {
     return [$sql, $types, $params];
 };
 
-// Inventory: units originally received = remaining + dispensed + disposed (the table keeps only the remainder).
 $inv_parts = function () use ($meta_ok) {
     $joins = "LEFT JOIN (SELECT inventory_id, SUM(quantity) AS q FROM dispensations GROUP BY inventory_id) dq ON dq.inventory_id = i.id";
     $expr  = "(i.quantity + COALESCE(dq.q, 0)";
@@ -239,7 +212,7 @@ $inv_dispensed_rows = function () use ($run, $P) {
                  WHERE d.dispense_date >= ? AND d.dispense_date < ?
                  GROUP BY i.item_name ORDER BY units DESC, i.item_name ASC LIMIT 200", 'ss', $P);
 };
-$LOW_STOCK_THRESHOLD = 20;   // keep in step with admin/inventory.php
+$LOW_STOCK_THRESHOLD = 20;   
 $inv_low_rows = function () use ($run, $LOW_STOCK_THRESHOLD) {
     return $run("SELECT i.item_name, MIN(i.unit) AS unit, SUM(i.quantity) AS total
                  FROM inventory i WHERE i.status = 1
@@ -247,9 +220,7 @@ $inv_low_rows = function () use ($run, $LOW_STOCK_THRESHOLD) {
                  ORDER BY total ASC, i.item_name ASC", 'i', [$LOW_STOCK_THRESHOLD]);
 };
 
-/* ------------------------------------------------------------------
    5. RENDER HELPERS
-   ------------------------------------------------------------------ */
 $fmt = function ($v) use ($h) {
     return (is_int($v) || is_float($v)) ? number_format($v) : $h($v);
 };
@@ -261,7 +232,6 @@ $kpis = function (array $items) use ($h) {
     }
     echo '</div>';
 };
-// $numCols = zero-based column indexes to right-align.
 $tbl = function ($title, array $heads, array $rows, array $numCols = [], $note = '') use ($h, $fmt) {
     echo '<section class="mr-section print-avoid"><h3 class="mr-h">' . $h($title) . '</h3>';
     if ($note !== '') { echo '<p class="mr-note">' . $h($note) . '</p>'; }
@@ -282,23 +252,20 @@ $tbl = function ($title, array $heads, array $rows, array $numCols = [], $note =
     }
     echo '</tbody></table></div></section>';
 };
-$ranked = function (array $rows) {          // [label, n] rows -> [#, label, n]
+$ranked = function (array $rows) {          
     $out = []; $i = 0;
     foreach ($rows as $r) { $out[] = [++$i, $r['label'], (int) $r['n']]; }
     return $out;
 };
 $date_fmt = function ($d) { return $d ? date('M d, Y', strtotime($d)) : ''; };
 
-/* ------------------------------------------------------------------
-   6. PAGE
-   ------------------------------------------------------------------ */
 require_once __DIR__ . '/../includes/layout/layout.php';
 
 mh_layout_head([
     'title'           => 'Monthly Reports',
     'print_title'     => $module_title,
     'print_note'      => 'Period: ' . $period_label . ' | Scope: ' . $scope_label,
-    'external_styles' => ['../assets/css/print.css'],   // already print-only inside; harmless on screen
+    'external_styles' => ['../assets/css/print.css'],   
 ]);
 ?>
     <style>
@@ -324,7 +291,7 @@ mh_layout_head([
 
         <div class="dashboard-container">
 
-            <!-- Filter + print (never printed) -->
+            
             <div class="unified-panel mr-toolbar no-print">
                 <form method="get" class="mr-filter">
                     <div>
@@ -360,12 +327,8 @@ include 'includes/print_header.php';
                 </div>
 
 <?php
-/* ==================================================================
-   ROLE-SPECIFIC REPORT  (only the matching branch runs its queries)
-   ================================================================== */
 try {
 if ($scope === 'master') {
-    /* ---------- Admin / Health Head: everything ---------- */
     $gc  = $visit_stats('consultations', 'c', 'visit_date');
     $den = $visit_stats('dental_records', 'd', 'visit_date');
     $mat = $visit_stats('maternal_records', 'm', 'visit_date');
@@ -376,7 +339,6 @@ if ($scope === 'master') {
     $child_logs     = $scalar("SELECT COUNT(*) FROM child_consultation_logs WHERE consultation_date >= ? AND consultation_date < ?", 'ss', $P);
     $child_visits   = $child_logs + array_sum($doses);
 
-    // Unique patients across ALL departments (a person seen twice counts once).
     $parts = []; $types = ''; $params = [];
     foreach ([['consultations', 'c'], ['dental_records', 'd'], ['maternal_records', 'm']] as $src) {
         $parts[] = 'SELECT ' . $pk($src[1], $src[0]) . " AS k FROM `{$src[0]}` {$src[1]} WHERE {$src[1]}.visit_date >= ? AND {$src[1]}.visit_date < ?";
@@ -416,7 +378,6 @@ if ($scope === 'master') {
     ], [1]);
 
 } elseif ($scope === 'doctor') {
-    /* ---------- Doctor: General Consultation ---------- */
     $gc = $visit_stats('consultations', 'c', 'visit_date');
     $rx = $scalar("SELECT COUNT(*) FROM consultations WHERE visit_date >= ? AND visit_date < ? AND TRIM(COALESCE(prescription, '')) <> ''", 'ss', $P);
 
@@ -434,7 +395,6 @@ if ($scope === 'master') {
     $tbl('Treatments rendered: most common prescriptions', ['#', 'Prescription', 'Times given'], $ranked($rx_rows), [0, 2]);
 
 } elseif ($scope === 'dental') {
-    /* ---------- Dentist: Dental Clinic ---------- */
     $den = $visit_stats('dental_records', 'd', 'visit_date');
 
     $kpis([
@@ -450,7 +410,6 @@ if ($scope === 'master') {
     $tbl('Treatments rendered', ['#', 'Procedure', 'Times done'], $ranked($proc), [0, 2]);
 
 } elseif ($scope === 'midwife') {
-    /* ---------- Midwife: Maternal Care + Child Immunization ---------- */
     $mat = $visit_stats('maternal_records', 'm', 'visit_date');
     $mk  = $pk('m', 'maternal_records');
     $new_mothers = $scalar("SELECT COUNT(*) FROM (SELECT $mk AS k, MIN(m.visit_date) AS first_visit FROM maternal_records m
@@ -494,7 +453,6 @@ if ($scope === 'master') {
     $tbl('Vaccines administered', ['Vaccine', 'Doses given'], $dose_rows, [1]);
 
 } elseif ($scope === 'inventory') {
-    /* ---------- Inventory / Encoder: Medicine Inventory ---------- */
     $inv = $inv_totals();
     $low = $inv_low_rows();
 

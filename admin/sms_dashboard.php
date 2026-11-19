@@ -17,7 +17,7 @@ require_roles(['admin']);
 
 mh_check_module_enabled('sms_reminders');
 
-mh_sms_install($conn); // creates scheduled_sms / sms_logs on first visit
+mh_sms_install($conn); 
 
 $system_name = $system_name ?? mh_setting('system_name');
 
@@ -26,9 +26,6 @@ $user_role = $_SESSION['role'] ?? 'admin';
 
 $flash = null;
 
-/* =====================================================================
- * "RUN PENDING SMS QUEUE NOW" - the manual trigger for local testing
- * ================================================================== */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_queue_now'])) {
     $summary = mh_run_sms_queue($conn, 'manual', 200);
 
@@ -47,9 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_queue_now'])) {
         . ', sent ' . ($summary['sent'] ?? 0) . ', failed ' . ($summary['failed'] ?? 0) . '.');
 }
 
-/* =====================================================================
- * BALANCE CHECK (on demand, like the OCR "Test Connection" button)
- * ================================================================== */
+
 $active_provider        = mh_active_sms_provider();
 $semaphore_key_problem  = mh_sms_provider_problem();
 $balance = null;
@@ -57,9 +52,7 @@ if ($active_provider === 'semaphore' && $semaphore_key_problem === null && isset
     $balance = mh_semaphore_get_balance();
 }
 
-/* =====================================================================
- * DATA FOR THE PAGE
- * ================================================================== */
+
 $pending_count = 0;
 $r = $conn->query("SELECT COUNT(*) AS c FROM scheduled_sms WHERE status = 'pending'");
 if ($r) { $pending_count = (int) ($r->fetch_assoc()['c'] ?? 0); }

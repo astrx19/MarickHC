@@ -802,3 +802,137 @@ function mh_dental_snapshots(mysqli $conn, $patientId)
     }
     return $out;
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Paper "DENTAL RECORD" sheet (Marick Health Center's physical form)
+ * Header (Family No., Others, Member No.), patient block, Dental Findings, Remarks and the
+ * 4-column Dental Procedure History (Date | Procedure | Tooth No. | Remarks).
+ * Everything maps onto existing columns: patients.*, dental_charts.sectors / philhealth_no,
+ * dental_records.* and dental_treatments.*  (no schema change).
+ * ---------------------------------------------------------------------------------------------- */
+
+if (!function_exists('mh_dental_sheet_names')) {
+    /** Procedure labels as printed on the paper form (Oral Examination = "Routine Check-up", Tooth Extraction = "Extraction"). */
+    function mh_dental_sheet_names()
+    {
+        $all = mh_dental_routine_codes() + mh_dental_other_codes();
+        $all['OE']  = 'Routine Check-up';
+        $all['Exo'] = 'Extraction';
+        return $all;
+    }
+}
+
+if (!function_exists('mh_dental_sheet_info')) {
+    /**
+     * Patient + header block of the paper form. Family No. and Member No. come from the patient's record,
+     * "Others" is the list of sectors ticked on the dental profile (4Ps, IP, PWD, Senior Citizen, Solo Parent).
+     */
+    function mh_dental_sheet_info(mysqli $conn, $patientId)
+    {
+        $blank = ['name' => '', 'address' => '', 'contact' => '', 'birthday' => '', 'birthdate' => '', 'age' => '', 'sex' => '',
+                  'family_no' => '', 'member_no' => '', 'others' => ''];
+        $patientId = (int) $patientId;
+        if ($patientId <= 0) { return $blank; }
+        $st = $conn->prepare("SELECT p.first_name, p.middle_name, p.last_name, p.suffix, p.birthdate, p.sex, p.contact_number, p.address,
+                                     p.family_no, p.philhealth_no, c.philhealth_no AS chart_member_no, c.sectors
+                                FROM patients p LEFT JOIN dental_charts c ON c.patient_id = p.id
+                               WHERE p.id = ? LIMIT 1");
+        if (!$st) { return $blank; }
+        $st->bind_param('i', $patientId);
+        $st->execute();
+        $r = $st->get_result()->fetch_assoc();
+        $st->close();
+        if (!$r) { return $blank; }
+
+        $given = trim((string) $r['first_name'] . ' ' . (string) $r['middle_name']);
+        $name  = trim(strtoupper((string) $r['last_name']) . ($given !== '' ? ', ' . $given : '') . ((string) $r['suffix'] !== '' ? ' ' . $r['suffix'] : ''));
+
+        $age = ''; $bday = '';
+        if (!empty($r['birthdate']) && $r['birthdate'] !== '0000-00-00') {
+            try {
+                $age  = (string) (new DateTime($r['birthdate']))->diff(new DateTime('today'))->y;
+                $bday = date('m/d/Y', strtotime($r['birthdate']));
+            } catch (Exception $e) { }
+        }
+
+        $sectors = mh_dental_json_decode((string) ($r['sectors'] ?? ''));
+        $others = [];
+        foreach (mh_dental_sectors() as $k => $label) { if (!empty($sectors[$k])) { $others[] = $label; } }
+
+        $member = trim((string) ($r['chart_member_no'] ?? ''));
+        if ($member === '') { $member = trim((string) ($r['philhealth_no'] ?? '')); }
+
+        return [
+            'name' => $name, 'address' => trim((string) $r['address']), 'contact' => trim((string) $r['contact_number']),
+            'birthday' => $bday, 'birthdate' => (string) $r['birthdate'], 'age' => $age, 'sex' => (string) $r['sex'],
+            'family_no' => trim((string) $r['family_no']), 'member_no' => $member, 'others' => implode(', ', $others),
+        ];
+    }
+}
+
+if (!function_exists('mh_dental_history_rows')) {
+    /** The patient's Dental Procedure History, oldest first: one row per dental record (Date, Procedure, Tooth No., Remarks). */
+    function mh_dental_history_rows(mysqli $conn, $patientId, $limit = 300)
+    {
+        $patientId = (int) $patientId; $limit = max(1, (int) $limit);
+        $out = [];
+        $st = $conn->prepare("SELECT r.id, r.visit_date, r.procedure_done, r.tooth_number, r.notes, r.referral, t.routine_codes, t.other_codes
+                                FROM dental_records r LEFT JOIN dental_treatments t ON t.dental_record_id = r.id
+                               WHERE r.patient_id = ? ORDER BY r.visit_date ASC, r.id ASC LIMIT ?");
+        if (!$st) { return $out; }
+        $st->bind_param('ii', $patientId, $limit);
+        $st->execute();
+        $res = $st->get_result();
+        $names = mh_dental_sheet_names();
+        while ($r = $res->fetch_assoc()) {
+            $codes = array_values(array_filter(array_map('trim', explode(',', (string) ($r['routine_codes'] ?? '') . ',' . (string) ($r['other_codes'] ?? '')))));
+            $proc = [];
+            foreach ($codes as $c) { $proc[] = $names[$c] ?? $c; }
+            if (!$proc && !empty($r['procedure_done'])) { $proc[] = (string) $r['procedure_done']; }
+            $rem = trim((string) ($r['notes'] ?? ''));
+            if (!empty($r['referral'])) { $rem = trim($rem . ($rem !== '' ? ' ' : '') . 'Referral: ' . $r['referral']); }
+            $out[] = [
+                'id' => (int) $r['id'], 'date' => (string) $r['visit_date'],
+                'date_label' => $r['visit_date'] ? date('M d, Y', strtotime($r['visit_date'])) : '',
+                'procedure' => implode(', ', $proc),
+                'tooth' => str_replace(',', ', ', (string) ($r['tooth_number'] ?? '')),
+                'remarks' => $rem, 'codes' => $codes, 'notes' => (string) ($r['notes'] ?? ''),
+            ];
+        }
+        $st->close();
+        return $out;
+    }
+}
+
+if (!function_exists('mh_dental_clean_proc_rows')) {
+    /**
+     * Extra Procedure History rows typed into the form during a visit (prow_date[], prow_proc[], prow_tooth[], prow_remarks[]).
+     * Returns [rows, errors]. Each valid row is saved as its own dental record, the same way the OCR import does.
+     */
+    function mh_dental_clean_proc_rows($post)
+    {
+        $dates = (array) ($post['prow_date'] ?? []);   $procs = (array) ($post['prow_proc'] ?? []);
+        $teeth = (array) ($post['prow_tooth'] ?? []);  $rems  = (array) ($post['prow_remarks'] ?? []);
+        $routine = mh_dental_routine_codes(); $other = mh_dental_other_codes();
+        $validTeeth = array_map('strval', mh_dental_all_teeth());
+        $rows = []; $errors = [];
+        $n = min(20, max(count($dates), count($procs), count($teeth), count($rems)));
+        for ($i = 0; $i < $n; $i++) {
+            $d = trim((string) ($dates[$i] ?? '')); $p = trim((string) ($procs[$i] ?? ''));
+            $t = trim((string) ($teeth[$i] ?? ''));  $m = mh_dental_str($rems[$i] ?? '', 1000);
+            if ($d === '' && $p === '' && $t === '' && $m === '') { continue; }
+            $label = 'Procedure history row ' . ($i + 1) . ': ';
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || $d > date('Y-m-d') || $d < '1900-01-01') { $errors[] = $label . 'enter a valid date (not in the future).'; continue; }
+            if ($p !== '' && !isset($routine[$p]) && !isset($other[$p])) { $errors[] = $label . 'pick the procedure from the list.'; continue; }
+            if ($p === '' && $m === '') { $errors[] = $label . 'pick a procedure or write remarks.'; continue; }
+            $tokens = $t === '' ? [] : preg_split('/[\s,;\/]+/', $t, -1, PREG_SPLIT_NO_EMPTY);
+            $good = array_values(array_unique(array_filter($tokens, function ($x) use ($validTeeth) { return in_array($x, $validTeeth, true); })));
+            if (count($good) !== count(array_unique($tokens))) { $errors[] = $label . 'tooth numbers must be valid (for example 16, 17 or 55).'; continue; }
+            $rows[] = [
+                'date' => $d, 'routine' => isset($routine[$p]) ? [$p] : [], 'other' => isset($other[$p]) ? [$p] : [],
+                'teeth' => implode(',', $good), 'remarks' => $m,
+            ];
+        }
+        return [$rows, $errors];
+    }
+}
