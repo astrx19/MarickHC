@@ -289,8 +289,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         .btn-dispense:hover { background: #a7f3d0; }
         .btn-dispense.disabled { opacity: 0.5; pointer-events: none; }
         html[data-theme="dark"] .btn-dispense { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.4); }
-        .btn-add-batch { background: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-color, #cbd5e1); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.8rem; white-space: nowrap; }
-        .btn-add-batch:hover { border-color: var(--primary); color: var(--primary); }
         .empty-state td { padding: 48px 16px; text-align: center; color: var(--text-muted); font-size: 0.95rem; }
         .batch-toggle-container { display: flex; gap: 10px; font-weight: normal; font-size: 0.8rem; }
         .batch-toggle-container label { cursor: pointer; display: flex; align-items: center; gap: 3px; margin: 0; color: #475569; }
@@ -550,51 +548,41 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 </div>
 
                 <div id="disposeGroup" style="display:none;">
-                    <div id="disposeNote" class="alert alert-warn" style="padding:10px 12px; margin-bottom: 14px; font-size:.88rem;"></div>
+                    <div class="form-group" style="margin-bottom: 12px;" id="adjustAmountGroup">
+                        <label id="disposeAmountLabel">Quantity to dispose <span style="color:red;">*</span></label>
+                        <div style="display:flex; gap:8px;">
+                            <input type="number" name="amount" id="adjustAmountInput" min="1" step="1" inputmode="numeric" placeholder="Quantity...">
+                            <button type="button" class="btn-secondary btn-sm" onclick="disposeAll()" style="white-space:nowrap;">Dispose All</button>
+                        </div>
+                    </div>
 
                     <div class="form-group" style="margin-bottom: 12px;">
-                        <label>Type of stock <span style="color:red;">*</span></label>
-                        <select name="item_form" id="disposeForm" onchange="updateDisposeLabels()">
-                            <?php foreach (mh_disp_forms() as $k => $lbl): ?><option value="<?php echo $k; ?>"><?php echo htmlspecialchars($lbl); ?></option><?php endforeach; ?>
+                        <label>Reason <span style="color:red;">*</span></label>
+                        <select name="reason" id="disposeReason" onchange="onDisposeReasonChange()">
+                            <option value="expired">Expired</option>
+                            <option value="near_expiry">Near Expiry &mdash; Return to MHO</option>
+                            <option value="damaged">Damaged</option>
                         </select>
                     </div>
 
-                    <div class="form-group" style="margin-bottom: 12px;" id="adjustAmountGroup">
-                        <label id="disposeAmountLabel">Amount to dispose <span style="color:red;">*</span></label>
-                        <div style="display:flex; gap:8px;">
-                            <input type="number" name="amount" id="adjustAmountInput" min="1" step="1" placeholder="Base units...">
-                            <button type="button" class="btn-secondary btn-sm" onclick="disposeAll()" style="white-space:nowrap;">Dispose all</button>
-                        </div>
-                        <div class="packaging-config-box" style="margin: 10px 0 0;">
-                            <label style="font-size: 0.8rem; color: var(--primary); margin-bottom: 8px; display: block; font-weight: bold;">Optional calculator</label>
-                            <div class="packaging-grid" style="grid-template-columns: 1fr 1fr 1fr;">
-                                <div class="form-group"><label id="upd_box_qty_label" style="font-size:0.72rem;">Boxes</label>
-                                    <input type="number" id="upd_box_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" onchange="calcUpdTotal()"></div>
-                                <div class="form-group"><label id="upd_pack_qty_label" style="font-size:0.72rem;">Packs</label>
-                                    <input type="number" id="upd_pack_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" onchange="calcUpdTotal()"></div>
-                                <div class="form-group"><label style="font-size:0.72rem;">Loose Units</label>
-                                    <input type="number" id="upd_loose_qty" placeholder="0" min="0" onkeyup="calcUpdTotal()" onchange="calcUpdTotal()"></div>
-                            </div>
-                            <div class="packaging-total-readout" id="upd_total_readout" style="margin-top: 8px;">Disposes: <strong>0</strong> base units</div>
-                        </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label>Disposal Method <span style="color:red;">*</span></label>
+                        <select name="method" id="disposeMethod">
+                            <option value="Returned to MHO / Supplier">Returned to MHO / Supplier</option>
+                            <option value="Biohazard / Proper Disposal">Biohazard / Proper Disposal</option>
+                            <option value="Other">Other</option>
+                        </select>
                     </div>
 
-                    <div class="form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-                        <div class="form-group"><label>Reason <span style="color:red;">*</span></label>
-                            <select name="reason" id="disposeReason" onchange="updateDisposeLabels()">
-                                <?php foreach (mh_disp_reasons() as $k => $lbl): ?><option value="<?php echo $k; ?>"><?php echo htmlspecialchars($lbl); ?></option><?php endforeach; ?>
-                            </select></div>
-                        <div class="form-group"><label>Date disposed <span style="color:red;">*</span></label>
-                            <input type="date" name="disposed_on" id="disposeDate" value="<?php echo date('Y-m-d'); ?>" max="<?php echo date('Y-m-d'); ?>"></div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label>Date disposed <span style="color:red;">*</span></label>
+                        <input type="date" name="disposed_on" id="disposeDate" value="<?php echo date('Y-m-d'); ?>" max="<?php echo date('Y-m-d'); ?>">
                     </div>
-                    <div class="form-group"><label>How was it disposed? <span style="color:red;">*</span></label>
-                        <select name="method" id="disposeMethod">
-                            <?php foreach (mh_disp_methods() as $k => $lbl): ?><option value="<?php echo htmlspecialchars($k); ?>"><?php echo htmlspecialchars($lbl); ?></option><?php endforeach; ?>
-                        </select></div>
-                    <div class="form-group"><label>Witnessed by <small class="field-hint" style="display:inline;">(optional)</small></label>
-                        <input type="text" name="witness" id="disposeWitness" maxlength="100" placeholder="Name of the witness / receiving person"></div>
-                    <div class="form-group"><label>Remarks <small class="field-hint" style="display:inline;" id="disposeRemarksHint">(optional)</small></label>
-                        <textarea name="remarks" id="disposeRemarks" rows="2" maxlength="500" placeholder="Anything the audit should know"></textarea></div>
+
+                    <div class="form-group">
+                        <label>Remarks <small class="field-hint" style="display:inline;">(optional)</small></label>
+                        <textarea name="remarks" id="disposeRemarks" rows="2" maxlength="500" placeholder="Anything the audit should know"></textarea>
+                    </div>
                 </div>
 
                 <div class="form-group" id="editExpiryGroup" style="display: none; margin-bottom: 20px;">
@@ -637,7 +625,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                     <div class="form-group">
                         <label>Category <span style="color:red;">*</span></label>
-                        <select name="category" id="editCategorySelect" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <select name="category" id="editCategorySelect" required onchange="applyEditCategoryMode()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                             <?php foreach($inv_categories as $cat): ?>
                                 <option value="<?php echo htmlspecialchars($cat); ?>"><?php echo htmlspecialchars($cat); ?></option>
                             <?php endforeach; ?>
@@ -661,30 +649,27 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                 </div>
 
                 <div class="form-group packaging-config-box" style="grid-column: 1 / -1;">
-                    <label class="section-label"><?php echo mh_icon('package'); ?> Packaging Structure</label>
-                    <div class="packaging-grid">
-                        <div class="form-group">
-                            <label>Box Label</label>
-                            <input type="text" name="box_label" id="editBoxLabel" data-autofix="label" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                    <input type="hidden" id="edit_mode" value="">
+                    <input type="hidden" name="box_label" id="editBoxLabel" value="Box">
+                    <input type="hidden" name="pack_label" id="editPackLabel" value="Blister">
+
+                    <label class="section-label"><?php echo mh_icon('package'); ?> How is it packed?</label>
+                    <div id="edit_cfg_row" class="packaging-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="form-group" id="edit_g_ppb">
+                            <label id="edit_ppb_label">Blisters per Box</label>
+                            <input type="number" name="packs_per_box" id="editPacksPerBox" data-autofix="int" data-max="10000" inputmode="numeric" min="1" placeholder="e.g., 10" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                         </div>
-                        <div class="form-group">
-                            <label>Packs per Box</label>
-                            <input type="number" name="packs_per_box" id="editPacksPerBox" data-autofix="int" data-max="10000" inputmode="numeric" min="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
-                        <div class="form-group">
-                            <label>Pack Label</label>
-                            <input type="text" name="pack_label" id="editPackLabel" data-autofix="label" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
-                        </div>
-                        <div class="form-group">
-                            <label>Base Units per Pack</label>
-                            <input type="number" name="units_per_pack" id="editUnitsPerPack" data-autofix="int" data-max="10000" inputmode="numeric" min="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                        <div class="form-group" id="edit_g_upp">
+                            <label id="edit_upp_label">Tablets per Blister</label>
+                            <input type="number" name="units_per_pack" id="editUnitsPerPack" data-autofix="int" data-max="10000" inputmode="numeric" min="1" placeholder="e.g., 10" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                         </div>
                     </div>
+                    <div id="edit_single_note" style="display: none; font-size: 0.85rem; color: var(--text-muted);">This category is counted as single items, so there are no packaging fields to set.</div>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 20px;">
                     <label>Base Unit <span style="color:red;">*</span></label>
-                    <input type="text" name="unit" id="editUnitInput" data-autofix="unit" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
+                    <input type="text" name="unit" id="editUnitInput" data-autofix="unit" required oninput="syncEditLabels()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #cbd5e1);">
                 </div>
 
                 <button type="submit" name="edit_item" data-confirm="Save changes to this item?" data-confirm-title="Save changes?" data-confirm-type="warning" data-confirm-ok="Save" class="btn-submit" style="width: 100%; padding: 15px; font-size: 1.1rem; background: var(--primary); border:none; color:white; border-radius:6px; cursor:pointer; font-weight:bold;">Save Batch Details</button>
@@ -967,7 +952,7 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                     <td><span class="status-pill ${b.statusClass}">${b.label}</span></td>
                     <td class="no-print">
                         <div class="action-btn-group">
-                            ${MH_CAN_EDIT_STOCK ? `${b.isExpired && b.quantity > 0 ? `<button class="btn-manage" style="background:#b91c1c;color:#fff;" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id], 'dispose')">${mhIconSvg('archive')} Dispose</button>` : `<button class="btn-manage" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('package')} Manage</button>`}
+                            ${MH_CAN_EDIT_STOCK ? `${(b.isExpired || b.isNear) && b.quantity > 0 ? `<button class="btn-manage" style="background:#b91c1c;color:#fff;" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id], 'dispose')">${mhIconSvg('archive')} Dispose</button>` : `<button class="btn-manage" data-id="${b.id}" onclick="openUpdateModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('package')} Manage</button>`}
                             <button class="btn-icon icon-edit" data-id="${b.id}" title="Edit Batch" onclick="openEditBatchModal(BATCH_BY_ID[this.dataset.id])">${mhIconSvg('edit')}</button>
                             <button class="btn-icon icon-delete" data-id="${b.id}" data-name="${escapeHtml(modalName)}" title="Archive Batch" onclick="archiveBatchQuick(this.dataset.id, this.dataset.name)">${mhIconSvg('archive')}</button>` : ''}
                         </div>
@@ -1022,12 +1007,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
                     <td><span class="status-pill ${group.statusClass}">${group.label}</span></td>
                     <td class="no-print" onclick="event.stopPropagation();">
                         <div class="action-btn-group">
-                            ${MH_CAN_EDIT_STOCK ? `<button class="btn-add-batch"
-                                data-item-name="${escapeHtml(group.generic_name)}"
-                                data-category="${escapeHtml(group.category)}"
-                                data-unit="${escapeHtml(group.unit)}"
-                                data-sample-id="${group.samplePackagingId || ''}"
-                                onclick="openAddBatchModal(Object.assign({item_name: this.dataset.itemName, category: this.dataset.category, unit: this.dataset.unit}, BATCH_BY_ID[this.dataset.sampleId] || {}))">${mhIconSvg('package')} Add Batch</button>` : ''}
                             ${MH_CAN_DISPENSE ? `<a class="btn-dispense ${dispenseDisabled}" href="${dispenseHref}" title="${group.fefoBatchId ? 'Dispense the earliest-expiring batch first' : 'No dispensable stock'}">Dispense</a>` : ''}
                             <button class="btn-manage" data-key="${escapeHtml(group.key)}" onclick="toggleGroup(this.dataset.key, event)">${isExpanded ? 'Hide' : 'Manage'} Batches</button>
                         </div>
@@ -1248,41 +1227,16 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
         }
 
         function updateDisposeLabels() {
-            var form = document.getElementById('disposeForm').value;
             var unit = document.getElementById('modalUnit').innerText || 'units';
-            var label = {liquid: 'Volume to dispose', capsule: 'Capsules / tablets to dispose', piece: 'Pieces to dispose'}[form] || 'Amount to dispose';
-            document.getElementById('disposeAmountLabel').innerHTML = label + ' (in ' + escapeHtml(unit) + ') <span style="color:red;">*</span>';
-            var reason = document.getElementById('disposeReason').value;
-            var needText = (reason === 'damaged' || reason === 'other');
-            document.getElementById('disposeRemarks').toggleAttribute('required', needText);
-            document.getElementById('disposeRemarksHint').innerText = needText ? '(required - explain briefly)' : '(optional)';
-            var b = window._disposeBatch;
-            if (b) {
-                var expired = b.expiry_date && b.expiry_date < new Date().toISOString().slice(0, 10);
-                var note = document.getElementById('disposeNote');
-                note.innerHTML = '<strong>' + escapeHtml(b.item_name) + '</strong> - ' + Number(b.quantity).toLocaleString() + ' ' + escapeHtml(b.unit) + ' in this batch. '
-                    + (b.expiry_date ? (expired ? 'It <strong>expired on ' + escapeHtml(b.expiry_date) + '</strong>.' : 'It has not expired yet (' + escapeHtml(b.expiry_date) + '), so use "Damaged", "Recalled" or "Other".') : 'No expiry date is recorded.');
-            }
+            document.getElementById('disposeAmountLabel').innerHTML = 'Quantity to dispose (in ' + escapeHtml(unit) + ') <span style="color:red;">*</span>';
+        }
+        function onDisposeReasonChange() {
+            var r = document.getElementById('disposeReason').value;
+            document.getElementById('disposeMethod').value = (r === 'near_expiry') ? 'Returned to MHO / Supplier' : 'Biohazard / Proper Disposal';
         }
         function disposeAll() {
             var b = window._disposeBatch; if (!b) { return; }
             document.getElementById('adjustAmountInput').value = b.quantity;
-            document.getElementById('upd_total_readout').innerHTML = 'Disposes: <strong>' + Number(b.quantity).toLocaleString() + '</strong> base units';
-        }
-
-        function calcUpdTotal() {
-            var packsPerBox = window._updPacksPerBox || 0;
-            var unitsPerPack = window._updUnitsPerPack || 0;
-            var boxQty = parseInt(document.getElementById('upd_box_qty').value) || 0;
-            var packQty = parseInt(document.getElementById('upd_pack_qty').value) || 0;
-            var looseQty = parseInt(document.getElementById('upd_loose_qty').value) || 0;
-            var total = looseQty;
-            if (unitsPerPack > 0) {
-                total += packQty * unitsPerPack;
-                if (packsPerBox > 0) total += boxQty * packsPerBox * unitsPerPack;
-            }
-            document.getElementById('adjustAmountInput').value = total > 0 ? total : '';
-            document.getElementById('upd_total_readout').innerHTML = 'Disposes: <strong>' + total.toLocaleString() + '</strong> base units';
         }
 
         function openModal(id) { document.getElementById(id).classList.add('active'); }
@@ -1623,24 +1577,6 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             openModal('addItemModal');
         }
 
-        function openAddBatchModal(prefill) {
-            resetAddItemForm();
-            document.getElementById('itemNameInput').value = prefill.item_name || '';
-            document.getElementById('unitInput').value = prefill.unit || 'pcs';
-            if (prefill.category) {
-                document.getElementById('categorySelect').value = prefill.category;
-                generateTrackingCode();
-            }
-            
-            if (prefill.units_per_pack) document.getElementById('add_units_per_pack').value = prefill.units_per_pack;
-            if (prefill.packs_per_box) document.getElementById('add_packs_per_box').value = prefill.packs_per_box;
-            syncAddLabels();
-            calcAddTotal();
-            document.getElementById('addItemModalTitle').innerText = 'Add Batch — ' + (prefill.item_name || '');
-            document.getElementById('brandNameInput').focus();
-            openModal('addItemModal');
-        }
-
         function openUpdateModal(batch, preset) {
             document.getElementById('modalItemId').value = batch.id;
             document.getElementById('modalItemNameHidden').value = batch.item_name + (batch.brand_name ? ' (' + batch.brand_name + ')' : '');
@@ -1649,28 +1585,55 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             document.getElementById('modalUnit').innerText = batch.unit;
             document.getElementById('modalBatchNo').innerText = batch.tracking_code || 'N/A';
 
-            var isExpired = batch.expiry_date && batch.expiry_date < new Date().toISOString().slice(0, 10);
+            var todayStr = new Date().toISOString().slice(0, 10);
+            var isExpired = !!(batch.expiry_date && batch.expiry_date < todayStr);
+            var daysLeft = batch.expiry_date ? Math.round((new Date(batch.expiry_date) - new Date(todayStr)) / 86400000) : null;
+            var isNearBatch = !isExpired && daysLeft !== null && daysLeft <= NEAR_EXPIRY_DAYS_DEFAULT;
             document.getElementById('stockAction').value = preset || (isExpired && batch.quantity > 0 ? 'dispose' : 'edit_expiry');
             window._disposeBatch = batch;
-            var guess = {liquid: /\b(ml|l|liter|litre|bottles?|vials?|ampou?les?|sachets?)\b/i, capsule: /\b(caps?|capsules?|tabs?|tablets?|pills?)\b/i};
-            document.getElementById('disposeForm').value = guess.liquid.test(batch.unit || '') ? 'liquid' : (guess.capsule.test(batch.unit || '') ? 'capsule' : 'piece');
-            document.getElementById('disposeReason').value = isExpired ? 'expired' : 'damaged';
-            document.getElementById('disposeDate').value = new Date().toISOString().slice(0, 10);
-            ['disposeWitness', 'disposeRemarks'].forEach(function (id) { document.getElementById(id).value = ''; });
+
+            var reasonSel = document.getElementById('disposeReason');
+            Array.prototype.forEach.call(reasonSel.options, function (o) {
+                o.disabled = (o.value === 'expired' && !isExpired) || (o.value === 'near_expiry' && (isExpired || !batch.expiry_date));
+            });
+            reasonSel.value = isExpired ? 'expired' : (isNearBatch ? 'near_expiry' : 'damaged');
+            onDisposeReasonChange();
+            document.getElementById('disposeDate').value = todayStr;
+            document.getElementById('disposeRemarks').value = '';
             document.getElementById('adjustAmountInput').max = batch.quantity;
-
-            window._updUnitsPerPack = batch.units_per_pack || 0;
-            window._updPacksPerBox = batch.packs_per_box || 0;
-            document.getElementById('upd_box_qty_label').innerText = (batch.box_label || 'Box') + 's';
-            document.getElementById('upd_pack_qty_label').innerText = (batch.pack_label || 'Pack') + 's';
-            document.getElementById('upd_box_qty').value = '';
-            document.getElementById('upd_pack_qty').value = '';
-            document.getElementById('upd_loose_qty').value = '';
             document.getElementById('adjustAmountInput').value = '';
-            document.getElementById('upd_total_readout').innerHTML = 'Disposes: <strong>0</strong> base units';
 
-            toggleStockAction(); 
+            toggleStockAction();
             openModal('updateStockModal');
+        }
+
+        function setEditMode(mode, keepValues) {
+            var prev = document.getElementById('edit_mode').value;
+            if (!keepValues && prev !== '' && prev !== mode) {
+                document.getElementById('editPacksPerBox').value = '';
+                document.getElementById('editUnitsPerPack').value = '';
+            }
+            document.getElementById('edit_mode').value = mode;
+            var blister = mode === 'blister', boxes = mode === 'boxes';
+            show('edit_cfg_row', blister || boxes);
+            show('edit_g_ppb', blister); show('edit_g_upp', blister || boxes);
+            show('edit_single_note', !blister && !boxes);
+            enable('editPacksPerBox', blister); enable('editUnitsPerPack', blister || boxes);
+            if (!blister) { document.getElementById('editPacksPerBox').value = ''; }
+            if (!blister && !boxes) { document.getElementById('editUnitsPerPack').value = ''; }
+            document.getElementById('editBoxLabel').value = 'Box';
+            document.getElementById('editPackLabel').value = blister ? 'Blister' : 'Box';
+            document.getElementById('edit_cfg_row').style.gridTemplateColumns = blister ? '1fr 1fr' : '1fr';
+            syncEditLabels();
+        }
+
+        function applyEditCategoryMode() { setEditMode(categoryMode(document.getElementById('editCategorySelect').value), false); }
+
+        function syncEditLabels() {
+            var mode = document.getElementById('edit_mode').value;
+            var u = (document.getElementById('editUnitInput').value || '').trim() || 'pcs';
+            var noun = (u === 'pcs' || u === 'tablets') ? 'Tablets' : u.charAt(0).toUpperCase() + u.slice(1);
+            document.getElementById('edit_upp_label').innerText = mode === 'blister' ? noun + ' per Blister' : 'Pieces per Box';
         }
 
         function openEditBatchModal(batch) {
@@ -1683,10 +1646,10 @@ mh_layout_head(['title' => 'Supply Masterlist', 'print_title' => 'Medicine Inven
             document.getElementById('editBatchNumberInput').value = batch.batch_number || '';
             document.getElementById('editExpiryDateInput').value = batch.expiry_date || '';
             document.getElementById('editUnitInput').value = batch.unit || '';
-            document.getElementById('editBoxLabel').value = batch.box_label || 'Box';
-            document.getElementById('editPackLabel').value = batch.pack_label || 'Blister Pack';
             document.getElementById('editPacksPerBox').value = batch.packs_per_box || '';
             document.getElementById('editUnitsPerPack').value = batch.units_per_pack || '';
+            document.getElementById('edit_mode').value = '';
+            setEditMode(categoryMode(batch.category || ''), true);
             openModal('editBatchModal');
         }
 

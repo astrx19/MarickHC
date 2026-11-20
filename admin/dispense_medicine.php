@@ -40,6 +40,67 @@ function mh_staff_has_status(mysqli $conn): bool
     return $r && $r->num_rows > 0;
 }
 
+/**
+ * Latest prescriptions for the dispensing screen (RA 10173: ONLY the prescription text,
+ * the prescriber's name/role and the visit date leave the database. Diagnosis,
+ * complaints and clinical notes are deliberately never selected.)
+ * Maternal records have no prescription field, so they are not part of this card.
+ */
+function mh_dispense_latest_rx(mysqli $conn, $patientId): array
+{
+    $patientId = (int) $patientId;
+    $items = [];
+    if ($patientId <= 0) { return $items; }
+
+    $sources = [
+        ['table' => 'consultations', 'by' => 'doctor_id',  'label' => 'Consultation'],
+        ['table' => 'dental_records', 'by' => 'dentist_id', 'label' => 'Dental'],
+    ];
+    foreach ($sources as $src) {
+        try {
+            $col = $conn->query("SHOW COLUMNS FROM `{$src['table']}` LIKE 'prescription'");
+            if (!$col || $col->num_rows === 0) { continue; }
+            $st = $conn->prepare(
+                "SELECT r.id, r.visit_date, r.created_at, r.prescription AS rx, s.first_name, s.last_name, s.role
+                   FROM `{$src['table']}` r
+                   LEFT JOIN staff s ON s.id = r.`{$src['by']}`
+                  WHERE r.patient_id = ? AND TRIM(COALESCE(r.prescription, '')) <> ''
+                  ORDER BY r.visit_date DESC, r.id DESC LIMIT 3"
+            );
+            if (!$st) { continue; }
+            $st->bind_param('i', $patientId);
+            $st->execute();
+            $res = $st->get_result();
+            while ($r = $res->fetch_assoc()) {
+                $name = trim(($r['first_name'] ?? '') . ' ' . ($r['last_name'] ?? ''));
+                $items[] = [
+                    'source'     => $src['label'],
+                    'rx'         => trim((string) $r['rx']),
+                    'prescriber' => $name !== '' ? $name : 'Unknown staff',
+                    'role'       => ucfirst((string) ($r['role'] ?? '')),
+                    'date'       => $r['visit_date'],
+                    'date_label' => $r['visit_date'] ? date('M j, Y', strtotime($r['visit_date'])) : '',
+                    'is_today'   => ($r['visit_date'] === date('Y-m-d')),
+                    '_sort'      => $r['visit_date'] . ' ' . str_pad((string) $r['id'], 10, '0', STR_PAD_LEFT),
+                ];
+            }
+            $st->close();
+        } catch (Throwable $e) { error_log('mh_dispense_latest_rx: ' . $e->getMessage()); }
+    }
+    usort($items, fn($a, $b) => strcmp($b['_sort'], $a['_sort']));
+    $items = array_slice($items, 0, 3);
+    foreach ($items as &$it) { unset($it['_sort']); }
+    unset($it);
+    return $items;
+}
+
+if ($can_dispense && isset($_GET['rx_patient'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode(mh_dispense_latest_rx($conn, (int) $_GET['rx_patient']));
+    exit;
+}
+
 if (!empty($_SESSION['dispense_flash'])) {
     $success_msg = (string) $_SESSION['dispense_flash'];
     unset($_SESSION['dispense_flash']);
@@ -555,7 +616,24 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                         <?php if ($queue_ctx): ?>
                             <input type="hidden" name="apt_id" value="<?php echo (int) $queue_ctx['id']; ?>">
                             <?php mh_queue_render_banner($queue_ctx, $queue_label, false); ?>
+                            <div id="rxCard"></div>
                         <?php endif; ?>
+                        <style>
+                            .rx-card { border:1px solid #f59e0b; border-left-width:5px; background:rgba(245,158,11,.10); border-radius:8px; padding:12px 14px; margin:0 0 15px; font-size:.88rem; line-height:1.5; }
+                            .rx-card h4 { margin:0 0 8px; font-size:.95rem; display:flex; align-items:center; gap:6px; }
+                            .rx-badge { display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:20px; background:#f59e0b; color:#fff; }
+                            .rx-badge.today { background:#10b981; }
+                            .rx-text { white-space:pre-wrap; word-break:break-word; font-weight:600; padding:8px 10px; border-radius:6px; background:rgba(255,255,255,.55); border:1px dashed #f59e0b; margin:6px 0; color:#1e293b; }
+                            .rx-text mark { background:#fde68a; color:#78350f; padding:0 2px; border-radius:3px; }
+                            .rx-meta { opacity:.85; font-size:.8rem; }
+                            .rx-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+                            .rx-chip { border:1px solid #10b981; background:#ecfdf5; color:#047857; border-radius:20px; padding:5px 12px; font-size:.8rem; font-weight:700; cursor:pointer; }
+                            .rx-chip:hover { background:#10b981; color:#fff; }
+                            .rx-none { font-size:.8rem; opacity:.85; margin-top:8px; }
+                            .rx-older { margin-top:10px; border-top:1px dashed #f59e0b; padding-top:8px; }
+                            .rx-older summary { cursor:pointer; font-size:.8rem; font-weight:700; }
+                            .rx-empty { border:1px dashed #cbd5e1; border-radius:8px; padding:10px 12px; margin:0 0 15px; font-size:.82rem; opacity:.85; }
+                        </style>
                         <?php echo mh_csrf_field(); ?>
                         <input type="hidden" name="dispense_item" value="1">
                         <input type="hidden" id="selectedBatchId">   <?php ?>
@@ -622,6 +700,8 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
                                 ?>
                             </select>
                         </div>
+
+                        <?php if (!$queue_ctx): ?><div id="rxCard"></div><?php endif; ?>
 
                         <?php if ($staff_issue_ready): ?>
                         <div class="form-group" id="staffGroup" style="margin-bottom: 15px; display: none;">
@@ -967,6 +1047,7 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             document.getElementById('recipientType').value = mode;
             document.querySelectorAll('.recipient-toggle button').forEach(b => b.classList.toggle('active', b.dataset.recipient === mode));
             document.getElementById('patientGroup').style.display = staff ? 'none' : '';
+            const rxBox = document.getElementById('rxCard'); if (rxBox) { rxBox.style.display = staff ? 'none' : ''; }
             document.getElementById('staffGroup').style.display = staff ? '' : 'none';
             $('#patientSelect').prop('disabled', staff);
             $('#staffSelect').prop('disabled', !staff);
@@ -994,8 +1075,76 @@ mh_layout_head(['title' => 'Dispense Medicine', 'external_styles' => ['https://c
             if (o.patient_id && o.recipient_type !== 'staff') { $('#patientSelect').val(String(o.patient_id)).trigger('change'); }
         }
 
+        // ---- Latest Prescription card (prescription text only; no diagnosis / clinical notes) ----
+        let rxToken = 0;
+        function rxEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+        function rxTerms(g) {
+            const terms = [];
+            const first = w => { const m = String(w || '').toLowerCase().match(/[a-z]{4,}/); return m ? m[0] : null; };
+            const a = first(g.item_name); if (a) terms.push(a);
+            if (g.brand_name && g.brand_name !== 'Generic') { const b = first(g.brand_name); if (b && terms.indexOf(b) === -1) terms.push(b); }
+            return terms;
+        }
+        function rxMatches(text) {
+            const low = String(text || '').toLowerCase();
+            return MEDICINE_GROUPS.map(g => ({ g: g, hit: rxTerms(g).filter(t => new RegExp('\\b' + t).test(low)) })).filter(x => x.hit.length);
+        }
+        function rxHighlight(text, matches) {
+            let html = rxEsc(text);
+            const terms = []; matches.forEach(m => m.hit.forEach(t => { if (terms.indexOf(t) === -1) terms.push(t); }));
+            terms.forEach(t => { html = html.replace(new RegExp('(\\b' + t + '[a-z]*)', 'gi'), '<mark>$1</mark>'); });
+            return html;
+        }
+        function rxItemHtml(it, withChips) {
+            const matches = rxMatches(it.rx);
+            let h = '<div class="rx-text">' + rxHighlight(it.rx, matches) + '</div>';
+            h += '<div class="rx-meta">Prescribed by <strong>' + rxEsc(it.prescriber) + '</strong>' + (it.role ? ' (' + rxEsc(it.role) + ')' : '')
+               + ' &middot; ' + rxEsc(it.date_label) + ' &middot; ' + rxEsc(it.source) + '</div>';
+            if (withChips) {
+                if (matches.length) {
+                    h += '<div class="rx-chips">' + matches.map(m => '<button type="button" class="rx-chip" data-key="' + rxEsc(m.g.key) + '">Select ' + rxEsc(m.g.item_name) + (m.g.brand_name !== 'Generic' ? ' (' + rxEsc(m.g.brand_name) + ')' : '') + '</button>').join('') + '</div>';
+                } else {
+                    h += '<div class="rx-none">No stocked item matched this text automatically &mdash; search the medicine in the list below.</div>';
+                }
+            }
+            return h;
+        }
+        function renderRx(items) {
+            const box = document.getElementById('rxCard');
+            if (!box) return;
+            if (!items || !items.length) {
+                box.innerHTML = '<div class="rx-empty">No prescription on file for this patient. Dispense only if you have an order from the doctor or staff.</div>';
+                return;
+            }
+            const top = items[0];
+            let h = '<div class="rx-card"><h4>Latest Prescription <span class="rx-badge' + (top.is_today ? ' today' : '') + '">' + (top.is_today ? 'Today' : rxEsc(top.date_label)) + '</span></h4>' + rxItemHtml(top, true);
+            if (items.length > 1) {
+                h += '<details class="rx-older"><summary>Earlier prescriptions (' + (items.length - 1) + ')</summary>';
+                items.slice(1).forEach(it => { h += rxItemHtml(it, false) + '<div style="height:8px"></div>'; });
+                h += '</details>';
+            }
+            h += '</div>';
+            box.innerHTML = h;
+            box.querySelectorAll('.rx-chip').forEach(btn => btn.addEventListener('click', function () {
+                $('#medicineSelect').val(this.dataset.key).trigger('change');
+                const bw = document.getElementById('batchSelectWrap'); if (bw) { bw.scrollIntoView({behavior: 'smooth', block: 'center'}); }
+            }));
+        }
+        function loadRx(patientId) {
+            const box = document.getElementById('rxCard');
+            if (!box) return;
+            const myToken = ++rxToken;
+            if (!patientId) { box.innerHTML = ''; return; }
+            box.innerHTML = '<div class="rx-empty">Loading latest prescription&hellip;</div>';
+            fetch(window.location.pathname + '?rx_patient=' + encodeURIComponent(patientId), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(r => r.ok ? r.json() : [])
+                .then(items => { if (myToken === rxToken) { renderRx(items); } })
+                .catch(() => { if (myToken === rxToken) { box.innerHTML = ''; } });
+        }
+
         window.onload = function() {
             mhSelect2('#patientSelect', { placeholder: 'Search by name or ID...' });
+            $('#patientSelect').on('change', function () { loadRx($(this).val()); });
             <?php if ($queue_patient_id > 0): ?>
             $('#patientSelect').val('<?php echo (int) $queue_patient_id; ?>').trigger('change');   
             <?php endif; ?>

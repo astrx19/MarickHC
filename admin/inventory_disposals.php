@@ -99,7 +99,7 @@ mh_layout_head(['title' => 'Disposal History', 'print_title' => 'Disposal Histor
                     <?php endif; ?>
                     <?php foreach ($rows as $r):
                         $by = trim(($r['s_first'] ?? '') . ' ' . ($r['s_last'] ?? ''));
-                        $reason_class = ['expired' => 'mh-badge-danger', 'damaged' => 'mh-badge-warning', 'recalled' => 'mh-badge-warning', 'other' => ''][$r['reason']] ?? '';
+                        $reason_class = ['expired' => 'mh-badge-danger', 'near_expiry' => 'mh-badge-warning', 'damaged' => 'mh-badge-warning', 'recalled' => 'mh-badge-warning', 'other' => ''][$r['reason']] ?? '';
                     ?>
                         <tr>
                             <td style="white-space:nowrap;"><?php echo $h(date('M d, Y', strtotime($r['disposed_on']))); ?></td>

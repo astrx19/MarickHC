@@ -8,11 +8,12 @@ if (!function_exists('mh_disp_forms')) {
     }
     function mh_disp_reasons()
     {
-        return ['expired' => 'Expired', 'damaged' => 'Damaged / contaminated', 'recalled' => 'Recalled', 'other' => 'Other'];
+        return ['expired' => 'Expired', 'near_expiry' => 'Near expiry - returned to MHO', 'damaged' => 'Damaged', 'recalled' => 'Recalled', 'other' => 'Other'];
     }
     function mh_disp_methods()
     {
-        return ['Incineration' => 'Incineration', 'Returned to supplier' => 'Returned to supplier',
+        return ['Returned to MHO / Supplier' => 'Returned to MHO / Supplier', 'Biohazard / Proper Disposal' => 'Biohazard / Proper Disposal',
+                'Incineration' => 'Incineration', 'Returned to supplier' => 'Returned to supplier',
                 'Turned over to LGU / city health office' => 'Turned over to LGU / city health office',
                 'Safe disposal (waste contractor)' => 'Safe disposal (waste contractor)',
                 'Sharps / medical waste container' => 'Sharps / medical waste container', 'Other' => 'Other'];
@@ -74,12 +75,10 @@ if (!function_exists('mh_disp_forms')) {
         $remarks = mb_substr(trim((string) ($in['remarks'] ?? '')), 0, 500);
         $today   = date('Y-m-d');
 
-        if (!isset($forms[$form]))     { return [false, 'Choose the type of stock being disposed (liquid, capsule/tablet or item/piece).', 0]; }
         if (!isset($reasons[$reason])) { return [false, 'Choose the reason for disposal.', 0]; }
         if (!isset($methods[$method])) { return [false, 'Choose how the stock was disposed of.', 0]; }
         if ($amount < 1)               { return [false, 'Enter how much is being disposed (at least 1).', 0]; }
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $on) || $on > $today || $on < '2000-01-01') { return [false, 'Enter a valid disposal date (not in the future).', 0]; }
-        if (($reason === 'damaged' || $reason === 'other') && mb_strlen($remarks) < 5) { return [false, 'Please explain the reason in the remarks.', 0]; }
 
         $conn->begin_transaction();
         try {
@@ -92,7 +91,13 @@ if (!function_exists('mh_disp_forms')) {
             if ($amount > $before) { $conn->rollback(); return [false, 'Only ' . number_format($before) . ' ' . $b['unit'] . ' left in this batch.', $before]; }
             if ($reason === 'expired' && !(!empty($b['expiry_date']) && $b['expiry_date'] < $today)) {
                 $conn->rollback();
-                return [false, 'This batch has not expired yet. Choose "Damaged", "Recalled" or "Other" if it has to be removed early.', $before];
+                return [false, 'This batch has not expired yet. Choose "Near Expiry" or "Damaged" if it has to be removed early.', $before];
+            }
+
+            if (!isset($forms[$form])) { $form = mh_disp_guess_form($b['unit'], $b['category']); }
+            if ($reason === 'near_expiry' && (empty($b['expiry_date']) || $b['expiry_date'] < $today)) {
+                $conn->rollback();
+                return [false, 'Near-expiry disposal only applies to a batch that has an expiry date and has not expired yet. Choose Expired or Damaged instead.', $before];
             }
 
             $after  = $before - $amount;
