@@ -39,14 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!array_key_exists($mod, $choices)) { $mod = ''; }
     $nameLen = mb_strlen($name);
 
-    if (isset($_POST['toggle_dept_lock'])) {
-        if (!mh_is_admin_tier()) { dept_done(false, 'Only the Health Head or an Admin can change this policy.'); }
-        $lock = ($_POST['toggle_dept_lock'] === 'lock');
-        mh_departments_set_locked($conn, $lock, $user_id);
-        logActivity($conn, $user_id, $role, $lock ? 'Departments Locked' : 'Departments Unlocked', $lock ? 'Adding new departments is now blocked (center policy).' : 'Adding new departments was allowed again.');
-        dept_done(true, $lock ? 'Adding departments is locked again.' : 'Adding departments is now allowed. Lock it again when you are done.');
-    }
-
     if (isset($_POST['add_department'])) {
         if (mh_departments_locked()) { dept_done(false, 'Adding departments is disabled by center policy.'); }
         if ($name === '' || $nameLen > 100) { dept_done(false, 'Enter a department name (up to 100 characters).'); }
@@ -155,16 +147,7 @@ mh_layout_head(['title' => 'Departments']);
                 <?php if ($success_msg): ?><div class="dp-msg dp-ok"><?php echo $h($success_msg); ?></div><?php endif; ?>
                 <?php if ($error_msg): ?><div class="dp-msg dp-err"><?php echo $h($error_msg); ?></div><?php endif; ?>
 
-<?php if (mh_departments_locked()): ?>
-                <div style="background: var(--mh-info-bg, #eff6ff); border: 1px solid var(--mh-info-border, #bae6fd); color: var(--mh-info-fg, #0369a1); border-radius: 12px; padding: 16px 18px; display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
-                <div style="max-width: 640px;"><strong>Departments are fixed by center policy.</strong>
-                    The clinic's departments are tied to their pages, queues, staff roles and reports, so new ones cannot be added. You can still rename or hide the existing ones below.</div>
-                <?php if (mh_is_admin_tier()): ?><form method="POST" action="departments.php" style="margin:0;"><input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dept_csrf']); ?>">
-                    <button type="submit" name="toggle_dept_lock" value="unlock" class="btn-primary" data-confirm="Allow adding new departments? New departments are not part of the center's fixed list." data-confirm-title="Unlock departments?" data-confirm-type="warning" data-confirm-ok="Unlock">Unlock adding</button></form><?php endif; ?>
-            </div>
-                <?php else: ?>
-                <?php if (mh_is_admin_tier()): ?><form method="POST" action="departments.php" style="margin:0 0 12px;"><input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dept_csrf']); ?>">
-                    <button type="submit" name="toggle_dept_lock" value="lock" class="btn-secondary btn-sm">Lock adding departments (center policy)</button></form><?php endif; ?>
+<?php if (!mh_departments_locked()): ?>
                 <form method="POST" action="departments.php" class="dp-form" autocomplete="off">
                     <input type="hidden" name="csrf" value="<?php echo $h($_SESSION['dept_csrf']); ?>">
                     <div><label>New department name</label><input type="text" name="dept_name" maxlength="100" required placeholder="e.g. TB-DOTS"></div>

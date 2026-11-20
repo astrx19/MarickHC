@@ -194,7 +194,8 @@ function mh_setting($key, $fallback = '')
 
 function mh_departments_locked()
 {
-    return mh_setting('departments_locked', '1') !== '0';
+    // Departments are fixed by center policy; there is no unlock switch anymore.
+    return true;
 }
 function mh_departments_set_locked(mysqli $conn, $locked, $userId = null)
 {
